@@ -14,6 +14,8 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 NOM_APP = "WpImageDownloader"
+GITHUB_OWNER = "penoud"
+GITHUB_REPOSITORY = "WpImageDownloader"
 
 # intervalles proposés dans l'interface : libellé -> heures (0 = manuel)
 INTERVALLES: dict[str, int] = {

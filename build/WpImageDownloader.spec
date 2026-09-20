@@ -66,10 +66,37 @@ exe = EXE(
     if (RACINE / "build" / "version_info.txt").exists() else None,
 )
 
+updater_analysis = Analysis(
+    [str(RACINE / "updater_entry.py")],
+    pathex=[str(RACINE)],
+    binaries=[],
+    datas=[],
+    hiddenimports=["WpImageDownloader.updater.windows"],
+    hookspath=[],
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+)
+updater_pyz = PYZ(updater_analysis.pure)
+updater_exe = EXE(
+    updater_pyz,
+    updater_analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="WpImageDownloaderUpdater",
+    debug=False,
+    strip=False,
+    upx=False,
+    console=True,
+)
+
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    updater_exe,
+    updater_analysis.binaries,
+    updater_analysis.datas,
     strip=False,
     upx=False,
     name="WpImagerDownloader",

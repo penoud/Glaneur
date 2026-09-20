@@ -179,7 +179,7 @@ iscc build\installer.iss
 ```
 
 Résultats : `dist\WpImagerDownloader\` puis
-`build\Output\WpImagerDownloader-1.0.5-setup.exe`.
+`build\Output\WpImagerDownloader-1.0.6-setup.exe`.
 
 **Icône.** Aucun logo ou blason tiers n'est distribué dans le dépôt. Sans fichier
 ICO fourni séparément au moment du build, l'application dessine à la volée un
@@ -194,6 +194,15 @@ est fourni dans les secrets GitHub `WINDOWS_PFX_BASE64` et
 `WINDOWS_PFX_PASSWORD`. Sans ces secrets, la construction reste possible mais
 les avertissements Defender/SmartScreen ne peuvent pas être évités de manière
 fiable.
+
+### Mise à jour automatique Windows
+
+Au démarrage, Windows vérifie en arrière-plan la dernière GitHub Release stable.
+L'installateur `WpImagerDownloader-<version>-setup.exe` et son fichier
+`.sha256` sont sélectionnés dans la Release officielle. Après vérification de
+l'intégrité, un petit updater séparé ferme l'application, lance Inno Setup puis
+relance l'application. Les erreurs réseau ou un choix « Plus tard » laissent
+l'application fonctionner normalement.
 
 **Taille.** Qt est volumineux. La liste `QT_INUTILES` du fichier `.spec`
 écarte QtWebEngine, Qt3D, QtQuick, QtMultimedia et une vingtaine d'autres

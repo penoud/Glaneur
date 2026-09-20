@@ -100,6 +100,13 @@ Config.site
 - [x] Construire les paquets Linux dans GitHub Actions sur les tags.
 - [x] Ajouter une application macOS (`.app`, `.zip` et `.dmg`).
 
+## US-10 - Auto-update Windows
+
+- [x] Comparer les versions SemVer avec les GitHub Releases stables.
+- [x] Sélectionner l'installateur Windows et vérifier son SHA-256.
+- [x] Préparer un updater Windows séparé.
+- [x] Publier les installateurs et checksums dans une GitHub Release.
+
 ## Definition of Done
 
 Le sprint est pret lorsque :
