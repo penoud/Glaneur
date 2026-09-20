@@ -179,7 +179,7 @@ iscc build\installer.iss
 ```
 
 Résultats : `dist\WpImagerDownloader\` puis
-`build\Output\WpImagerDownloader-1.0.4-setup.exe`.
+`build\Output\WpImagerDownloader-1.0.5-setup.exe`.
 
 **Icône.** Aucun logo ou blason tiers n'est distribué dans le dépôt. Sans fichier
 ICO fourni séparément au moment du build, l'application dessine à la volée un

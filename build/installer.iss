@@ -1,10 +1,10 @@
 ; Installateur Inno Setup pour WpImagerDownloader
 ; Compiler après PyInstaller :  iscc build\installer.iss
-; Produit : build\Output\WpImagerDownloader-1.0.4-setup.exe
+; Produit : build\Output\WpImagerDownloader-1.0.5-setup.exe
 
 #define MonNom "WpImagerDownloader"
 #define MonNomCourt "WpImagerDownloader"
-#define MaVersion "1.0.4"
+#define MaVersion "1.0.5"
 #define MonEditeur "Projet personnel"
 #define MonExe "WpImagerDownloader.exe"
 
