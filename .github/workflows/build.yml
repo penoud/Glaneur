@@ -11,8 +11,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
@@ -63,7 +63,7 @@ jobs:
           if ($null -eq $installer) { throw "The Windows installer was not found." }
           $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($installer.Name)" | Set-Content "$($installer.FullName).sha256" -NoNewline
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: WpImagerDownloader-setup
           path: build/Output/*
@@ -71,8 +71,8 @@ jobs:
   linux:
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install Python dependencies
@@ -99,7 +99,7 @@ jobs:
             org.wpimagedownloader.WpImageDownloader
       - name: Generate Linux checksums
         run: sha256sum dist/*.deb dist/*.flatpak > dist/SHA256SUMS-linux
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: WpImageDownloader-linux
           path: |
@@ -110,8 +110,8 @@ jobs:
   macos:
     runs-on: macos-13
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Install Python dependencies
@@ -131,7 +131,7 @@ jobs:
       - name: Generate macOS checksums
         run: shasum -a 256 dist/*.zip dist/*.dmg > dist/SHA256SUMS-macos
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: WpImageDownloader-macos
           path: |
@@ -146,7 +146,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           pattern: "*"
           path: release-assets

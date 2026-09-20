@@ -63,6 +63,10 @@ from WpImageDownloader.systeme import (
     fond_ecran_actuel,
     ouvrir_dossier,
 )
+from WpImageDownloader.updater.downloader import download, temporary_directory, verify_sha256
+from WpImageDownloader.updater.github_release import GitHubReleaseProvider
+from WpImageDownloader.updater.version import Version
+from WpImageDownloader.updater.windows import start as start_windows_updater
 
 GRENAT = "#471625"
 PERIODE_ECHEANCE = 30_000   # ms entre deux contrôles d'échéance
@@ -122,6 +126,45 @@ class Travailleur(QThread):
             arret=self.arret,
         )
         self.fini.emit(moteur.executer())
+
+
+class VerificationMiseAJour(QThread):
+    disponible = Signal(object)
+    erreur = Signal(str)
+
+    def run(self) -> None:
+        try:
+            info = GitHubReleaseProvider().check(Version.parse(__version__))
+            if info.is_available:
+                self.disponible.emit(info)
+        except Exception as error:
+            self.erreur.emit(f"Vérification de mise à jour impossible : {error}")
+
+
+class TelechargementMiseAJour(QThread):
+    termine = Signal(object, str)
+    erreur = Signal(str)
+
+    def __init__(self, release) -> None:
+        super().__init__()
+        self.release = release
+
+    def run(self) -> None:
+        dossier = None
+        try:
+            installer = self.release.windows_installer()
+            checksum = self.release.checksum_for(installer) if installer else None
+            if installer is None or checksum is None:
+                raise RuntimeError("Installateur Windows ou checksum absent de la release")
+            dossier = temporary_directory()
+            fichier = download(installer, dossier)
+            checksum_path = download(checksum, dossier)
+            if not verify_sha256(fichier, checksum_path.read_text(encoding="utf-8")):
+                fichier.unlink(missing_ok=True)
+                raise RuntimeError("Vérification SHA-256 échouée")
+            self.termine.emit(fichier, str(dossier))
+        except Exception as error:
+            self.erreur.emit(f"Téléchargement de la mise à jour impossible : {error}")
 
 
 # --------------------------------------------------------------------------- #
@@ -190,6 +233,9 @@ class Fenetre(QMainWindow):
         self._charger_valeurs()
         self._construire_barre_notification()
 
+        self.verification_mise_a_jour = None
+        self.telechargement_mise_a_jour = None
+
         self.minuteur_echeance = QTimer(self)
         self.minuteur_echeance.timeout.connect(self._verifier_echeance)
         self.minuteur_echeance.start(PERIODE_ECHEANCE)
@@ -198,6 +244,8 @@ class Fenetre(QMainWindow):
         self.minuteur_affichage.timeout.connect(self._rafraichir_echeance)
         self.minuteur_affichage.start(PERIODE_AFFICHAGE)
         self._rafraichir_echeance()
+        if sys.platform == "win32":
+            QTimer.singleShot(3000, self._verifier_mise_a_jour)
 
     # ------------------------------------------------------------------ UI --
 
@@ -440,6 +488,46 @@ class Fenetre(QMainWindow):
         if c.diaporama_dossier and sys.platform == "win32":
             definir_dossier_diaporama(Path(c.dossier).expanduser())
         self._rafraichir_echeance()
+
+    def _verifier_mise_a_jour(self) -> None:
+        if self.verification_mise_a_jour and self.verification_mise_a_jour.isRunning():
+            return
+        self.verification_mise_a_jour = VerificationMiseAJour(self)
+        self.verification_mise_a_jour.disponible.connect(self._mise_a_jour_disponible)
+        self.verification_mise_a_jour.erreur.connect(self._ecrire)
+        self.verification_mise_a_jour.finished.connect(self.verification_mise_a_jour.deleteLater)
+        self.verification_mise_a_jour.start()
+
+    def _mise_a_jour_disponible(self, info) -> None:
+        release = info.latest
+        reponse = QMessageBox.question(
+            self,
+            "Mise à jour disponible",
+            f"Une nouvelle version est disponible.\n\n"
+            f"Version actuelle : {info.current}\n"
+            f"Nouvelle version : {release.version}\n\n"
+            "Télécharger et installer maintenant ?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reponse != QMessageBox.Yes:
+            self._ecrire(f"Mise à jour {release.version} reportée.")
+            return
+        self._ecrire(f"Téléchargement de la mise à jour {release.version}…")
+        self.telechargement_mise_a_jour = TelechargementMiseAJour(release)
+        self.telechargement_mise_a_jour.termine.connect(self._mise_a_jour_telechargee)
+        self.telechargement_mise_a_jour.erreur.connect(self._ecrire)
+        self.telechargement_mise_a_jour.finished.connect(self.telechargement_mise_a_jour.deleteLater)
+        self.telechargement_mise_a_jour.start()
+
+    def _mise_a_jour_telechargee(self, installer: Path, dossier: str) -> None:
+        try:
+            start_windows_updater(installer, Path(sys.executable).resolve(), os.getpid())
+            self._ecrire("Mise à jour vérifiée, fermeture pour installation…")
+            self._quitter_demande = True
+            self.close()
+        except (OSError, ValueError, RuntimeError) as error:
+            self._ecrire(f"Lancement de l'updater impossible : {error}")
 
     def _basculer_diaporama(self, actif: bool) -> None:
         if getattr(self, "_chargement", False):
