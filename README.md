@@ -83,12 +83,24 @@ directement l'original en pleine résolution.
 **Classement.** En mode « Par galerie », les IDs de contenus parents sont
 résolus en slugs via les endpoints découverts sur `/wp-json/wp/v2/types`. En
 mode « Par date », les dossiers suivent l'arborescence `AAAA-MM` des uploads.
+En mode « Tout dans un dossier », aucun sous-dossier n'est créé ; comme
+WordPress ne garantit l'unicité des noms qu'au sein d'un même mois d'upload,
+un doublon reçoit l'ID du média en suffixe (`match-1234.jpg`). Changer de
+classement ne déplace rien : seules les nouvelles images suivent le nouveau
+mode.
 
 **Manifeste.** `.etat.json` à la racine du dossier de destination associe
 chaque ID d'image à son chemin local, sa taille, son ETag et son
 `Last-Modified`. Une image déjà complète ne génère aucune requête — sur une
 mise à jour de routine, seul l'inventaire circule sur le réseau. Un fichier dont
 la taille ne correspond plus (interruption, corruption) repasse dans la file.
+
+**Images supprimées.** Une image complète dont le fichier a disparu du disque
+a forcément été effacée par l'utilisateur : le manifeste la marque
+(`"supprime": <horodatage>`) et elle n'est plus retéléchargée. Le bouton
+« Images supprimées… » de l'interface, ou `cli.py --restaurer [ID…]`, lève la
+marque pour la remettre en file. `--force`, qui ignore le manifeste, efface
+aussi ces marques.
 
 **Option « vérifier l'intégrité ».** Envoie une requête conditionnelle
 `If-None-Match` sur chaque fichier connu. Le serveur répond `304` sans
@@ -113,7 +125,7 @@ Fichier : `%APPDATA%\ServetteDownloader\config.json`
 | `dossier` | destination des images | `Mes images\Servette FC` |
 | `intervalle_heures` | 0, 6, 12, 24 ou 168 | `24` |
 | `largeur_min` | seuil en pixels | `800` |
-| `classement` | `galerie` ou `date` | `galerie` |
+| `classement` | `galerie`, `date` ou `plat` | `galerie` |
 | `verifier_integrite` | revalidation conditionnelle | `false` |
 | `fermer_dans_barre` | la croix réduit au lieu de quitter | `true` |
 | `notifications` | bulle après une mise à jour automatique | `true` |

@@ -20,12 +20,16 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -39,8 +43,15 @@ from PySide6.QtWidgets import (
 )
 
 from servette import __version__
-from servette.config import INTERVALLES, Config
-from servette.engine import Moteur, Options, Resultat, format_octets
+from servette.config import CLASSEMENTS, INTERVALLES, Config
+from servette.engine import (
+    Moteur,
+    Options,
+    Resultat,
+    format_octets,
+    lister_supprimees,
+    restaurer,
+)
 from servette.scheduler import Planificateur
 from servette.systeme import (
     demarrage_automatique,
@@ -106,6 +117,49 @@ class Travailleur(QThread):
             arret=self.arret,
         )
         self.fini.emit(moteur.executer())
+
+
+# --------------------------------------------------------------------------- #
+# Dialogue des images supprimées
+# --------------------------------------------------------------------------- #
+
+class DialogueSupprimees(QDialog):
+    """Liste les images effacées du disque et propose de les remettre en file."""
+
+    def __init__(self, parent, entrees: list[dict]) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Images supprimées")
+        self.resize(540, 380)
+        self.entrees = entrees
+
+        colonne = QVBoxLayout(self)
+        colonne.addWidget(QLabel(
+            "Ces images ont été téléchargées puis effacées du dossier.\n"
+            "Cochez celles à retélécharger à la prochaine mise à jour."))
+
+        self.liste = QListWidget()
+        for e in entrees:
+            item = QListWidgetItem(
+                f"{e.get('fichier', '?')}    (effacée le {e.get('supprime', '')[:10]})")
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Unchecked)
+            self.liste.addItem(item)
+        colonne.addWidget(self.liste, 1)
+
+        boutons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        boutons.addButton("Tout cocher", QDialogButtonBox.ActionRole).clicked.connect(
+            self._tout_cocher)
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        colonne.addWidget(boutons)
+
+    def _tout_cocher(self) -> None:
+        for i in range(self.liste.count()):
+            self.liste.item(i).setCheckState(Qt.Checked)
+
+    def choix(self) -> list[str]:
+        return [self.entrees[i]["id"] for i in range(self.liste.count())
+                if self.liste.item(i).checkState() == Qt.Checked]
 
 
 # --------------------------------------------------------------------------- #
@@ -211,7 +265,10 @@ class Fenetre(QMainWindow):
         form.addRow("Mise à jour :", self.combo_intervalle)
 
         self.combo_classement = QComboBox()
-        self.combo_classement.addItems(["Par galerie", "Par date"])
+        self.combo_classement.addItems(list(CLASSEMENTS))
+        self.combo_classement.setToolTip(
+            "Change la destination des nouvelles images. Les images déjà\n"
+            "téléchargées restent là où elles sont.")
         self.combo_classement.currentIndexChanged.connect(self._sauver)
         form.addRow("Classement :", self.combo_classement)
 
@@ -253,6 +310,12 @@ class Fenetre(QMainWindow):
         self.bouton_arreter.setEnabled(False)
         self.bouton_arreter.clicked.connect(self._arreter)
         ligne.addWidget(self.bouton_arreter)
+
+        self.bouton_supprimees = QPushButton("Images supprimées…")
+        self.bouton_supprimees.setToolTip(
+            "Images effacées du dossier, que l'application ne retélécharge plus.")
+        self.bouton_supprimees.clicked.connect(self._gerer_supprimees)
+        ligne.addWidget(self.bouton_supprimees)
         ligne.addStretch(1)
 
         self.label_echeance = QLabel()
@@ -312,8 +375,7 @@ class Fenetre(QMainWindow):
         self._chargement = True
         self.champ_dossier.setText(c.dossier)
         self.combo_intervalle.setCurrentText(c.libelle_intervalle)
-        self.combo_classement.setCurrentText(
-            "Par galerie" if c.classement == "galerie" else "Par date")
+        self.combo_classement.setCurrentText(c.libelle_classement)
         self.spin_largeur.setValue(c.largeur_min)
         self.case_verifier.setChecked(c.verifier_integrite)
         self.case_barre.setChecked(c.fermer_dans_barre)
@@ -326,7 +388,7 @@ class Fenetre(QMainWindow):
         c = self.cfg
         c.dossier = self.champ_dossier.text()
         c.intervalle_heures = INTERVALLES.get(self.combo_intervalle.currentText(), 24)
-        c.classement = "galerie" if self.combo_classement.currentText() == "Par galerie" else "date"
+        c.classement = CLASSEMENTS.get(self.combo_classement.currentText(), "galerie")
         c.largeur_min = self.spin_largeur.value()
         c.verifier_integrite = self.case_verifier.isChecked()
         c.fermer_dans_barre = self.case_barre.isChecked()
@@ -362,6 +424,20 @@ class Fenetre(QMainWindow):
         except OSError as e:
             QMessageBox.warning(self, "Dossier inaccessible", str(e))
 
+    def _gerer_supprimees(self) -> None:
+        dossier = Path(self.champ_dossier.text()).expanduser()
+        entrees = lister_supprimees(dossier)
+        if not entrees:
+            QMessageBox.information(
+                self, "Images supprimées",
+                "Aucune image effacée n'est mémorisée pour ce dossier.")
+            return
+        dialogue = DialogueSupprimees(self, entrees)
+        if dialogue.exec() != QDialog.Accepted or not dialogue.choix():
+            return
+        n = restaurer(dossier, dialogue.choix())
+        self._ecrire(f"{n} image(s) seront retéléchargées à la prochaine mise à jour.")
+
     def _lancer(self, auto: bool = False) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
@@ -381,6 +457,9 @@ class Fenetre(QMainWindow):
         self.arret.clear()
         self.bouton_lancer.setEnabled(False)
         self.action_maj.setEnabled(False)
+        # le moteur réécrit le manifeste en fin de course : restaurer pendant
+        # qu'il tourne perdrait la modification
+        self.bouton_supprimees.setEnabled(False)
         self.bouton_arreter.setEnabled(True)
         self.barre.setRange(0, 0)          # indéterminé pendant l'inventaire
         self._ecrire(f"--- {datetime.now():%d/%m/%Y %H:%M} — début de la mise à jour")
@@ -426,6 +505,7 @@ class Fenetre(QMainWindow):
     def _terminer(self, res: Resultat) -> None:
         self.bouton_lancer.setEnabled(True)
         self.action_maj.setEnabled(True)
+        self.bouton_supprimees.setEnabled(True)
         self.bouton_arreter.setEnabled(False)
         self.barre.setRange(0, 100)
         self.barre.setValue(0 if res.interrompu else 100)
@@ -434,6 +514,9 @@ class Fenetre(QMainWindow):
         self._ecrire(res.message)
         if res.deja_presentes:
             self._ecrire(f"{res.deja_presentes} image(s) déjà présentes, non retéléchargées.")
+        if res.ignorees:
+            self._ecrire(f"{res.ignorees} image(s) que vous aviez supprimée(s), ignorée(s) — "
+                         "bouton « Images supprimées… » pour en recharger.")
         if res.echecs:
             self._ecrire(f"{res.echecs} échec(s) — seront retentés à la prochaine mise à jour.")
 
