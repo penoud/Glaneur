@@ -22,7 +22,7 @@ depuis l'UI, depuis `cli.py`, ou depuis un futur service Windows sans rien
 réécrire.
 
 ```
-servette-downloader/
+wp-image-downloader/
 ├── app.py                  Interface graphique PySide6
 ├── cli.py                  Interface ligne de commande (mêmes fonctions)
 ├── requirements.txt
@@ -123,8 +123,8 @@ interrompue ne met pas à jour l'horodatage.
 
 ## 4. Configuration
 
-Fichier : `%APPDATA%\ServetteDownloader\config.json`
-(`~/.config/servette-downloader/` ailleurs).
+Fichier : `%APPDATA%\WpImageDownloader\config.json`
+(`~/.config/wp-image-downloader/` ailleurs).
 
 L'interface propose un champ « Site WordPress » pour saisir l'URL du site à
 interroger. La valeur est sauvegardée avec les autres préférences et le moteur

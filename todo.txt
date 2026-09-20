@@ -10,7 +10,7 @@ actuellement utilise.
 
 ## US-01 - Supprimer l'identite graphique distribuee
 
-- [x] Identifier et verifier `build/servette.ico`.
+- [x] Identifier et verifier `build/WpImageDownloader.ico`.
 - [x] Supprimer l'asset du depot.
 - [x] Ajouter l'asset a `.gitignore`.
 - [x] Verifier qu'aucune autre image tierce n'est presente dans le depot.
@@ -34,7 +34,7 @@ actuellement utilise.
 
 ## US-04 - Externaliser le site cible
 
-- [x] Ajouter `site` a `Config`, avec `https://servettefc.ch` comme valeur par
+- [x] Ajouter `site` a `Config`, avec `https://example.com` comme valeur par
   defaut historique.
 - [x] Ajouter `site` a `Options`.
 - [x] Construire `self.base` avec `options.site.rstrip("/")`.

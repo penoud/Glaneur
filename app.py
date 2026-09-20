@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interface PySide6 du téléchargeur d'images du Servette FC.
+"""Interface PySide6 du téléchargeur d'images WordPress.
 
 L'UI ne contient aucune logique réseau : elle construit un Options, lance un
 Moteur dans un QThread et reçoit ses messages par signaux Qt — qui sont
@@ -174,7 +174,7 @@ class DialogueSupprimees(QDialog):
 class Fenetre(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"Servette FC — Téléchargeur d'images {__version__}")
+        self.setWindowTitle(f"WpImageDownloader — Téléchargeur d'images {__version__}")
         self.setWindowIcon(icone_application())
         self.resize(760, 600)
         self.setMinimumSize(QSize(640, 500))
@@ -241,7 +241,7 @@ class Fenetre(QMainWindow):
         racine.setContentsMargins(14, 14, 14, 14)
         racine.setSpacing(10)
 
-        titre = QLabel("Téléchargeur d'images du Servette FC")
+        titre = QLabel("WpImageDownloader — Téléchargeur d'images")
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
@@ -376,7 +376,7 @@ class Fenetre(QMainWindow):
 
     def _construire_barre_notification(self) -> None:
         self.tray = QSystemTrayIcon(icone_application(), self)
-        self.tray.setToolTip("Servette FC — Téléchargeur d'images")
+        self.tray.setToolTip("WpImageDownloader — Téléchargeur d'images")
 
         menu = QMenu()
         self.action_afficher = QAction("Afficher la fenêtre", self)
@@ -631,7 +631,7 @@ class Fenetre(QMainWindow):
         if (self.auto_en_cours and self.cfg.notifications and res.telechargees
                 and not self.isVisible()):
             self.tray.showMessage(
-                "Servette FC",
+                "WpImageDownloader",
                 f"{res.telechargees} nouvelle(s) image(s) — {format_octets(res.octets)}",
                 icone_application(), 5000)
         self.auto_en_cours = False
@@ -646,7 +646,7 @@ class Fenetre(QMainWindow):
     def _rafraichir_echeance(self) -> None:
         texte = self.planificateur.texte_prochaine()
         self.label_echeance.setText(texte)
-        self.tray.setToolTip(f"Servette FC — {texte}")
+        self.tray.setToolTip(f"WpImageDownloader — {texte}")
 
     def _ecrire(self, message: str) -> None:
         self.journal.appendPlainText(f"{datetime.now():%H:%M:%S}  {message}")
@@ -660,7 +660,7 @@ class Fenetre(QMainWindow):
             event.ignore()
             self.hide()
             self.tray.showMessage(
-                "Servette FC",
+                "WpImageDownloader",
                 "L'application continue en arrière-plan. Clic droit sur l'icône pour quitter.",
                 icone_application(), 4000)
             return
@@ -686,7 +686,7 @@ class Fenetre(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("ServetteDownloader")
+    app.setApplicationName("WpImageDownloader")
     app.setWindowIcon(icone_application())
     # l'application survit à la fermeture de la fenêtre grâce à l'icône de barre
     app.setQuitOnLastWindowClosed(False)

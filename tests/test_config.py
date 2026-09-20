@@ -29,46 +29,46 @@ class TestEmplacements:
     def test_dossier_images_defaut_pointe_vers_home(self):
         d = dossier_images_defaut()
         # doit contenir le nom d'application quelque part dans le chemin
-        assert "Servette FC" in str(d)
+        assert "WpImageDownloader" in str(d)
 
     def test_dossier_config_windows(self, monkeypatch, tmp_path):
         monkeypatch.setattr("sys.platform", "win32")
         monkeypatch.setenv("APPDATA", str(tmp_path))
         d = dossier_config()
-        assert d == tmp_path / "ServetteDownloader"
+        assert d == tmp_path / "WpImageDownloader"
 
     def test_dossier_config_windows_sans_appdata(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "win32")
         monkeypatch.delenv("APPDATA", raising=False)
         d = dossier_config()
-        assert d.name == "ServetteDownloader"
+        assert d.name == "WpImageDownloader"
         assert "AppData" in str(d) or "Roaming" in str(d)
 
     def test_dossier_config_macos(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "darwin")
         d = dossier_config()
         assert "Library" in str(d)
-        assert d.name == "ServetteDownloader"
+        assert d.name == "WpImageDownloader"
 
     def test_dossier_config_linux_xdg(self, monkeypatch, tmp_path):
         monkeypatch.setattr("sys.platform", "linux")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         d = dossier_config()
-        assert d == tmp_path / "servette-downloader"
+        assert d == tmp_path / "wp-image-downloader"
 
     def test_dossier_config_linux_sans_xdg(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         d = dossier_config()
-        assert d.name == "servette-downloader"
+        assert d.name == "wp-image-downloader"
 
     def test_dossier_images_defaut_repli_sur_home(self, monkeypatch, tmp_path):
-        # aucun dossier "Pictures"/"Images" présent → repli sur ~/Servette FC
+        # aucun dossier "Pictures"/"Images" présent -> repli sur ~/WpImageDownloader
         vide = tmp_path / "vide-home"
         vide.mkdir()
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: vide))
         d = dossier_images_defaut()
-        assert d == vide / "Servette FC"
+        assert d == vide / "WpImageDownloader"
 
 
 # --------------------------------------------------------------------------- #

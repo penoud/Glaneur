@@ -23,7 +23,7 @@ from urllib.parse import urlparse
 import requests
 
 PER_PAGE = 100
-UA = "Mozilla/5.0 (compatible; ServetteDownloader/1.0)"
+UA = "Mozilla/5.0 (compatible; WpImageDownloader/1.0)"
 
 
 class Interrompu(Exception):
@@ -33,7 +33,7 @@ class Interrompu(Exception):
 @dataclass
 class Options:
     dossier: Path
-    site: str = "https://servettefc.ch"
+    site: str = "https://example.com"
     classement: str = "galerie"       # "galerie", "date" ou "plat"
     largeur_min: int = 800
     delai: float = 0.5

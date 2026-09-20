@@ -28,9 +28,9 @@ You are the maintainer of this Python application that downloads images from com
 
 ## Project Rules
 
-- Treat `servette/config.py` as the configuration source of truth for the target site.
-- Do not reintroduce global site/API constants in `servette/engine.py`.
-- Keep tests independent from the live Servette FC website. Use a configurable local fake server or fixture instead.
+- Treat `WpImageDownloader/config.py` as the configuration source of truth for the target site.
+- Do not reintroduce global site/API constants in `WpImageDownloader/engine.py`.
+- Keep tests independent from any live website. Use a configurable local fake server or fixture instead.
 - Preserve public APIs and user-facing behavior unless the task requires a deliberate change.
 - Use ASCII by default and match the repository's existing French naming and style.
 - Do not commit changes, rewrite history, or revert unrelated user work.

@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 CLE_RUN = r"Software\Microsoft\Windows\CurrentVersion\Run"
-NOM_ENTREE = "ServetteDownloader"
+NOM_ENTREE = "WpImageDownloader"
 
 # --- IDesktopWallpaper : identifiants et indices de vtable ------------------ #
 # On accède au COM en ctypes brut plutôt que de tirer pywin32 ou comtypes.

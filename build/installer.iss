@@ -65,7 +65,7 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    Config := ExpandConstant('{userappdata}\ServetteDownloader');
+    Config := ExpandConstant('{userappdata}\WpImageDownloader');
     if DirExists(Config) then
     begin
       if MsgBox('Supprimer également vos préférences ?' + #13#10 +

@@ -1,7 +1,7 @@
 """Configuration persistante de l'application.
 
-Le fichier vit dans %APPDATA%\\ServetteDownloader\\config.json sous Windows,
-dans ~/.config/servette-downloader/ ailleurs. Il est écrit de façon atomique
+Le fichier vit dans %APPDATA%\\WpImageDownloader\\config.json sous Windows,
+dans ~/.config/wp-image-downloader/ ailleurs. Il est écrit de façon atomique
 pour ne jamais se retrouver tronqué si l'application est tuée.
 """
 
@@ -13,7 +13,7 @@ import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-NOM_APP = "ServetteDownloader"
+NOM_APP = "WpImageDownloader"
 
 # intervalles proposés dans l'interface : libellé -> heures (0 = manuel)
 INTERVALLES: dict[str, int] = {
@@ -39,20 +39,20 @@ def dossier_config() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / NOM_APP
     base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "servette-downloader"
+    return base / "wp-image-downloader"
 
 
 def dossier_images_defaut() -> Path:
     for nom in ("Pictures", "Images"):
         candidat = Path.home() / nom
         if candidat.is_dir():
-            return candidat / "Servette FC"
-    return Path.home() / "Servette FC"
+            return candidat / "WpImageDownloader"
+    return Path.home() / "WpImageDownloader"
 
 
 @dataclass
 class Config:
-    site: str = "https://servettefc.ch"
+    site: str = "https://example.com"
     dossier: str = ""
     intervalle_heures: int = 24
     largeur_min: int = 800

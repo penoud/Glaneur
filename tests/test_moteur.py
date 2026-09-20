@@ -37,14 +37,14 @@ from WpImageDownloader.engine import (
 
 class TestNettoyer:
     def test_titre_simple(self):
-        assert nettoyer("Match du Servette") == "match-du-servette"
+        assert nettoyer("Match WordPress") == "match-wordpress"
 
     def test_accents_supprimes(self):
         # unidecode sur NFKD : les accents disparaissent
         assert nettoyer("Été à Genève") == "ete-a-geneve"
 
     def test_html_entities(self):
-        assert nettoyer("Servette &amp; Bâle") == "servette-bale"
+        assert nettoyer("WordPress &amp; Bâle") == "wordpress-bale"
 
     def test_caracteres_dangereux(self):
         # Windows refuse < > : " / \ | ? *

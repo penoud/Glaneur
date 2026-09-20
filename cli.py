@@ -23,7 +23,7 @@ from WpImageDownloader.engine import (
 
 def main() -> int:
     c = Config.charger()
-    p = argparse.ArgumentParser(description="Télécharge les images du Servette FC.")
+    p = argparse.ArgumentParser(description="Télécharge les images d'un site WordPress.")
     p.add_argument("-d", "--dossier", default=c.dossier, help="dossier de destination")
     p.add_argument("--classement", choices=["galerie", "date", "plat"],
                    default=c.classement)
