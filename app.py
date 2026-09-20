@@ -420,6 +420,8 @@ class Fenetre(QMainWindow):
         self.case_barre.setChecked(c.fermer_dans_barre)
         self.case_demarrage.setChecked(demarrage_automatique_actif())
         self._chargement = False
+        if c.diaporama_dossier and sys.platform == "win32":
+            definir_dossier_diaporama(Path(c.dossier).expanduser())
 
     def _sauver(self) -> None:
         if getattr(self, "_chargement", False):

@@ -23,8 +23,8 @@ _VT_RELEASE = 2
 _VT_GETWALLPAPER = 4
 _VT_GETMONITORDEVICEPATHAT = 5
 _VT_GETMONITORDEVICEPATHCOUNT = 6
-_VT_SET_SLIDESHOW = 10
-_VT_ADVANCESLIDESHOW = 14
+_VT_SET_SLIDESHOW = 11
+_VT_ADVANCESLIDESHOW = 15
 
 _DSD_FORWARD = 0
 
@@ -164,52 +164,48 @@ def _liberer_bureau(ptr, uninit: bool) -> None:
             pass
 
 
-def _creer_tableau_dossier(chemin: Path):
-    """Crée un IShellItemArray contenant le dossier donné, sous Windows."""
+def _creer_tableau_images(chemin: Path):
+    """Crée un IShellItemArray contenant les images du dossier Windows."""
     import ctypes
 
-    class GUID(ctypes.Structure):
-        _fields_ = [
-            ("Data1", ctypes.c_uint32),
-            ("Data2", ctypes.c_uint16),
-            ("Data3", ctypes.c_uint16),
-            ("Data4", ctypes.c_ubyte * 8),
-        ]
-
-    iid_shell_item = GUID()
-    iid_shell_item_array = GUID()
     ole32 = ctypes.windll.ole32
-    if ole32.IIDFromString(
-        "{43826D1E-E718-42EE-BC55-A1E261C37BFE}", ctypes.byref(iid_shell_item)
-    ) != 0 or ole32.IIDFromString(
-        "{B63EA76D-1F85-456F-A19C-48159EFA858B}",
-        ctypes.byref(iid_shell_item_array)
-    ) != 0:
-        return None, None
-
     shell32 = ctypes.windll.shell32
-    item = ctypes.c_void_p()
-    shell32.SHCreateItemFromParsingName.argtypes = [
-        ctypes.c_wchar_p, ctypes.c_void_p, ctypes.c_void_p,
-        ctypes.POINTER(ctypes.c_void_p),
+    shell32.SHParseDisplayName.argtypes = [
+        ctypes.c_wchar_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
+        ctypes.c_uint32, ctypes.POINTER(ctypes.c_uint32),
     ]
-    shell32.SHCreateItemFromParsingName.restype = ctypes.c_long
-    hr = shell32.SHCreateItemFromParsingName(
-        str(chemin), None, ctypes.byref(iid_shell_item), ctypes.byref(item))
-    if hr != 0 or not item.value:
+    shell32.SHParseDisplayName.restype = ctypes.c_long
+
+    pidls = []
+    for fichier in sorted(chemin.rglob("*")):
+        if not fichier.is_file() or fichier.suffix.lower() not in {
+            ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp",
+        }:
+            continue
+        pidl = ctypes.c_void_p()
+        attributes = ctypes.c_uint32()
+        hr = shell32.SHParseDisplayName(
+            str(fichier), None, ctypes.byref(pidl), 0, ctypes.byref(attributes))
+        if hr == 0 and pidl.value:
+            pidls.append(pidl)
+
+    if not pidls:
         return None, None
 
     tableau = ctypes.c_void_p()
-    shell32.SHCreateShellItemArrayFromShellItem.argtypes = [
-        ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
+    shell32.SHCreateShellItemArrayFromIDLists.argtypes = [
+        ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
     ]
-    shell32.SHCreateShellItemArrayFromShellItem.restype = ctypes.c_long
-    hr = shell32.SHCreateShellItemArrayFromShellItem(
-        item, ctypes.byref(iid_shell_item_array), ctypes.byref(tableau))
+    shell32.SHCreateShellItemArrayFromIDLists.restype = ctypes.c_long
+    pidl_array = (ctypes.c_void_p * len(pidls))(*(pidl.value for pidl in pidls))
+    hr = shell32.SHCreateShellItemArrayFromIDLists(
+        len(pidls), pidl_array, ctypes.byref(tableau))
+    for pidl in pidls:
+        ole32.CoTaskMemFree(pidl)
     if hr != 0 or not tableau.value:
-        _liberer_bureau(item, False)
-        return None, None
-    return item, tableau
+        return None
+    return tableau
 
 
 def definir_dossier_diaporama(chemin: Path) -> bool:
@@ -219,9 +215,9 @@ def definir_dossier_diaporama(chemin: Path) -> bool:
     bureau, uninit = _instancier_bureau()
     if bureau is None:
         return False
-    item = tableau = None
+    tableau = None
     try:
-        item, tableau = _creer_tableau_dossier(chemin)
+        tableau = _creer_tableau_images(chemin)
         if tableau is None:
             return False
         import ctypes
@@ -232,8 +228,6 @@ def definir_dossier_diaporama(chemin: Path) -> bool:
     finally:
         if tableau is not None:
             _liberer_bureau(tableau, False)
-        if item is not None:
-            _liberer_bureau(item, False)
         _liberer_bureau(bureau, uninit)
 
 
