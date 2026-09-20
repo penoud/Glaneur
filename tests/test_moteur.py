@@ -20,9 +20,12 @@ from WpImageDownloader.engine import (
     Interrompu,
     Moteur,
     Options,
+    chemin_cache,
     chemin_manifeste,
+    ecrire_cache,
     ecrire_manifeste,
     format_octets,
+    lire_cache,
     lire_manifeste,
     lister_supprimees,
     nettoyer,
@@ -1063,3 +1066,156 @@ class TestExecuterExtra:
             moteur.executer()
         # au moins 2 appels : périodique + finally
         assert sauver.call_count >= 2
+
+
+# --------------------------------------------------------------------------- #
+# Cache API : lire, écrire, effet sur les runs suivants
+# --------------------------------------------------------------------------- #
+
+class TestCacheAPI:
+    def test_chemin(self, tmp_path):
+        assert chemin_cache(tmp_path) == tmp_path / ".cache.json"
+
+    def test_lire_absent(self, tmp_path):
+        assert lire_cache(tmp_path) == {}
+
+    def test_lire_json_invalide(self, tmp_path):
+        chemin_cache(tmp_path).write_text("{pas du json")
+        assert lire_cache(tmp_path) == {}
+
+    def test_ecrire_puis_relire(self, tmp_path):
+        cache = {"derniere_date_media": "2026-05-01T12:00:00",
+                 "titres_parents": {"42": "match"}}
+        ecrire_cache(tmp_path, cache)
+        assert lire_cache(tmp_path) == cache
+
+    def test_charger_cache_ignore_si_force(self, tmp_path):
+        ecrire_cache(tmp_path, {"site": "https://x", "derniere_date_media": "2026"})
+        m = _moteur(tmp_path, force=True)
+        assert m.charger_cache() == {}
+
+    def test_charger_cache_ignore_si_desactive(self, tmp_path):
+        ecrire_cache(tmp_path, {"site": "https://x", "derniere_date_media": "2026"})
+        m = _moteur(tmp_path, utiliser_cache=False)
+        assert m.charger_cache() == {}
+
+    def test_charger_cache_ignore_si_site_change(self, tmp_path):
+        # cache écrit pour un autre site : pas d'exploitation croisée
+        ecrire_cache(tmp_path, {"site": "https://autre.example",
+                                "derniere_date_media": "2026"})
+        m = _moteur(tmp_path, site="https://nouveau.example")
+        assert m.charger_cache() == {}
+
+    def test_charger_cache_meme_site(self, tmp_path):
+        ecrire_cache(tmp_path, {"site": "https://x", "derniere_date_media": "2026"})
+        m = _moteur(tmp_path, site="https://x")
+        assert m.charger_cache()["derniere_date_media"] == "2026"
+
+    def test_sauver_ajoute_le_site(self, tmp_path):
+        m = _moteur(tmp_path, site="https://y")
+        m.sauver_cache({"derniere_date_media": "2026-01-01T00:00:00"})
+        stocke = lire_cache(tmp_path)
+        assert stocke["site"] == "https://y"
+        assert stocke["derniere_date_media"] == "2026-01-01T00:00:00"
+
+    def test_sauver_no_op_si_force(self, tmp_path):
+        m = _moteur(tmp_path, force=True)
+        m.sauver_cache({"quelque": "chose"})
+        assert not chemin_cache(tmp_path).exists()
+
+    def test_executer_utilise_date_du_cache_comme_after(self, tmp_path):
+        # Un cache pré-existant doit être passé à lister_medias comme override
+        ecrire_cache(tmp_path, {
+            "site": "https://x.example",
+            "derniere_date_media": "2026-06-15T12:00:00",
+        })
+        m = _moteur(tmp_path, site="https://x.example", classement="date")
+        capture = {}
+
+        def faux_lister(depuis_override=None):
+            capture["depuis"] = depuis_override
+            return []
+
+        with patch.object(m, "lister_medias", side_effect=faux_lister):
+            m.executer()
+        assert capture["depuis"] == "2026-06-15T12:00:00"
+
+    def test_executer_prefere_depuis_utilisateur_au_cache(self, tmp_path):
+        ecrire_cache(tmp_path, {"site": "https://x", "derniere_date_media": "2026"})
+        m = _moteur(tmp_path, site="https://x", depuis="2020-01-01",
+                    classement="date")
+        capture = {}
+
+        def faux_lister(depuis_override=None):
+            capture["depuis"] = depuis_override
+            return []
+
+        with patch.object(m, "lister_medias", side_effect=faux_lister):
+            m.executer()
+        # avec `depuis` utilisateur, on n'injecte PAS la date du cache
+        assert capture["depuis"] is None
+
+    def test_executer_met_a_jour_la_date_max(self, tmp_path):
+        m = _moteur(tmp_path, site="https://x", classement="date")
+        medias = [
+            _media(1, url="https://x/wp-content/uploads/2026/03/a.jpg"),
+            _media(2, url="https://x/wp-content/uploads/2026/06/b.jpg"),
+        ]
+        medias[0]["date"] = "2026-03-10T08:00:00"
+        medias[1]["date"] = "2026-06-20T09:30:00"
+        with patch.object(m, "lister_medias", return_value=medias), \
+             patch.object(m, "telecharger",
+                          return_value=("ok", {"taille": 1, "etag": "",
+                                               "modifie": "", "url": "u"})):
+            m.executer()
+        cache = lire_cache(tmp_path)
+        assert cache["derniere_date_media"] == "2026-06-20T09:30:00"
+        assert cache["site"] == "https://x"
+
+    def test_executer_cache_les_titres_de_galeries(self, tmp_path):
+        m = _moteur(tmp_path, site="https://x", classement="galerie")
+        media = _media(1, url="https://x/wp-content/uploads/2026/03/a.jpg", post=42)
+        with patch.object(m, "lister_medias", return_value=[media]), \
+             patch.object(m, "resoudre_parents",
+                          return_value={42: "match-a"}) as res_p, \
+             patch.object(m, "telecharger",
+                          return_value=("ok", {"taille": 1, "etag": "",
+                                               "modifie": "", "url": "u"})):
+            m.executer()
+        assert lire_cache(tmp_path)["titres_parents"] == {"42": "match-a"}
+        res_p.assert_called_once()
+
+    def test_executer_reutilise_titres_caches(self, tmp_path):
+        # Cache pré-rempli : le prochain run n'appelle plus l'API pour cet ID
+        ecrire_cache(tmp_path, {
+            "site": "https://x",
+            "titres_parents": {"42": "match-cache"},
+        })
+        m = _moteur(tmp_path, site="https://x", classement="galerie")
+        media = _media(1, url="https://x/wp-content/uploads/2026/03/a.jpg", post=42)
+        with patch.object(m, "lister_medias", return_value=[media]), \
+             patch.object(m, "_bases_rest") as bases, \
+             patch.object(m, "telecharger",
+                          return_value=("ok", {"taille": 1, "etag": "",
+                                               "modifie": "", "url": "u"})):
+            m.executer()
+        # _bases_rest ne doit jamais avoir été appelé : le titre venait du cache
+        bases.assert_not_called()
+        # le fichier a été rangé dans « match-cache »
+        assert lire_manifeste(tmp_path)["1"]["fichier"].replace("\\", "/") \
+            .startswith("match-cache/")
+
+    def test_resoudre_parents_court_circuite_sur_cache(self, tmp_path):
+        m = _moteur(tmp_path)
+        with patch.object(m, "_api") as api:
+            r = m.resoudre_parents({42}, cache_titres={42: "deja-connu"})
+        assert r == {42: "deja-connu"}
+        api.assert_not_called()
+
+    def test_interruption_ne_sauve_pas_le_cache(self, tmp_path):
+        m = _moteur(tmp_path, site="https://x")
+        with patch.object(m, "lister_medias", side_effect=Interrompu()):
+            r = m.executer()
+        assert r.interrompu is True
+        # aucune écriture de cache : la date max n'a pas été validée
+        assert not chemin_cache(tmp_path).exists()

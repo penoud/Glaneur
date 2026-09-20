@@ -41,6 +41,7 @@ class Options:
     force: bool = False               # ignorer le manifeste
     depuis: str | None = None         # AAAA-MM-JJ
     jusqua: str | None = None
+    utiliser_cache: bool = True       # cache disque : date max et titres galeries
 
 
 @dataclass
@@ -108,6 +109,36 @@ def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
     tmp = chemin.with_suffix(".json.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(manifeste, f, ensure_ascii=False, indent=1)
+    tmp.replace(chemin)
+
+
+# --------------------------------------------------------------------------- #
+# Cache API : date maximale des médias vus, titres des galeries résolues.
+# Sert à accélérer les runs suivants — le manifeste dit ce qu'on a téléchargé,
+# le cache dit ce qu'on a demandé à l'API pour éviter de le redemander.
+# --------------------------------------------------------------------------- #
+
+def chemin_cache(dossier: Path) -> Path:
+    return dossier / ".cache.json"
+
+
+def lire_cache(dossier: Path) -> dict:
+    chemin = chemin_cache(dossier)
+    if not chemin.exists():
+        return {}
+    try:
+        with open(chemin, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def ecrire_cache(dossier: Path, cache: dict) -> None:
+    chemin = chemin_cache(dossier)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    tmp = chemin.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=1)
     tmp.replace(chemin)
 
 
@@ -266,9 +297,31 @@ class Moteur:
         attendue = (etat or {}).get("taille") or taille_api
         return not (attendue and taille != attendue)
 
+    # -- cache API ---------------------------------------------------------- #
+
+    def charger_cache(self) -> dict:
+        """Lit le cache disque, ignoré en mode force ou si l'utilisation en est
+        désactivée. Si le site enregistré diffère du site courant, on repart de
+        zéro pour ne pas mélanger deux WordPress différents."""
+        if self.o.force or not self.o.utiliser_cache:
+            return {}
+        cache = lire_cache(self.o.dossier)
+        if cache.get("site") and cache["site"] != self.base:
+            return {}
+        return cache
+
+    def sauver_cache(self, cache: dict) -> None:
+        if self.o.force or not self.o.utiliser_cache:
+            return
+        ecrire_cache(self.o.dossier, {**cache, "site": self.base})
+
     # -- inventaire --------------------------------------------------------- #
 
-    def lister_medias(self) -> list[dict]:
+    def lister_medias(self, depuis_override: str | None = None) -> list[dict]:
+        """Inventaire des médias. `depuis_override` (ISO complet ou AAAA-MM-JJ)
+        prend le pas sur `Options.depuis`, ce qui permet à `executer` d'injecter
+        la date maximale connue du cache et de ne demander à l'API que le
+        delta."""
         params = {
             "per_page": PER_PAGE,
             "media_type": "image",
@@ -276,8 +329,9 @@ class Moteur:
             "order": "asc",
             "_fields": "id,date,source_url,mime_type,title,alt_text,post,media_details",
         }
-        if self.o.depuis:
-            params["after"] = f"{self.o.depuis}T00:00:00"
+        depuis = depuis_override or self.o.depuis
+        if depuis:
+            params["after"] = depuis if "T" in depuis else f"{depuis}T00:00:00"
         if self.o.jusqua:
             params["before"] = f"{self.o.jusqua}T23:59:59"
 
@@ -325,9 +379,13 @@ class Moteur:
         bases.sort(key=lambda b: (0 if "galer" in b else 1, b))
         return bases or ["posts"]
 
-    def resoudre_parents(self, ids: set[int]) -> dict[int, str]:
+    def resoudre_parents(self, ids: set[int],
+                         cache_titres: dict[int, str] | None = None) -> dict[int, str]:
+        """Renvoie {id: titre}. Les entrées de `cache_titres` sont conservées
+        telles quelles ; seuls les IDs manquants déclenchent des appels API."""
         restants = {i for i in ids if i}
-        titres: dict[int, str] = {}
+        titres: dict[int, str] = dict(cache_titres or {})
+        restants -= set(titres.keys())
         if not restants:
             return titres
 
@@ -432,11 +490,22 @@ class Moteur:
         res = Resultat()
         self.o.dossier.mkdir(parents=True, exist_ok=True)
         manifeste = self.charger_manifeste()
+        cache = self.charger_cache()
         if manifeste:
             self._journal(f"{len(manifeste)} image(s) déjà connues.")
 
+        # Cache : on ne l'utilise que si l'utilisateur n'a pas déjà borné la
+        # période — dans ce cas, ses bornes priment sur la mémoire du cache.
+        depuis_cache = None
+        if not (self.o.depuis or self.o.jusqua):
+            depuis_cache = cache.get("derniere_date_media")
+            if depuis_cache:
+                self._journal(
+                    f"Cache : ne redemande à l'API que les médias postérieurs à "
+                    f"{depuis_cache[:19]}.")
+
         try:
-            medias = self.lister_medias()
+            medias = self.lister_medias(depuis_override=depuis_cache)
 
             if self.o.largeur_min:
                 avant = len(medias)
@@ -486,10 +555,13 @@ class Moteur:
                 return res
 
             titres: dict[int, str] = {}
+            titres_caches = {int(k): v
+                             for k, v in (cache.get("titres_parents") or {}).items()
+                             if str(k).isdigit()}
             inconnus = {m.get("post") for m, connu in a_faire if connu is None}
             if self.o.classement == "galerie" and inconnus:
                 self._progression(0, len(a_faire), "Identification des galeries…")
-                titres = self.resoudre_parents(inconnus)
+                titres = self.resoudre_parents(inconnus, cache_titres=titres_caches)
 
             for i, (m, connu) in enumerate(a_faire, 1):
                 self._verifier_arret()
@@ -527,6 +599,19 @@ class Moteur:
 
             res.message = (f"{res.telechargees} nouvelle(s) image(s), "
                            f"{format_octets(res.octets)} téléchargés.")
+
+            # Mise à jour du cache : date maximale et titres nouvellement résolus.
+            # On ne l'écrit qu'en sortie normale, jamais après une interruption
+            # ou une erreur, pour ne pas mémoriser un état incomplet.
+            dates = [m["date"] for m in medias if m.get("date")]
+            if dates:
+                ancienne = cache.get("derniere_date_media") or ""
+                cache["derniere_date_media"] = max(ancienne, max(dates))
+            if titres:
+                cache.setdefault("titres_parents", {})
+                cache["titres_parents"].update(
+                    {str(k): v for k, v in titres.items() if v})
+            self.sauver_cache(cache)
 
         except Interrompu:
             res.interrompu = True

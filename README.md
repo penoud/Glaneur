@@ -101,6 +101,15 @@ chaque ID d'image à son chemin local, sa taille, son ETag et son
 mise à jour de routine, seul l'inventaire circule sur le réseau. Un fichier dont
 la taille ne correspond plus (interruption, corruption) repasse dans la file.
 
+**Cache API.** `.cache.json` mémorise, à côté du manifeste, la date maximale
+des médias déjà vus (`derniere_date_media`) et les titres de galeries résolus
+(`titres_parents`), avec l'URL du site pour empreinte. Aux runs suivants,
+l'inventaire ne demande à l'API que les médias postérieurs à cette date
+(paramètre `after=…`) et la résolution des galeries évite tout aller-retour
+pour les IDs déjà connus. Si l'URL du site change, le cache est ignoré ; le
+mode `--force` (CLI) et `--pas-cache` le contournent aussi. Une interruption
+n'écrit pas le cache : on ne mémorise qu'un état de sortie propre.
+
 **Images supprimées.** Une image complète dont le fichier a disparu du disque
 a forcément été effacée par l'utilisateur : le manifeste la marque
 (`"supprime": <horodatage>`) et elle n'est plus retéléchargée. Le bouton
@@ -126,9 +135,12 @@ interrompue ne met pas à jour l'horodatage.
 Fichier : `%APPDATA%\WpImageDownloader\config.json`
 (`~/.config/wp-image-downloader/` ailleurs).
 
-L'interface propose un champ « Site WordPress » pour saisir l'URL du site à
-interroger. La valeur est sauvegardée avec les autres préférences et le moteur
-utilise automatiquement son endpoint `/wp-json/wp/v2`.
+La fenêtre principale expose les actions (mise à jour, arrêter, supprimer le
+fond, images supprimées) et le journal ; les paramètres — URL du site,
+destination, intervalle, classement, largeur minimale, intégration système —
+vivent dans **Configuration → Préférences…** (raccourci `Ctrl+,`). Le moteur
+utilise l'URL du site comme préfixe de l'endpoint `/wp-json/wp/v2`. Le menu
+**Aide → À propos…** rappelle la version et le dépôt.
 
 | Clé | Rôle | Défaut |
 |---|---|---|
@@ -141,11 +153,13 @@ utilise automatiquement son endpoint `/wp-json/wp/v2`.
 | `fermer_dans_barre` | la croix réduit au lieu de quitter | `true` |
 | `notifications` | bulle après une mise à jour automatique | `true` |
 | `delai_requetes` | pause entre requêtes, en secondes | `0.5` |
+| `diaporama_dossier` | déclare le dossier comme source du diaporama Windows | `false` |
 | `derniere_execution` | horodatage ISO, géré par l'app | — |
 
-Toute modification dans l'interface est sauvegardée immédiatement. Les valeurs
-hors bornes sont ramenées à des valeurs saines au chargement ; `delai_requetes`
-est plafonné à un minimum de 0,2 s pour ne pas marteler le serveur cible.
+Les paramètres sont sauvegardés à la validation de la fenêtre Préférences
+(bouton OK). Les valeurs hors bornes sont ramenées à des valeurs saines au
+chargement ; `delai_requetes` est plafonné à un minimum de 0,2 s pour ne pas
+marteler le serveur cible.
 
 ### Licence et contenus téléchargés
 
@@ -179,7 +193,7 @@ iscc build\installer.iss
 ```
 
 Résultats : `dist\WpImagerDownloader\` puis
-`build\Output\WpImagerDownloader-1.0.6-setup.exe`.
+`build\Output\WpImagerDownloader-1.0.7-setup.exe`.
 
 **Icône.** Aucun logo ou blason tiers n'est distribué dans le dépôt. Sans fichier
 ICO fourni séparément au moment du build, l'application dessine à la volée un

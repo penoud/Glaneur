@@ -107,6 +107,36 @@ class TestFondEcranSousWindows:
 
 
 # --------------------------------------------------------------------------- #
+# Contrats internes : indices vtable, type de retour de _creer_tableau_images
+# (bugs qui ont provoqué le crash de la case « diaporama »).
+# --------------------------------------------------------------------------- #
+
+class TestContratsWallpaper:
+    """Ces vérifications sont indépendantes de la plateforme : elles portent
+    sur des constantes et sur des invariants (`_liberer_bureau` doit accepter
+    n'importe quoi sans lever)."""
+
+    def test_indices_vtable_conformes_a_idesktopwallpaper(self):
+        # Les indices doivent correspondre à la vtable Microsoft : SetSlideshow=12,
+        # AdvanceSlideshow=16. Une valeur off-by-one appelait GetPosition à la
+        # place et corrompait la mémoire → crash.
+        assert systeme._VT_RELEASE == 2
+        assert systeme._VT_GETWALLPAPER == 4
+        assert systeme._VT_GETMONITORDEVICEPATHAT == 5
+        assert systeme._VT_GETMONITORDEVICEPATHCOUNT == 6
+        assert systeme._VT_SET_SLIDESHOW == 12
+        assert systeme._VT_ADVANCESLIDESHOW == 16
+
+    def test_liberer_bureau_ignore_les_types_bizarres(self):
+        # Robustesse : appeler _liberer_bureau avec autre chose qu'un c_void_p
+        # ne doit jamais lever (le finally de definir_dossier_diaporama en dépend).
+        systeme._liberer_bureau(None, False)
+        systeme._liberer_bureau((None, None), False)
+        systeme._liberer_bureau("pas un pointeur", False)
+        # aucune exception : succès
+
+
+# --------------------------------------------------------------------------- #
 # Simulations : sys.platform = "win32" mais COM/ctypes non disponibles
 # --------------------------------------------------------------------------- #
 

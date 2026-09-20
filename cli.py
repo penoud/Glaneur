@@ -31,6 +31,8 @@ def main() -> int:
     p.add_argument("--delai", type=float, default=c.delai_requetes)
     p.add_argument("--verifier", action="store_true", help="revalider les fichiers existants")
     p.add_argument("--force", action="store_true", help="ignorer le manifeste")
+    p.add_argument("--pas-cache", action="store_true",
+                   help="ignorer le cache API (date max, titres galeries) et tout redemander")
     p.add_argument("--depuis", help="AAAA-MM-JJ")
     p.add_argument("--jusqua", help="AAAA-MM-JJ")
     p.add_argument("--restaurer", nargs="*", metavar="ID",
@@ -52,6 +54,7 @@ def main() -> int:
         force=args.force,
         depuis=args.depuis,
         jusqua=args.jusqua,
+        utiliser_cache=not args.pas_cache,
     )
 
     dernier = [""]

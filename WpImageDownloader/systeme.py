@@ -18,13 +18,18 @@ _CLSCTX_ALL = 23
 _COINIT_APARTMENTTHREADED = 0x2
 _RPC_E_CHANGED_MODE = 0x80010106
 
-# Indices dans la vtable : 0 = QueryInterface, 1 = AddRef, 2 = Release.
+# Indices dans la vtable IDesktopWallpaper. IUnknown occupe 0-2 (QueryInterface,
+# AddRef, Release), puis les 16 méthodes de l'interface : SetWallpaper=3,
+# GetWallpaper=4, GetMonitorDevicePathAt=5, GetMonitorDevicePathCount=6,
+# GetMonitorRECT=7, SetBackgroundColor=8, GetBackgroundColor=9, SetPosition=10,
+# GetPosition=11, SetSlideshow=12, GetSlideshow=13, SetSlideshowOptions=14,
+# GetSlideshowOptions=15, AdvanceSlideshow=16, GetStatus=17, Enable=18.
 _VT_RELEASE = 2
 _VT_GETWALLPAPER = 4
 _VT_GETMONITORDEVICEPATHAT = 5
 _VT_GETMONITORDEVICEPATHCOUNT = 6
-_VT_SET_SLIDESHOW = 11
-_VT_ADVANCESLIDESHOW = 15
+_VT_SET_SLIDESHOW = 12
+_VT_ADVANCESLIDESHOW = 16
 
 _DSD_FORWARD = 0
 
@@ -151,12 +156,14 @@ def _appel_com(ptr, index: int, proto, *args):
 
 
 def _liberer_bureau(ptr, uninit: bool) -> None:
+    """Release une interface COM et éventuellement CoUninitialize."""
     import ctypes
-    try:
-        proto = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)
-        _appel_com(ptr, _VT_RELEASE, proto)
-    except (OSError, AttributeError):
-        pass
+    if isinstance(ptr, ctypes.c_void_p) and ptr.value:
+        try:
+            proto = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)
+            _appel_com(ptr, _VT_RELEASE, proto)
+        except (OSError, AttributeError, TypeError):
+            pass
     if uninit:
         try:
             ctypes.windll.ole32.CoUninitialize()
@@ -165,7 +172,13 @@ def _liberer_bureau(ptr, uninit: bool) -> None:
 
 
 def _creer_tableau_images(chemin: Path):
-    """Crée un IShellItemArray contenant les images du dossier Windows."""
+    """Crée un IShellItemArray contenant les images du dossier Windows.
+
+    Renvoie un `c_void_p` sur l'interface, ou `None` si rien n'a pu être créé
+    (dossier vide, échec de SHParseDisplayName sur toutes les images, ou
+    SHCreateShellItemArrayFromIDLists en erreur). Un unique type de retour,
+    pour que l'appelant puisse tester `is None` sans piège.
+    """
     import ctypes
 
     ole32 = ctypes.windll.ole32
@@ -190,7 +203,7 @@ def _creer_tableau_images(chemin: Path):
             pidls.append(pidl)
 
     if not pidls:
-        return None, None
+        return None
 
     tableau = ctypes.c_void_p()
     shell32.SHCreateShellItemArrayFromIDLists.argtypes = [

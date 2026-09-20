@@ -5,6 +5,10 @@ L'UI ne contient aucune logique réseau : elle construit un Options, lance un
 Moteur dans un QThread et reçoit ses messages par signaux Qt — qui sont
 automatiquement marshalés vers le thread principal, donc aucun widget n'est
 touché depuis le thread de travail.
+
+Les paramètres sont regroupés dans un dialogue « Préférences » accessible
+par la barre de menus ; la fenêtre principale ne montre que les actions,
+la progression et le journal.
 """
 
 from __future__ import annotations
@@ -16,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -72,6 +76,8 @@ GRENAT = "#471625"
 PERIODE_ECHEANCE = 30_000   # ms entre deux contrôles d'échéance
 PERIODE_AFFICHAGE = 1_000   # ms entre deux rafraîchissements du compte à rebours
 
+DEPOT_URL = "https://github.com/penoud/WpImageDownloader"
+
 
 # --------------------------------------------------------------------------- #
 # Icône
@@ -96,7 +102,7 @@ def icone_application() -> QIcon:
         p.setPen(QColor("white"))
         police = QFont("Segoe UI", int(taille * 0.55), QFont.Bold)
         p.setFont(police)
-        p.drawText(pixmap.rect(), Qt.AlignCenter, "S")
+        p.drawText(pixmap.rect(), Qt.AlignCenter, "W")
         p.end()
         icone.addPixmap(pixmap)
     return icone
@@ -129,6 +135,8 @@ class Travailleur(QThread):
 
 
 class VerificationMiseAJour(QThread):
+    """Interroge GitHub à propos d'une release plus récente que la version en cours."""
+
     disponible = Signal(object)
     erreur = Signal(str)
 
@@ -137,11 +145,13 @@ class VerificationMiseAJour(QThread):
             info = GitHubReleaseProvider().check(Version.parse(__version__))
             if info.is_available:
                 self.disponible.emit(info)
-        except Exception as error:
+        except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
             self.erreur.emit(f"Vérification de mise à jour impossible : {error}")
 
 
 class TelechargementMiseAJour(QThread):
+    """Récupère l'installateur Windows et son SHA-256 pour la release ciblée."""
+
     termine = Signal(object, str)
     erreur = Signal(str)
 
@@ -150,7 +160,6 @@ class TelechargementMiseAJour(QThread):
         self.release = release
 
     def run(self) -> None:
-        dossier = None
         try:
             installer = self.release.windows_installer()
             checksum = self.release.checksum_for(installer) if installer else None
@@ -163,7 +172,7 @@ class TelechargementMiseAJour(QThread):
                 fichier.unlink(missing_ok=True)
                 raise RuntimeError("Vérification SHA-256 échouée")
             self.termine.emit(fichier, str(dossier))
-        except Exception as error:
+        except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
             self.erreur.emit(f"Téléchargement de la mise à jour impossible : {error}")
 
 
@@ -211,6 +220,219 @@ class DialogueSupprimees(QDialog):
 
 
 # --------------------------------------------------------------------------- #
+# Dialogue des préférences
+# --------------------------------------------------------------------------- #
+
+class DialoguePreferences(QDialog):
+    """Édite la configuration. Les valeurs sont écrites sur `cfg` uniquement
+    quand l'utilisateur valide, via `appliquer()`. Cancel = tout est jeté."""
+
+    def __init__(self, parent, cfg: Config) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Préférences")
+        self.setMinimumSize(560, 420)
+        self.cfg = cfg
+
+        colonne = QVBoxLayout(self)
+        colonne.setContentsMargins(14, 14, 14, 14)
+        colonne.setSpacing(10)
+
+        # --- site WordPress -----------------------------------------------
+        boite = QGroupBox("Site WordPress")
+        ligne = QHBoxLayout(boite)
+        self.champ_site = QLineEdit(cfg.site)
+        self.champ_site.setPlaceholderText("https://exemple.com")
+        self.champ_site.setToolTip(
+            "URL du site WordPress compatible avec l'API REST utilisée.")
+        ligne.addWidget(self.champ_site, 1)
+        colonne.addWidget(boite)
+
+        # --- destination ---------------------------------------------------
+        boite = QGroupBox("Destination")
+        ligne = QHBoxLayout(boite)
+        self.champ_dossier = QLineEdit(cfg.dossier)
+        ligne.addWidget(self.champ_dossier, 1)
+        bouton = QPushButton("Parcourir…")
+        bouton.clicked.connect(self._choisir_dossier)
+        ligne.addWidget(bouton)
+        colonne.addWidget(boite)
+
+        # --- options -------------------------------------------------------
+        boite = QGroupBox("Options")
+        form = QFormLayout(boite)
+        form.setLabelAlignment(Qt.AlignLeft)
+
+        self.combo_intervalle = QComboBox()
+        self.combo_intervalle.addItems(list(INTERVALLES))
+        self.combo_intervalle.setCurrentText(cfg.libelle_intervalle)
+        form.addRow("Mise à jour :", self.combo_intervalle)
+
+        self.combo_classement = QComboBox()
+        self.combo_classement.addItems(list(CLASSEMENTS))
+        self.combo_classement.setCurrentText(cfg.libelle_classement)
+        self.combo_classement.setToolTip(
+            "Change la destination des nouvelles images. Les images déjà\n"
+            "téléchargées restent là où elles sont.")
+        form.addRow("Classement :", self.combo_classement)
+
+        self.spin_largeur = QSpinBox()
+        self.spin_largeur.setRange(0, 10000)
+        self.spin_largeur.setSingleStep(100)
+        self.spin_largeur.setSuffix(" px")
+        self.spin_largeur.setValue(cfg.largeur_min)
+        self.spin_largeur.setToolTip(
+            "Écarte les logos et vignettes sous cette largeur. 0 pour tout garder.")
+        form.addRow("Largeur minimale :", self.spin_largeur)
+
+        self.case_verifier = QCheckBox("Vérifier l'intégrité des fichiers existants")
+        self.case_verifier.setChecked(cfg.verifier_integrite)
+        self.case_verifier.setToolTip(
+            "Interroge le serveur sur chaque fichier connu (réponse 304 si identique).\n"
+            "Plus lent, à réserver à un contrôle ponctuel.")
+        form.addRow("", self.case_verifier)
+
+        self.case_diaporama = QCheckBox(
+            "Utiliser ce dossier pour le diaporama Windows")
+        self.case_diaporama.setChecked(cfg.diaporama_dossier)
+        self.case_diaporama.setEnabled(sys.platform == "win32")
+        self.case_diaporama.setToolTip(
+            "Configure le diaporama de fond d'écran Windows pour piocher\n"
+            "dans le dossier de téléchargement.")
+        form.addRow("", self.case_diaporama)
+
+        self.case_barre = QCheckBox("Réduire dans la zone de notification à la fermeture")
+        self.case_barre.setChecked(cfg.fermer_dans_barre)
+        form.addRow("", self.case_barre)
+
+        self.case_demarrage = QCheckBox("Lancer au démarrage de Windows")
+        self.case_demarrage.setChecked(demarrage_automatique_actif())
+        self.case_demarrage.setEnabled(sys.platform == "win32")
+        form.addRow("", self.case_demarrage)
+
+        colonne.addWidget(boite)
+        colonne.addStretch(1)
+
+        # --- boutons -------------------------------------------------------
+        boutons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        colonne.addWidget(boutons)
+
+    def _choisir_dossier(self) -> None:
+        choix = QFileDialog.getExistingDirectory(
+            self, "Où enregistrer les images ?",
+            self.champ_dossier.text() or str(Path.home()))
+        if choix:
+            self.champ_dossier.setText(choix)
+
+    def appliquer(self) -> str | None:
+        """Reporte les valeurs saisies sur la config, les valide, les sauve, et
+        propage aux intégrations système. Renvoie un message d'erreur non
+        bloquant ou None."""
+        c = self.cfg
+        c.site = self.champ_site.text().strip()
+        c.dossier = self.champ_dossier.text()
+        c.intervalle_heures = INTERVALLES.get(self.combo_intervalle.currentText(), 24)
+        c.classement = CLASSEMENTS.get(self.combo_classement.currentText(), "galerie")
+        c.largeur_min = self.spin_largeur.value()
+        c.verifier_integrite = self.case_verifier.isChecked()
+        c.diaporama_dossier = self.case_diaporama.isChecked()
+        c.fermer_dans_barre = self.case_barre.isChecked()
+        c.valider()
+        c.sauver()
+
+        problemes: list[str] = []
+        if sys.platform == "win32":
+            # démarrage automatique
+            voulu = self.case_demarrage.isChecked()
+            obtenu = demarrage_automatique(voulu)
+            if obtenu != voulu:
+                problemes.append(
+                    "Impossible de modifier le démarrage automatique de Windows.")
+            c.lancer_au_demarrage = obtenu
+            c.sauver()
+
+            # diaporama : on ne tente la configuration que si l'utilisateur le
+            # demande explicitement, et le crée avant, sinon le dossier vide
+            # empêcherait la construction du tableau d'images.
+            if c.diaporama_dossier:
+                dossier = Path(c.dossier).expanduser()
+                try:
+                    dossier.mkdir(parents=True, exist_ok=True)
+                except OSError as e:
+                    problemes.append(f"Dossier de destination inaccessible : {e}")
+                else:
+                    if not definir_dossier_diaporama(dossier):
+                        problemes.append(
+                            "Impossible de configurer le diaporama Windows "
+                            "(dossier vide ou COM indisponible).")
+                        c.diaporama_dossier = False
+                        c.sauver()
+        return "\n".join(problemes) if problemes else None
+
+
+# --------------------------------------------------------------------------- #
+# Dialogue « À propos »
+# --------------------------------------------------------------------------- #
+
+class DialogueAPropos(QDialog):
+    """Fenêtre d'information sur l'application."""
+
+    def __init__(self, parent) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("À propos de WpImageDownloader")
+        self.setFixedSize(440, 320)
+
+        colonne = QVBoxLayout(self)
+        colonne.setContentsMargins(20, 20, 20, 16)
+        colonne.setSpacing(8)
+
+        icone = QLabel()
+        icone.setPixmap(icone_application().pixmap(72, 72))
+        icone.setAlignment(Qt.AlignCenter)
+        colonne.addWidget(icone)
+
+        titre = QLabel("WpImageDownloader")
+        titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
+        titre.setAlignment(Qt.AlignCenter)
+        colonne.addWidget(titre)
+
+        version = QLabel(f"Version {__version__}")
+        version.setStyleSheet("color: #666;")
+        version.setAlignment(Qt.AlignCenter)
+        colonne.addWidget(version)
+
+        colonne.addSpacing(6)
+
+        desc = QLabel(
+            "Télécharge et synchronise en local les images publiées via l'API "
+            "REST WordPress d'un site.")
+        desc.setWordWrap(True)
+        desc.setAlignment(Qt.AlignCenter)
+        colonne.addWidget(desc)
+
+        lien = QLabel(f'<a href="{DEPOT_URL}">{DEPOT_URL}</a>')
+        lien.setOpenExternalLinks(True)
+        lien.setAlignment(Qt.AlignCenter)
+        colonne.addWidget(lien)
+
+        licence = QLabel(
+            "Distribué sous licence GNU GPL v3. Voir le fichier LICENSE.")
+        licence.setStyleSheet("color: #666; font-size: 11px;")
+        licence.setAlignment(Qt.AlignCenter)
+        licence.setWordWrap(True)
+        colonne.addWidget(licence)
+
+        colonne.addStretch(1)
+
+        boutons = QDialogButtonBox(QDialogButtonBox.Close, self)
+        boutons.rejected.connect(self.accept)
+        boutons.button(QDialogButtonBox.Close).clicked.connect(self.accept)
+        colonne.addWidget(boutons)
+
+
+# --------------------------------------------------------------------------- #
 # Fenêtre principale
 # --------------------------------------------------------------------------- #
 
@@ -219,8 +441,8 @@ class Fenetre(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"WpImageDownloader — Téléchargeur d'images {__version__}")
         self.setWindowIcon(icone_application())
-        self.resize(760, 600)
-        self.setMinimumSize(QSize(640, 500))
+        self.resize(760, 520)
+        self.setMinimumSize(QSize(600, 400))
 
         self.cfg = Config.charger()
         self.planificateur = Planificateur(self.cfg)
@@ -228,13 +450,13 @@ class Fenetre(QMainWindow):
         self.travailleur: Travailleur | None = None
         self.auto_en_cours = False
         self._quitter_demande = False
+        self.verification_mise_a_jour: VerificationMiseAJour | None = None
+        self.telechargement_mise_a_jour: TelechargementMiseAJour | None = None
 
+        self._construire_menu()
         self._construire()
-        self._charger_valeurs()
         self._construire_barre_notification()
-
-        self.verification_mise_a_jour = None
-        self.telechargement_mise_a_jour = None
+        self._appliquer_diaporama_au_demarrage()
 
         self.minuteur_echeance = QTimer(self)
         self.minuteur_echeance.timeout.connect(self._verifier_echeance)
@@ -244,26 +466,52 @@ class Fenetre(QMainWindow):
         self.minuteur_affichage.timeout.connect(self._rafraichir_echeance)
         self.minuteur_affichage.start(PERIODE_AFFICHAGE)
         self._rafraichir_echeance()
+
         if sys.platform == "win32":
             QTimer.singleShot(3000, self._verifier_mise_a_jour)
 
     # ------------------------------------------------------------------ UI --
 
+    def _construire_menu(self) -> None:
+        barre = self.menuBar()
+
+        menu_fichier = barre.addMenu("&Fichier")
+        self.action_maj = menu_fichier.addAction("&Mettre à jour maintenant")
+        self.action_maj.setShortcut(QKeySequence("Ctrl+R"))
+        self.action_maj.triggered.connect(self._lancer)
+
+        self.action_arreter_menu = menu_fichier.addAction("&Arrêter")
+        self.action_arreter_menu.setEnabled(False)
+        self.action_arreter_menu.triggered.connect(self._arreter)
+
+        menu_fichier.addSeparator()
+        action_ouvrir = menu_fichier.addAction("&Ouvrir le dossier")
+        action_ouvrir.triggered.connect(self._ouvrir_dossier)
+
+        menu_fichier.addSeparator()
+        action_supprimees = menu_fichier.addAction("&Images supprimées…")
+        action_supprimees.triggered.connect(self._gerer_supprimees)
+
+        self.action_supprimer_fond = menu_fichier.addAction("Supprimer ce &fond d'écran")
+        self.action_supprimer_fond.triggered.connect(self._supprimer_fond)
+        self.action_supprimer_fond.setEnabled(sys.platform == "win32")
+
+        menu_fichier.addSeparator()
+        action_quitter = menu_fichier.addAction("&Quitter")
+        action_quitter.setShortcut(QKeySequence("Ctrl+Q"))
+        action_quitter.triggered.connect(self._quitter)
+
+        menu_conf = barre.addMenu("&Configuration")
+        action_prefs = menu_conf.addAction("&Préférences…")
+        action_prefs.setShortcut(QKeySequence("Ctrl+,"))
+        action_prefs.triggered.connect(self._ouvrir_preferences)
+
+        menu_aide = barre.addMenu("&Aide")
+        action_apropos = menu_aide.addAction("&À propos…")
+        action_apropos.triggered.connect(self._ouvrir_apropos)
+
     def _construire(self) -> None:
         self.setStyleSheet(f"""
-            QGroupBox {{
-                font-weight: 600;
-                border: 1px solid #d0d0d0;
-                border-radius: 6px;
-                margin-top: 10px;
-                padding: 12px 10px 10px 10px;
-            }}
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                left: 10px;
-                padding: 0 4px;
-                color: {GRENAT};
-            }}
             QPushButton#principal {{
                 background: {GRENAT};
                 color: white;
@@ -281,6 +529,19 @@ class Fenetre(QMainWindow):
                 text-align: center;
             }}
             QProgressBar::chunk {{ background: {GRENAT}; border-radius: 3px; }}
+            QGroupBox {{
+                font-weight: 600;
+                border: 1px solid #d0d0d0;
+                border-radius: 6px;
+                margin-top: 10px;
+                padding: 12px 10px 10px 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+                color: {GRENAT};
+            }}
         """)
 
         central = QWidget()
@@ -293,83 +554,15 @@ class Fenetre(QMainWindow):
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
-        # --- source et destination ----------------------------------------
-        boite = QGroupBox("Site WordPress")
-        ligne = QHBoxLayout(boite)
-        self.champ_site = QLineEdit()
-        self.champ_site.setPlaceholderText("https://exemple.com")
-        self.champ_site.setToolTip(
-            "URL du site WordPress compatible avec l'API REST utilisée.")
-        self.champ_site.editingFinished.connect(self._sauver)
-        ligne.addWidget(self.champ_site, 1)
-        racine.addWidget(boite)
+        self.label_site = QLabel()
+        self.label_site.setStyleSheet("color: #666;")
+        self.label_site.setToolTip("Modifiable dans Configuration → Préférences…")
+        racine.addWidget(self.label_site)
 
-        # --- destination ---------------------------------------------------
-        boite = QGroupBox("Destination")
-        ligne = QHBoxLayout(boite)
-        self.champ_dossier = QLineEdit()
-        self.champ_dossier.editingFinished.connect(self._sauver)
-        ligne.addWidget(self.champ_dossier, 1)
-        bouton = QPushButton("Parcourir…")
-        bouton.clicked.connect(self._choisir_dossier)
-        ligne.addWidget(bouton)
-        bouton = QPushButton("Ouvrir")
-        bouton.clicked.connect(self._ouvrir_dossier)
-        ligne.addWidget(bouton)
-        racine.addWidget(boite)
-
-        # --- options -------------------------------------------------------
-        boite = QGroupBox("Options")
-        form = QFormLayout(boite)
-        form.setLabelAlignment(Qt.AlignLeft)
-
-        self.combo_intervalle = QComboBox()
-        self.combo_intervalle.addItems(list(INTERVALLES))
-        self.combo_intervalle.currentIndexChanged.connect(self._sauver)
-        form.addRow("Mise à jour :", self.combo_intervalle)
-
-        self.combo_classement = QComboBox()
-        self.combo_classement.addItems(list(CLASSEMENTS))
-        self.combo_classement.setToolTip(
-            "Change la destination des nouvelles images. Les images déjà\n"
-            "téléchargées restent là où elles sont.")
-        self.combo_classement.currentIndexChanged.connect(self._sauver)
-        form.addRow("Classement :", self.combo_classement)
-
-        self.spin_largeur = QSpinBox()
-        self.spin_largeur.setRange(0, 10000)
-        self.spin_largeur.setSingleStep(100)
-        self.spin_largeur.setSuffix(" px")
-        self.spin_largeur.setToolTip(
-            "Écarte les logos et vignettes sous cette largeur. 0 pour tout garder.")
-        self.spin_largeur.valueChanged.connect(self._sauver)
-        form.addRow("Largeur minimale :", self.spin_largeur)
-
-        self.case_verifier = QCheckBox("Vérifier l'intégrité des fichiers existants")
-        self.case_verifier.setToolTip(
-            "Interroge le serveur sur chaque fichier connu (réponse 304 si identique).\n"
-            "Plus lent, à réserver à un contrôle ponctuel.")
-        self.case_verifier.toggled.connect(self._sauver)
-        form.addRow("", self.case_verifier)
-
-        self.case_diaporama = QCheckBox(
-            "Utiliser ce dossier pour le diaporama Windows")
-        self.case_diaporama.setToolTip(
-            "Configure le diaporama Windows pour choisir les images dans le dossier de téléchargement.")
-        self.case_diaporama.toggled.connect(self._basculer_diaporama)
-        self.case_diaporama.setEnabled(sys.platform == "win32")
-        form.addRow("", self.case_diaporama)
-
-        self.case_barre = QCheckBox("Réduire dans la zone de notification à la fermeture")
-        self.case_barre.toggled.connect(self._sauver)
-        form.addRow("", self.case_barre)
-
-        self.case_demarrage = QCheckBox("Lancer au démarrage de Windows")
-        self.case_demarrage.toggled.connect(self._basculer_demarrage)
-        self.case_demarrage.setEnabled(sys.platform == "win32")
-        form.addRow("", self.case_demarrage)
-
-        racine.addWidget(boite)
+        self.label_dossier = QLabel()
+        self.label_dossier.setStyleSheet("color: #666;")
+        self.label_dossier.setToolTip("Modifiable dans Configuration → Préférences…")
+        racine.addWidget(self.label_dossier)
 
         # --- actions -------------------------------------------------------
         ligne = QHBoxLayout()
@@ -422,6 +615,8 @@ class Fenetre(QMainWindow):
         colonne.addWidget(self.journal)
         racine.addWidget(boite, 1)
 
+        self._rafraichir_bandeau()
+
     def _construire_barre_notification(self) -> None:
         self.tray = QSystemTrayIcon(icone_application(), self)
         self.tray.setToolTip("WpImageDownloader — Téléchargeur d'images")
@@ -431,17 +626,22 @@ class Fenetre(QMainWindow):
         self.action_afficher.triggered.connect(self._afficher)
         menu.addAction(self.action_afficher)
 
-        self.action_maj = QAction("Mettre à jour maintenant", self)
-        self.action_maj.triggered.connect(self._lancer)
-        menu.addAction(self.action_maj)
+        self.action_maj_tray = QAction("Mettre à jour maintenant", self)
+        self.action_maj_tray.triggered.connect(self._lancer)
+        menu.addAction(self.action_maj_tray)
 
-        self.action_supprimer_fond = QAction("Supprimer ce fond d'écran", self)
-        self.action_supprimer_fond.triggered.connect(self._supprimer_fond)
-        self.action_supprimer_fond.setEnabled(sys.platform == "win32")
-        menu.addAction(self.action_supprimer_fond)
+        self.action_supprimer_fond_tray = QAction("Supprimer ce fond d'écran", self)
+        self.action_supprimer_fond_tray.triggered.connect(self._supprimer_fond)
+        self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
+        menu.addAction(self.action_supprimer_fond_tray)
 
         action = QAction("Ouvrir le dossier", self)
         action.triggered.connect(self._ouvrir_dossier)
+        menu.addAction(action)
+        menu.addSeparator()
+
+        action = QAction("Préférences…", self)
+        action.triggered.connect(self._ouvrir_preferences)
         menu.addAction(action)
         menu.addSeparator()
 
@@ -453,41 +653,32 @@ class Fenetre(QMainWindow):
         self.tray.activated.connect(self._clic_barre)
         self.tray.show()
 
-    # -------------------------------------------------------- persistance --
+    def _rafraichir_bandeau(self) -> None:
+        """Rafraîchit les labels d'affichage du site et du dossier."""
+        self.label_site.setText(f"Site : {self.cfg.site or '—'}")
+        self.label_dossier.setText(f"Dossier : {self.cfg.dossier or '—'}")
 
-    def _charger_valeurs(self) -> None:
-        c = self.cfg
-        self._chargement = True
-        self.champ_site.setText(c.site)
-        self.champ_dossier.setText(c.dossier)
-        self.combo_intervalle.setCurrentText(c.libelle_intervalle)
-        self.combo_classement.setCurrentText(c.libelle_classement)
-        self.spin_largeur.setValue(c.largeur_min)
-        self.case_verifier.setChecked(c.verifier_integrite)
-        self.case_diaporama.setChecked(c.diaporama_dossier)
-        self.case_barre.setChecked(c.fermer_dans_barre)
-        self.case_demarrage.setChecked(demarrage_automatique_actif())
-        self._chargement = False
-        if c.diaporama_dossier and sys.platform == "win32":
-            definir_dossier_diaporama(Path(c.dossier).expanduser())
+    def _appliquer_diaporama_au_demarrage(self) -> None:
+        """Reconfigure le diaporama à chaque lancement si l'option est active
+        — le contenu du dossier peut avoir changé depuis la dernière fois."""
+        if sys.platform == "win32" and self.cfg.diaporama_dossier:
+            dossier = Path(self.cfg.dossier).expanduser()
+            if dossier.is_dir():
+                definir_dossier_diaporama(dossier)
 
-    def _sauver(self) -> None:
-        if getattr(self, "_chargement", False):
-            return
-        c = self.cfg
-        c.site = self.champ_site.text().strip()
-        c.dossier = self.champ_dossier.text()
-        c.intervalle_heures = INTERVALLES.get(self.combo_intervalle.currentText(), 24)
-        c.classement = CLASSEMENTS.get(self.combo_classement.currentText(), "galerie")
-        c.largeur_min = self.spin_largeur.value()
-        c.verifier_integrite = self.case_verifier.isChecked()
-        c.diaporama_dossier = self.case_diaporama.isChecked()
-        c.fermer_dans_barre = self.case_barre.isChecked()
-        c.valider()
-        c.sauver()
-        if c.diaporama_dossier and sys.platform == "win32":
-            definir_dossier_diaporama(Path(c.dossier).expanduser())
-        self._rafraichir_echeance()
+    # ------------------------------------------------------------ actions --
+
+    def _ouvrir_preferences(self) -> None:
+        dlg = DialoguePreferences(self, self.cfg)
+        if dlg.exec() == QDialog.Accepted:
+            probleme = dlg.appliquer()
+            self._rafraichir_bandeau()
+            self._rafraichir_echeance()
+            if probleme:
+                QMessageBox.warning(self, "Préférences", probleme)
+
+    def _ouvrir_apropos(self) -> None:
+        DialogueAPropos(self).exec()
 
     def _verifier_mise_a_jour(self) -> None:
         if self.verification_mise_a_jour and self.verification_mise_a_jour.isRunning():
@@ -495,7 +686,8 @@ class Fenetre(QMainWindow):
         self.verification_mise_a_jour = VerificationMiseAJour(self)
         self.verification_mise_a_jour.disponible.connect(self._mise_a_jour_disponible)
         self.verification_mise_a_jour.erreur.connect(self._ecrire)
-        self.verification_mise_a_jour.finished.connect(self.verification_mise_a_jour.deleteLater)
+        self.verification_mise_a_jour.finished.connect(
+            self.verification_mise_a_jour.deleteLater)
         self.verification_mise_a_jour.start()
 
     def _mise_a_jour_disponible(self, info) -> None:
@@ -517,7 +709,8 @@ class Fenetre(QMainWindow):
         self.telechargement_mise_a_jour = TelechargementMiseAJour(release)
         self.telechargement_mise_a_jour.termine.connect(self._mise_a_jour_telechargee)
         self.telechargement_mise_a_jour.erreur.connect(self._ecrire)
-        self.telechargement_mise_a_jour.finished.connect(self.telechargement_mise_a_jour.deleteLater)
+        self.telechargement_mise_a_jour.finished.connect(
+            self.telechargement_mise_a_jour.deleteLater)
         self.telechargement_mise_a_jour.start()
 
     def _mise_a_jour_telechargee(self, installer: Path, dossier: str) -> None:
@@ -529,55 +722,14 @@ class Fenetre(QMainWindow):
         except (OSError, ValueError, RuntimeError) as error:
             self._ecrire(f"Lancement de l'updater impossible : {error}")
 
-    def _basculer_diaporama(self, actif: bool) -> None:
-        if getattr(self, "_chargement", False):
-            return
-        if actif:
-            dossier = Path(self.champ_dossier.text()).expanduser()
-            dossier.mkdir(parents=True, exist_ok=True)
-            if not definir_dossier_diaporama(dossier):
-                self._chargement = True
-                self.case_diaporama.setChecked(False)
-                self._chargement = False
-                QMessageBox.warning(
-                    self, "Diaporama Windows",
-                    "Impossible de configurer le dossier du diaporama Windows.")
-                return
-        self.cfg.diaporama_dossier = actif
-        self.cfg.sauver()
-
-    def _basculer_demarrage(self, actif: bool) -> None:
-        if getattr(self, "_chargement", False):
-            return
-        obtenu = demarrage_automatique(actif)
-        if obtenu != actif:
-            self._chargement = True
-            self.case_demarrage.setChecked(obtenu)
-            self._chargement = False
-            self._ecrire("Impossible de modifier le démarrage automatique.")
-        self.cfg.lancer_au_demarrage = obtenu
-        self.cfg.sauver()
-
-    # ------------------------------------------------------------ actions --
-
-    def _choisir_dossier(self) -> None:
-        choix = QFileDialog.getExistingDirectory(
-            self, "Où enregistrer les images ?",
-            self.champ_dossier.text() or str(Path.home()))
-        if choix:
-            self.champ_dossier.setText(choix)
-            self._sauver()
-            if self.case_diaporama.isChecked():
-                definir_dossier_diaporama(Path(choix))
-
     def _ouvrir_dossier(self) -> None:
         try:
-            ouvrir_dossier(Path(self.champ_dossier.text()))
+            ouvrir_dossier(Path(self.cfg.dossier))
         except OSError as e:
             QMessageBox.warning(self, "Dossier inaccessible", str(e))
 
     def _gerer_supprimees(self) -> None:
-        dossier = Path(self.champ_dossier.text()).expanduser()
+        dossier = Path(self.cfg.dossier).expanduser()
         entrees = lister_supprimees(dossier)
         if not entrees:
             QMessageBox.information(
@@ -599,7 +751,7 @@ class Fenetre(QMainWindow):
                 "Fonction disponible uniquement sous Windows, avec un\n"
                 "diaporama de fond d'écran actif.")
             return
-        dossier = Path(self.champ_dossier.text()).expanduser()
+        dossier = Path(self.cfg.dossier).expanduser()
         # simple contrôle d'appartenance pour le message ; le moteur refera
         # sa propre vérification avant d'effacer quoi que ce soit
         try:
@@ -629,7 +781,7 @@ class Fenetre(QMainWindow):
     def _lancer(self, auto: bool = False) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        dossier = Path(self.champ_dossier.text()).expanduser()
+        dossier = Path(self.cfg.dossier).expanduser()
         try:
             dossier.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -640,17 +792,19 @@ class Fenetre(QMainWindow):
             QMessageBox.critical(self, "Dossier invalide", message)
             return
 
-        self._sauver()
         self.auto_en_cours = bool(auto)
         self.arret.clear()
         self.bouton_lancer.setEnabled(False)
         self.action_maj.setEnabled(False)
+        self.action_maj_tray.setEnabled(False)
         # le moteur réécrit le manifeste en fin de course : restaurer ou
         # supprimer pendant qu'il tourne perdrait la modification
         self.bouton_supprimees.setEnabled(False)
         self.bouton_supprimer_fond.setEnabled(False)
         self.action_supprimer_fond.setEnabled(False)
+        self.action_supprimer_fond_tray.setEnabled(False)
         self.bouton_arreter.setEnabled(True)
+        self.action_arreter_menu.setEnabled(True)
         self.barre.setRange(0, 0)          # indéterminé pendant l'inventaire
         self._ecrire(f"--- {datetime.now():%d/%m/%Y %H:%M} — début de la mise à jour")
 
@@ -671,6 +825,7 @@ class Fenetre(QMainWindow):
     def _arreter(self) -> None:
         self.arret.set()
         self.bouton_arreter.setEnabled(False)
+        self.action_arreter_menu.setEnabled(False)
         self.label_statut.setText("Arrêt en cours…")
 
     def _quitter(self) -> None:
@@ -696,10 +851,13 @@ class Fenetre(QMainWindow):
     def _terminer(self, res: Resultat) -> None:
         self.bouton_lancer.setEnabled(True)
         self.action_maj.setEnabled(True)
+        self.action_maj_tray.setEnabled(True)
         self.bouton_supprimees.setEnabled(True)
         self.bouton_supprimer_fond.setEnabled(sys.platform == "win32")
         self.action_supprimer_fond.setEnabled(sys.platform == "win32")
+        self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
         self.bouton_arreter.setEnabled(False)
+        self.action_arreter_menu.setEnabled(False)
         self.barre.setRange(0, 100)
         self.barre.setValue(0 if res.interrompu else 100)
 
@@ -767,7 +925,6 @@ class Fenetre(QMainWindow):
             self.arret.set()
             self.travailleur.wait(5000)
 
-        self._sauver()
         self.tray.hide()
         event.accept()
 
