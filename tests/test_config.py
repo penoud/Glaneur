@@ -82,6 +82,7 @@ class TestChargement:
         assert cfg.classement == "galerie"
         assert cfg.largeur_min == 800
         assert cfg.verifier_integrite is False
+        assert cfg.diaporama_dossier is False
         # dossier renseigné même sans fichier
         assert cfg.dossier
 
@@ -91,12 +92,14 @@ class TestChargement:
         c.intervalle_heures = 12
         c.largeur_min = 1200
         c.classement = "date"
+        c.diaporama_dossier = True
         c.sauver()
 
         c2 = Config.charger(chemin)
         assert c2.intervalle_heures == 12
         assert c2.largeur_min == 1200
         assert c2.classement == "date"
+        assert c2.diaporama_dossier is True
 
     def test_json_invalide_recharge_par_defaut(self, tmp_path):
         chemin = tmp_path / "c.json"

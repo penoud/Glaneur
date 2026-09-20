@@ -21,7 +21,10 @@ _RPC_E_CHANGED_MODE = 0x80010106
 # Indices dans la vtable : 0 = QueryInterface, 1 = AddRef, 2 = Release.
 _VT_RELEASE = 2
 _VT_GETWALLPAPER = 4
-_VT_ADVANCESLIDESHOW = 16
+_VT_GETMONITORDEVICEPATHAT = 5
+_VT_GETMONITORDEVICEPATHCOUNT = 6
+_VT_SET_SLIDESHOW = 10
+_VT_ADVANCESLIDESHOW = 14
 
 _DSD_FORWARD = 0
 
@@ -161,6 +164,79 @@ def _liberer_bureau(ptr, uninit: bool) -> None:
             pass
 
 
+def _creer_tableau_dossier(chemin: Path):
+    """Crée un IShellItemArray contenant le dossier donné, sous Windows."""
+    import ctypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", ctypes.c_uint32),
+            ("Data2", ctypes.c_uint16),
+            ("Data3", ctypes.c_uint16),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    iid_shell_item = GUID()
+    iid_shell_item_array = GUID()
+    ole32 = ctypes.windll.ole32
+    if ole32.IIDFromString(
+        "{43826D1E-E718-42EE-BC55-A1E261C37BFE}", ctypes.byref(iid_shell_item)
+    ) != 0 or ole32.IIDFromString(
+        "{B63EA76D-1F85-456F-A19C-48159EFA858B}",
+        ctypes.byref(iid_shell_item_array)
+    ) != 0:
+        return None, None
+
+    shell32 = ctypes.windll.shell32
+    item = ctypes.c_void_p()
+    shell32.SHCreateItemFromParsingName.argtypes = [
+        ctypes.c_wchar_p, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    shell32.SHCreateItemFromParsingName.restype = ctypes.c_long
+    hr = shell32.SHCreateItemFromParsingName(
+        str(chemin), None, ctypes.byref(iid_shell_item), ctypes.byref(item))
+    if hr != 0 or not item.value:
+        return None, None
+
+    tableau = ctypes.c_void_p()
+    shell32.SHCreateShellItemArrayFromShellItem.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
+    ]
+    shell32.SHCreateShellItemArrayFromShellItem.restype = ctypes.c_long
+    hr = shell32.SHCreateShellItemArrayFromShellItem(
+        item, ctypes.byref(iid_shell_item_array), ctypes.byref(tableau))
+    if hr != 0 or not tableau.value:
+        _liberer_bureau(item, False)
+        return None, None
+    return item, tableau
+
+
+def definir_dossier_diaporama(chemin: Path) -> bool:
+    """Configure le diaporama Windows pour utiliser `chemin` comme source."""
+    if sys.platform != "win32" or not chemin.is_dir():
+        return False
+    bureau, uninit = _instancier_bureau()
+    if bureau is None:
+        return False
+    item = tableau = None
+    try:
+        item, tableau = _creer_tableau_dossier(chemin)
+        if tableau is None:
+            return False
+        import ctypes
+        proto = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p)
+        return _appel_com(bureau, _VT_SET_SLIDESHOW, proto, tableau) == 0
+    except (OSError, AttributeError, TypeError):
+        return False
+    finally:
+        if tableau is not None:
+            _liberer_bureau(tableau, False)
+        if item is not None:
+            _liberer_bureau(item, False)
+        _liberer_bureau(bureau, uninit)
+
+
 def fond_ecran_actuel() -> Path | None:
     """Chemin de l'image affichée par le diaporama de fond d'écran Windows.
 
@@ -177,16 +253,38 @@ def fond_ecran_actuel() -> Path | None:
         proto = ctypes.WINFUNCTYPE(
             ctypes.c_long,
             ctypes.c_void_p,           # this
-            ctypes.c_wchar_p,          # monitorID (None = tous les écrans)
+            ctypes.c_wchar_p,          # monitorID
             ctypes.POINTER(ctypes.c_void_p),  # out ppwszWallpaper
         )
-        out = ctypes.c_void_p()
-        hr = _appel_com(ptr, _VT_GETWALLPAPER, proto, None, ctypes.byref(out))
-        if hr != 0 or not out.value:
-            return None
-        chemin = ctypes.wstring_at(out.value)
-        ctypes.windll.ole32.CoTaskMemFree(out)
-        return Path(chemin) if chemin else None
+        proto_count = ctypes.WINFUNCTYPE(
+            ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint))
+        count = ctypes.c_uint()
+        hr = _appel_com(ptr, _VT_GETMONITORDEVICEPATHCOUNT,
+                        proto_count, ctypes.byref(count))
+        monitor_ids = [None]
+        if hr == 0 and count.value:
+            proto_monitor = ctypes.WINFUNCTYPE(
+                ctypes.c_long, ctypes.c_void_p, ctypes.c_uint,
+                ctypes.POINTER(ctypes.c_void_p))
+            monitor_ids = []
+            for index in range(count.value):
+                monitor = ctypes.c_void_p()
+                if _appel_com(ptr, _VT_GETMONITORDEVICEPATHAT,
+                              proto_monitor, index, ctypes.byref(monitor)) == 0:
+                    if monitor.value:
+                        monitor_ids.append(ctypes.wstring_at(monitor.value))
+                        ctypes.windll.ole32.CoTaskMemFree(monitor)
+
+        for monitor_id in monitor_ids:
+            out = ctypes.c_void_p()
+            hr = _appel_com(ptr, _VT_GETWALLPAPER, proto, monitor_id,
+                            ctypes.byref(out))
+            if hr == 0 and out.value:
+                chemin = ctypes.wstring_at(out.value)
+                ctypes.windll.ole32.CoTaskMemFree(out)
+                if chemin:
+                    return Path(chemin)
+        return None
     except (OSError, AttributeError):
         return None
     finally:

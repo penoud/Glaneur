@@ -58,6 +58,7 @@ class Config:
     largeur_min: int = 800
     classement: str = "galerie"          # "galerie", "date" ou "plat"
     verifier_integrite: bool = False
+    diaporama_dossier: bool = False
     delai_requetes: float = 0.5
     derniere_execution: str = ""          # ISO 8601, alimenté par le planificateur
     lancer_au_demarrage: bool = False

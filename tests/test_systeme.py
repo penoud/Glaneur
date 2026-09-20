@@ -17,6 +17,7 @@ from WpImageDownloader.systeme import (
     commande_lancement,
     demarrage_automatique,
     demarrage_automatique_actif,
+    definir_dossier_diaporama,
     est_gele,
     fond_ecran_actuel,
 )
@@ -74,6 +75,9 @@ class TestDemarrageHorsWindows:
 @pytest.mark.skipif(sys.platform == "win32",
                     reason="hors Windows uniquement")
 class TestFondEcranHorsWindows:
+    def test_definir_dossier_diaporama_renvoie_false(self, tmp_path):
+        assert definir_dossier_diaporama(tmp_path) is False
+
     def test_fond_ecran_actuel_renvoie_none(self):
         assert fond_ecran_actuel() is None
 

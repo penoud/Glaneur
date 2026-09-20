@@ -59,6 +59,7 @@ from WpImageDownloader.systeme import (
     avancer_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,
+    definir_dossier_diaporama,
     fond_ecran_actuel,
     ouvrir_dossier,
 )
@@ -303,6 +304,14 @@ class Fenetre(QMainWindow):
         self.case_verifier.toggled.connect(self._sauver)
         form.addRow("", self.case_verifier)
 
+        self.case_diaporama = QCheckBox(
+            "Utiliser ce dossier pour le diaporama Windows")
+        self.case_diaporama.setToolTip(
+            "Configure le diaporama Windows pour choisir les images dans le dossier de téléchargement.")
+        self.case_diaporama.toggled.connect(self._basculer_diaporama)
+        self.case_diaporama.setEnabled(sys.platform == "win32")
+        form.addRow("", self.case_diaporama)
+
         self.case_barre = QCheckBox("Réduire dans la zone de notification à la fermeture")
         self.case_barre.toggled.connect(self._sauver)
         form.addRow("", self.case_barre)
@@ -407,6 +416,7 @@ class Fenetre(QMainWindow):
         self.combo_classement.setCurrentText(c.libelle_classement)
         self.spin_largeur.setValue(c.largeur_min)
         self.case_verifier.setChecked(c.verifier_integrite)
+        self.case_diaporama.setChecked(c.diaporama_dossier)
         self.case_barre.setChecked(c.fermer_dans_barre)
         self.case_demarrage.setChecked(demarrage_automatique_actif())
         self._chargement = False
@@ -421,10 +431,30 @@ class Fenetre(QMainWindow):
         c.classement = CLASSEMENTS.get(self.combo_classement.currentText(), "galerie")
         c.largeur_min = self.spin_largeur.value()
         c.verifier_integrite = self.case_verifier.isChecked()
+        c.diaporama_dossier = self.case_diaporama.isChecked()
         c.fermer_dans_barre = self.case_barre.isChecked()
         c.valider()
         c.sauver()
+        if c.diaporama_dossier and sys.platform == "win32":
+            definir_dossier_diaporama(Path(c.dossier).expanduser())
         self._rafraichir_echeance()
+
+    def _basculer_diaporama(self, actif: bool) -> None:
+        if getattr(self, "_chargement", False):
+            return
+        if actif:
+            dossier = Path(self.champ_dossier.text()).expanduser()
+            dossier.mkdir(parents=True, exist_ok=True)
+            if not definir_dossier_diaporama(dossier):
+                self._chargement = True
+                self.case_diaporama.setChecked(False)
+                self._chargement = False
+                QMessageBox.warning(
+                    self, "Diaporama Windows",
+                    "Impossible de configurer le dossier du diaporama Windows.")
+                return
+        self.cfg.diaporama_dossier = actif
+        self.cfg.sauver()
 
     def _basculer_demarrage(self, actif: bool) -> None:
         if getattr(self, "_chargement", False):
@@ -447,6 +477,8 @@ class Fenetre(QMainWindow):
         if choix:
             self.champ_dossier.setText(choix)
             self._sauver()
+            if self.case_diaporama.isChecked():
+                definir_dossier_diaporama(Path(choix))
 
     def _ouvrir_dossier(self) -> None:
         try:
