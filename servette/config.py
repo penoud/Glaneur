@@ -24,6 +24,13 @@ INTERVALLES: dict[str, int] = {
     "Une fois par semaine": 168,
 }
 
+# classements proposés dans l'interface : libellé -> valeur stockée
+CLASSEMENTS: dict[str, str] = {
+    "Par galerie": "galerie",
+    "Par date": "date",
+    "Tout dans un dossier": "plat",
+}
+
 
 def dossier_config() -> Path:
     if sys.platform == "win32":
@@ -48,7 +55,7 @@ class Config:
     dossier: str = ""
     intervalle_heures: int = 24
     largeur_min: int = 800
-    classement: str = "galerie"          # "galerie" ou "date"
+    classement: str = "galerie"          # "galerie", "date" ou "plat"
     verifier_integrite: bool = False
     delai_requetes: float = 0.5
     derniere_execution: str = ""          # ISO 8601, alimenté par le planificateur
@@ -97,7 +104,7 @@ class Config:
         if self.intervalle_heures not in INTERVALLES.values():
             self.intervalle_heures = 24
         self.largeur_min = max(0, min(int(self.largeur_min), 10000))
-        if self.classement not in ("galerie", "date"):
+        if self.classement not in CLASSEMENTS.values():
             self.classement = "galerie"
         # un délai trop court martèlerait le serveur du club
         self.delai_requetes = max(0.2, min(float(self.delai_requetes), 10.0))
@@ -108,3 +115,10 @@ class Config:
             if heures == self.intervalle_heures:
                 return libelle
         return "Une fois par jour"
+
+    @property
+    def libelle_classement(self) -> str:
+        for libelle, valeur in CLASSEMENTS.items():
+            if valeur == self.classement:
+                return libelle
+        return "Par galerie"

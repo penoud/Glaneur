@@ -14,8 +14,9 @@ import threading
 import time
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 from urllib.parse import urlparse
 
 import requests
@@ -33,7 +34,7 @@ class Interrompu(Exception):
 @dataclass
 class Options:
     dossier: Path
-    classement: str = "galerie"       # "galerie" ou "date"
+    classement: str = "galerie"       # "galerie", "date" ou "plat"
     largeur_min: int = 800
     delai: float = 0.5
     verifier: bool = False            # revalider les fichiers déjà présents
@@ -48,6 +49,8 @@ class Resultat:
     reprises: int = 0
     inchangees: int = 0
     deja_presentes: int = 0
+    supprimees: int = 0      # constatées disparues du disque à ce passage
+    ignorees: int = 0        # connues comme supprimées, plus retéléchargées
     echecs: int = 0
     octets: int = 0
     interrompu: bool = False
@@ -78,6 +81,59 @@ def format_octets(n: int) -> str:
             return f"{n:.0f} {unite}" if unite == "o" else f"{n:.1f} {unite}"
         n /= 1024
     return f"{n:.1f} Go"
+
+
+# --------------------------------------------------------------------------- #
+# Manifeste — fonctions libres, pour que l'UI le consulte sans instancier un moteur
+# --------------------------------------------------------------------------- #
+
+def chemin_manifeste(dossier: Path) -> Path:
+    return dossier / ".etat.json"
+
+
+def lire_manifeste(dossier: Path) -> dict:
+    chemin = chemin_manifeste(dossier)
+    if not chemin.exists():
+        return {}
+    try:
+        with open(chemin, encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
+    chemin = chemin_manifeste(dossier)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    tmp = chemin.with_suffix(".json.tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(manifeste, f, ensure_ascii=False, indent=1)
+    tmp.replace(chemin)
+
+
+def lister_supprimees(dossier: Path) -> list[dict]:
+    """Images téléchargées puis effacées du disque par l'utilisateur."""
+    manifeste = lire_manifeste(dossier)
+    entrees = [{"id": ident, **etat} for ident, etat in manifeste.items()
+               if etat.get("supprime")]
+    entrees.sort(key=lambda e: (e.get("supprime", ""), e.get("fichier", "")))
+    return entrees
+
+
+def restaurer(dossier: Path, ids: Iterable) -> int:
+    """Lève la marque de suppression : ces images repasseront dans la file."""
+    manifeste = lire_manifeste(dossier)
+    retablies = 0
+    for ident in ids:
+        etat = manifeste.get(str(ident))
+        if etat and etat.pop("supprime", None):
+            # la marque ne tombe qu'au téléchargement réussi, qui réécrit
+            # l'entrée : un échec réseau ne reclasse pas l'image en « supprimée »
+            etat["restaure"] = True
+            retablies += 1
+    if retablies:
+        ecrire_manifeste(dossier, manifeste)
+    return retablies
 
 
 # --------------------------------------------------------------------------- #
@@ -130,27 +186,16 @@ class Moteur:
 
     # -- manifeste ---------------------------------------------------------- #
 
-    def _chemin_manifeste(self) -> Path:
-        return self.o.dossier / ".etat.json"
-
     def charger_manifeste(self) -> dict:
-        chemin = self._chemin_manifeste()
-        if self.o.force or not chemin.exists():
+        if self.o.force or not chemin_manifeste(self.o.dossier).exists():
             return {}
-        try:
-            with open(chemin, encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, OSError):
+        manifeste = lire_manifeste(self.o.dossier)
+        if not manifeste:
             self._journal("Manifeste illisible, reconstruction complète.")
-            return {}
+        return manifeste
 
     def sauver_manifeste(self, manifeste: dict) -> None:
-        chemin = self._chemin_manifeste()
-        chemin.parent.mkdir(parents=True, exist_ok=True)
-        tmp = chemin.with_suffix(".json.tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(manifeste, f, ensure_ascii=False, indent=1)
-        tmp.replace(chemin)
+        ecrire_manifeste(self.o.dossier, manifeste)
 
     @staticmethod
     def fichier_complet(dest: Path, etat: dict | None, taille_api: int | None) -> bool:
@@ -252,10 +297,24 @@ class Moteur:
         return titres
 
     def dossier_pour(self, media: dict, titres: dict[int, str]) -> str:
+        """Sous-dossier relatif ; chaîne vide en classement plat."""
+        if self.o.classement == "plat":
+            return ""
         if self.o.classement == "date" or not media.get("post"):
             m = re.search(r"/uploads/(\d{4})/(\d{2})/", urlparse(media["source_url"]).path)
             return f"{m.group(1)}-{m.group(2)}" if m else "divers"
         return titres.get(media["post"]) or f"contenu-{media['post']}"
+
+    def chemin_libre(self, dest: Path, media_id: int, pris: set[str]) -> Path:
+        """WordPress ne dédoublonne les noms que dans un même dossier d'upload :
+        deux mois différents peuvent livrer un `match.jpg`, qui s'écraseraient
+        l'un l'autre une fois réunis à plat."""
+        relatif = str(dest.relative_to(self.o.dossier))
+        if relatif in pris:
+            dest = dest.with_name(f"{dest.stem}-{media_id}{dest.suffix}")
+            relatif = str(dest.relative_to(self.o.dossier))
+        pris.add(relatif)
+        return dest
 
     # -- téléchargement ----------------------------------------------------- #
 
@@ -333,18 +392,35 @@ class Moteur:
                 res.message = "Aucune image ne correspond aux critères."
                 return res
 
+            # noms déjà attribués, pour qu'une image n'en écrase pas une autre
+            pris = {e["fichier"] for e in manifeste.values() if e.get("fichier")}
+
             # tri : déjà sur le disque vs à traiter
             a_faire: list[tuple[dict, Path | None]] = []
             for m in medias:
                 etat = manifeste.get(str(m["id"]))
                 taille_api = (m.get("media_details") or {}).get("filesize")
                 connu = self.o.dossier / etat["fichier"] if etat and etat.get("fichier") else None
+
+                if etat and etat.get("supprime"):
+                    res.ignorees += 1
+                    continue
+                if (connu is not None and etat.get("taille") and not connu.exists()
+                        and not etat.get("restaure")):
+                    # déjà téléchargée puis disparue : l'utilisateur l'a effacée
+                    etat["supprime"] = datetime.now().isoformat(timespec="seconds")
+                    res.supprimees += 1
+                    continue
                 if connu and self.fichier_complet(connu, etat, taille_api) and not self.o.verifier:
+                    etat.pop("restaure", None)
                     res.deja_presentes += 1
                     continue
                 a_faire.append((m, connu))
 
             self._journal(f"{res.deja_presentes} déjà à jour, {len(a_faire)} à traiter.")
+            if res.supprimees:
+                self._journal(f"{res.supprimees} image(s) effacée(s) sur le disque, "
+                              "elles ne seront plus retéléchargées.")
             if not a_faire:
                 res.message = "Tout est déjà à jour."
                 self._progression(1, 1, res.message)
@@ -363,8 +439,11 @@ class Moteur:
                 if connu is not None:
                     fichier = connu
                 else:
-                    dossier = self.o.dossier / nettoyer(self.dossier_pour(m, titres))
-                    fichier = dossier / Path(urlparse(url).path).name
+                    sous = self.dossier_pour(m, titres)
+                    # nettoyer("") renverrait "divers" et créerait un dossier fantôme
+                    dossier = (self.o.dossier / nettoyer(sous)) if sous else self.o.dossier
+                    fichier = self.chemin_libre(
+                        dossier / Path(urlparse(url).path).name, m["id"], pris)
 
                 statut, infos = self.telecharger(url, fichier, etat)
 
