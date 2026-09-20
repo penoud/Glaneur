@@ -24,7 +24,7 @@ echo [4/4] Creation de l'installateur...
 where iscc >nul 2>nul
 if errorlevel 1 (
     echo    Inno Setup introuvable dans le PATH, etape ignoree.
-    echo    L'executable est disponible dans dist\ServetteDownloader\
+    echo    L'executable est disponible dans dist\WpImagerDownloader\
     goto :fin
 )
 iscc build\installer.iss || goto :erreur

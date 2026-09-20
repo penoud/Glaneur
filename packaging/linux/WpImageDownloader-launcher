@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /app/lib/WpImageDownloader/ServetteDownloader "$@"
+exec /app/lib/WpImageDownloader/WpImagerDownloader "$@"

@@ -15,7 +15,7 @@ modules:
 		buildsystem: simple
 		build-commands:
 			- install -d /app/lib/WpImageDownloader
-			- cp -a dist/ServetteDownloader/. /app/lib/WpImageDownloader/
+			- cp -a dist/WpImagerDownloader/. /app/lib/WpImageDownloader/
 			- install -Dm755 packaging/linux/WpImageDownloader-launcher /app/bin/WpImageDownloader
 			- install -Dm644 packaging/linux/WpImageDownloader.desktop /app/share/applications/org.wpimagedownloader.WpImageDownloader.desktop
 			- install -Dm644 packaging/linux/org.wpimagedownloader.WpImageDownloader.metainfo.xml /app/share/metainfo/org.wpimagedownloader.WpImageDownloader.metainfo.xml

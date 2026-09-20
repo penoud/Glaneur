@@ -3,7 +3,7 @@
 
     pyinstaller build/WpImageDownloader.spec --noconfirm --clean
 
-Produit dist/ServetteDownloader/ServetteDownloader.exe (mode dossier).
+Produit dist/WpImagerDownloader/WpImagerDownloader.exe (mode dossier).
 Le mode dossier est préféré au --onefile : démarrage plus rapide, et pas
 d'extraction dans %TEMP% à chaque lancement — ce qui compte d'autant plus
 avec Qt, dont le paquet est volumineux.
@@ -56,7 +56,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="ServetteDownloader",
+    name="WpImagerDownloader",
     debug=False,
     strip=False,
     upx=False,                 # UPX déclenche des faux positifs antivirus
@@ -72,5 +72,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="ServetteDownloader",
+    name="WpImagerDownloader",
 )

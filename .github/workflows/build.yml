@@ -18,7 +18,7 @@ jobs:
       - run: iscc build\installer.iss
       - uses: actions/upload-artifact@v4
         with:
-          name: ServetteDownloader-setup
+          name: WpImagerDownloader-setup
           path: build/Output/*.exe
 
   linux:

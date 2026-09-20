@@ -1,12 +1,12 @@
-; Installateur Inno Setup pour ServetteDownloader
+; Installateur Inno Setup pour WpImagerDownloader
 ; Compiler après PyInstaller :  iscc build\installer.iss
-; Produit : build\Output\ServetteDownloader-1.0.4-setup.exe
+; Produit : build\Output\WpImagerDownloader-1.0.4-setup.exe
 
-#define MonNom "Servette FC - Telechargeur d'images"
-#define MonNomCourt "ServetteDownloader"
+#define MonNom "WpImagerDownloader"
+#define MonNomCourt "WpImagerDownloader"
 #define MaVersion "1.0.4"
 #define MonEditeur "Projet personnel"
-#define MonExe "ServetteDownloader.exe"
+#define MonExe "WpImagerDownloader.exe"
 
 [Setup]
 AppId={{8F3C1A42-6B2E-4D91-9C07-2E5A7D44B118}
@@ -39,7 +39,7 @@ Name: "startup"; Description: "Lancer au démarrage de Windows (mise à jour en 
 
 [Files]
 ; le dossier produit par PyInstaller en mode COLLECT
-Source: "..\dist\ServetteDownloader\*"; DestDir: "{app}"; \
+Source: "..\dist\WpImagerDownloader\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]

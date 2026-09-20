@@ -13,7 +13,7 @@ mkdir -p "$PACKAGE/DEBIAN" \
     "$PACKAGE/usr/share/applications" \
     "$PACKAGE/usr/share/icons/hicolor/scalable/apps"
 
-cp -a "$ROOT/dist/ServetteDownloader/." "$PACKAGE/opt/WpImageDownloader/"
+cp -a "$ROOT/dist/WpImagerDownloader/." "$PACKAGE/opt/WpImageDownloader/"
 cp "$ROOT/packaging/linux/WpImageDownloader-launcher" "$PACKAGE/usr/bin/WpImageDownloader"
 cp "$ROOT/packaging/linux/WpImageDownloader.desktop" \
     "$PACKAGE/usr/share/applications/org.wpimagedownloader.WpImageDownloader.desktop"
