@@ -1,4 +1,4 @@
-"""Moteur de téléchargement des images de servettefc.ch.
+"""Moteur de téléchargement des images d'un site WordPress.
 
 Ce module ne connaît rien de l'interface : il communique par callbacks
 (`journal`, `progression`) et s'interrompt proprement via un threading.Event.
@@ -22,8 +22,6 @@ from urllib.parse import urlparse
 
 import requests
 
-BASE = "https://servettefc.ch"
-API = f"{BASE}/wp-json/wp/v2"
 PER_PAGE = 100
 UA = "Mozilla/5.0 (compatible; ServetteDownloader/1.0)"
 
@@ -35,6 +33,7 @@ class Interrompu(Exception):
 @dataclass
 class Options:
     dossier: Path
+    site: str = "https://servettefc.ch"
     classement: str = "galerie"       # "galerie", "date" ou "plat"
     largeur_min: int = 800
     delai: float = 0.5
@@ -207,6 +206,8 @@ class Moteur:
         arret: threading.Event | None = None,
     ) -> None:
         self.o = options
+        self.base = options.site.rstrip("/")
+        self.api = f"{self.base}/wp-json/wp/v2"
         self._journal = journal or (lambda msg: None)
         self._progression = progression or (lambda fait, total, etiquette: None)
         self.arret = arret or threading.Event()
@@ -227,7 +228,7 @@ class Moteur:
             time.sleep(min(0.1, max(0.0, fin - time.monotonic())))
 
     def _api(self, chemin: str, params: dict | None = None, essais: int = 3):
-        url = f"{API}/{chemin.lstrip('/')}"
+        url = f"{self.api}/{chemin.lstrip('/')}"
         derniere = None
         for tentative in range(essais):
             self._verifier_arret()

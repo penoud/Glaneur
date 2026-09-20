@@ -52,6 +52,7 @@ def dossier_images_defaut() -> Path:
 
 @dataclass
 class Config:
+    site: str = "https://servettefc.ch"
     dossier: str = ""
     intervalle_heures: int = 24
     largeur_min: int = 800

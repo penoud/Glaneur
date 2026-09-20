@@ -44,6 +44,7 @@ def main() -> int:
 
     options = Options(
         dossier=Path(args.dossier).expanduser(),
+        site=c.site,
         classement=args.classement,
         largeur_min=args.largeur_min,
         delai=args.delai,

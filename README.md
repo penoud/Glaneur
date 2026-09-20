@@ -1,7 +1,13 @@
-# Servette FC — Téléchargeur d'images
+# Téléchargeur d'images WordPress
 
-Application Windows qui synchronise en local les photos publiées sur
-`servettefc.ch`, via l'API REST WordPress du site. Elle tourne en arrière-plan,
+> **Disclaimer**
+>
+> Ce projet est personnel et indépendant. Il ne constitue pas un produit,
+> service ou partenariat officiel d'un site ciblé. Les noms et marques
+> éventuellement mentionnés sont utilisés uniquement à titre descriptif.
+
+Application Windows qui synchronise en local les images publiées sur un site
+WordPress compatible avec l'API REST utilisée. Elle tourne en arrière-plan,
 se met à jour à l'intervalle choisi et ne retélécharge jamais une image déjà
 présente.
 
@@ -24,13 +30,10 @@ servette-downloader/
 │   ├── config.py           Préférences persistées (JSON dans %APPDATA%)
 │   ├── engine.py           Moteur : API, manifeste, téléchargement, reprise
 │   ├── scheduler.py        Calcul d'échéance (logique pure, sans thread)
-│   └── systeme.py          Registre Windows, ouverture de dossier, fond d'écran
-├── tests/
-│   └── test_moteur.py      Tests pytest du moteur (supprimer_image, ignorées…)
+│   └── systeme.py          Registre Windows, ouverture de dossier
 └── build/
     ├── servette.spec       Recette PyInstaller
-    ├── installer.iss       Script Inno Setup
-    └── servette.ico        Icône (optionnelle, voir §5)
+    └── installer.iss       Script Inno Setup
 ```
 
 **Contrat du moteur.** `Moteur(options, journal, progression, arret).executer()`
@@ -104,17 +107,6 @@ a forcément été effacée par l'utilisateur : le manifeste la marque
 marque pour la remettre en file. `--force`, qui ignore le manifeste, efface
 aussi ces marques.
 
-**Supprimer le fond d'écran affiché (Windows uniquement).** Le bouton
-« Supprimer le fond actuel » — dupliqué en « Supprimer ce fond d'écran » dans
-le menu de la zone de notification, l'usage principal fenêtre masquée — lit
-l'image affichée via l'interface COM `IDesktopWallpaper` (`GetWallpaper`),
-l'efface définitivement du dossier suivi, pose la marque `supprime` dans le
-manifeste et fait avancer le diaporama à la photo suivante
-(`AdvanceSlideshow`). L'interface passe par ctypes brut, sans nouvelle
-dépendance ; hors Windows le bouton reste désactivé. `SPI_GETDESKWALLPAPER`
-n'est délibérément pas utilisé : sous diaporama il renverrait le cache
-TranscodedWallpaper, qui ne dit pas de quel original il provient.
-
 **Option « vérifier l'intégrité ».** Envoie une requête conditionnelle
 `If-None-Match` sur chaque fichier connu. Le serveur répond `304` sans
 transférer d'octets si sa copie est identique. Utile ponctuellement, inutile au
@@ -133,9 +125,14 @@ interrompue ne met pas à jour l'horodatage.
 Fichier : `%APPDATA%\ServetteDownloader\config.json`
 (`~/.config/servette-downloader/` ailleurs).
 
+L'interface propose un champ « Site WordPress » pour saisir l'URL du site à
+interroger. La valeur est sauvegardée avec les autres préférences et le moteur
+utilise automatiquement son endpoint `/wp-json/wp/v2`.
+
 | Clé | Rôle | Défaut |
 |---|---|---|
-| `dossier` | destination des images | `Mes images\Servette FC` |
+| `site` | URL du site WordPress cible | configurée dans l'application |
+| `dossier` | destination des images | dossier Images de l'utilisateur |
 | `intervalle_heures` | 0, 6, 12, 24 ou 168 | `24` |
 | `largeur_min` | seuil en pixels | `800` |
 | `classement` | `galerie`, `date` ou `plat` | `galerie` |
@@ -147,7 +144,17 @@ Fichier : `%APPDATA%\ServetteDownloader\config.json`
 
 Toute modification dans l'interface est sauvegardée immédiatement. Les valeurs
 hors bornes sont ramenées à des valeurs saines au chargement ; `delai_requetes`
-est plafonné à un minimum de 0,2 s pour ne pas marteler le serveur du club.
+est plafonné à un minimum de 0,2 s pour ne pas marteler le serveur cible.
+
+### Licence et contenus téléchargés
+
+Le code source de ce projet est distribué sous licence GNU GPL version 3 ou
+ultérieure. Voir le fichier [LICENSE](LICENSE).
+
+Cette licence couvre uniquement le code du projet. Elle ne couvre pas les
+images, vidéos, textes, logos ou autres contenus récupérés depuis les sites
+ciblés. Ces contenus restent soumis à leurs propres droits d'auteur, marques
+et conditions d'utilisation.
 
 ---
 
@@ -171,13 +178,12 @@ iscc build\installer.iss
 ```
 
 Résultats : `dist\ServetteDownloader\` puis
-`build\Output\ServetteDownloader-1.0.1-setup.exe`.
+`build\Output\ServetteDownloader-1.0.2-setup.exe`.
 
-**Icône.** Place un `servette.ico` dans `build\` (256×256, ICO
-multi-résolutions) et décommente `SetupIconFile` dans `installer.iss`. Sans ce
-fichier, l'application dessine à la volée un disque grenat marqué « S » : la
-zone de notification et la fenêtre restent correctes, seul l'exécutable garde
-l'icône Python par défaut.
+**Icône.** Aucun logo ou blason tiers n'est distribué dans le dépôt. Sans fichier
+ICO fourni séparément au moment du build, l'application dessine à la volée un
+disque grenat marqué « S » : la zone de notification et la fenêtre restent
+correctes, seul l'exécutable garde l'icône Python par défaut.
 
 **Taille.** Qt est volumineux. La liste `QT_INUTILES` du fichier `.spec`
 écarte QtWebEngine, Qt3D, QtQuick, QtMultimedia et une vingtaine d'autres
@@ -218,40 +224,7 @@ Pour diagnostiquer, `cli.py` affiche les mêmes messages sans passer par l'UI.
 
 ---
 
-## 7. Tests
-
-Les tests vivent dans `tests/` et se lancent avec pytest :
-
-```bash
-python -m pytest tests/                              # rapide
-python -m pytest tests/ -v                           # détaillé
-python -m coverage run --source=servette -m pytest   # avec couverture
-python -m coverage report -m                         # rapport
-```
-
-Un `conftest.py` à la racine rend le paquet `servette` importable sans
-installation. Aucun test n'a besoin du réseau ni des interfaces COM
-Windows : `_api`, `telecharger`, `session.get`, ainsi que
-`subprocess.Popen`/`os.startfile` sont mockés via `unittest.mock`. Les
-tests spécifiques à Windows (`fond_ecran_actuel` avec COM réel,
-`demarrage_automatique` avec `winreg`) sont marqués `skipif`.
-
-Répartition :
-
-| Fichier | Portée |
-|---|---|
-| `test_moteur.py` | utilitaires (`nettoyer`, `format_octets`), I/O du manifeste, `lister_supprimees`, `restaurer`, `supprimer_image` (avec les pièges `startswith`/antislash/OSError), méthodes du `Moteur` (`fichier_complet`, `dossier_pour`, `chemin_libre`, `_api` avec rejeu, `telecharger` incluant les cas 304/404/416/reprise/interruption, `lister_medias` avec pagination et déduplication, `resoudre_parents`, `executer` sur tous ses branches) |
-| `test_config.py` | chargement, sauvegarde atomique, validation, libellés, emplacements par plateforme |
-| `test_scheduler.py` | états `derniere`/`prochaine`/`echeance_atteinte`, formatage `texte_prochaine` en minutes/heures/jours |
-| `test_systeme.py` | comportement silencieux hors Windows, sélection de l'outil d'ouverture de dossier par plateforme |
-
-Couverture actuelle : ~99 % sur `engine.py`, 100 % sur `config.py`,
-98 % sur `scheduler.py`. Le solde de `systeme.py` (~55 %) est la partie
-COM Windows, testable uniquement sur cette plateforme.
-
----
-
-## 8. Pistes d'évolution
+## 7. Pistes d'évolution
 
 - **Tâche planifiée Windows** via `schtasks`, pour des mises à jour sans aucune
   application lancée. Le moteur est déjà utilisable en ligne de commande, il
@@ -265,12 +238,12 @@ COM Windows, testable uniquement sur cette plateforme.
 
 ---
 
-## 9. Droits d'usage
+## 8. Droits d'usage
 
-Les photographies appartiennent au Servette FC et à ses photographes ; le site
-porte la mention « tous droits réservés ». Cette application est prévue pour un
-usage personnel d'archivage. Toute republication ou usage commercial nécessite
-l'accord du club, qui dispose d'un formulaire de contact sur son site.
+Les contenus téléchargés appartiennent à leurs auteurs ou ayants droit et
+peuvent être soumis à des conditions d'utilisation propres au site ciblé.
+Cette application ne confère aucun droit de republication ou d'usage
+commercial.
 
 Le délai minimal entre requêtes n'est pas une option cosmétique : c'est ce qui
 distingue une synchronisation discrète d'une charge inutile sur un serveur qui

@@ -997,6 +997,11 @@ class TestChargerManifeste:
 # --------------------------------------------------------------------------- #
 
 class TestExecuterExtra:
+    def test_site_configurable_et_slash_final_normalise(self, tmp_path):
+        moteur = _moteur(tmp_path, site="https://example.test/")
+        assert moteur.base == "https://example.test"
+        assert moteur.api == "https://example.test/wp-json/wp/v2"
+
     def test_status_inchange_compte_dans_inchangees(self, tmp_path):
         # fichier connu à revérifier avec 304
         f = tmp_path / "ok.jpg"

@@ -8,3 +8,4 @@ htmlcov/
 build/Output/
 dist/
 *.spec.bak
+build/servette.ico

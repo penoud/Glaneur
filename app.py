@@ -244,6 +244,17 @@ class Fenetre(QMainWindow):
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
+        # --- source et destination ----------------------------------------
+        boite = QGroupBox("Site WordPress")
+        ligne = QHBoxLayout(boite)
+        self.champ_site = QLineEdit()
+        self.champ_site.setPlaceholderText("https://exemple.com")
+        self.champ_site.setToolTip(
+            "URL du site WordPress compatible avec l'API REST utilisée.")
+        self.champ_site.editingFinished.connect(self._sauver)
+        ligne.addWidget(self.champ_site, 1)
+        racine.addWidget(boite)
+
         # --- destination ---------------------------------------------------
         boite = QGroupBox("Destination")
         ligne = QHBoxLayout(boite)
@@ -390,6 +401,7 @@ class Fenetre(QMainWindow):
     def _charger_valeurs(self) -> None:
         c = self.cfg
         self._chargement = True
+        self.champ_site.setText(c.site)
         self.champ_dossier.setText(c.dossier)
         self.combo_intervalle.setCurrentText(c.libelle_intervalle)
         self.combo_classement.setCurrentText(c.libelle_classement)
@@ -403,6 +415,7 @@ class Fenetre(QMainWindow):
         if getattr(self, "_chargement", False):
             return
         c = self.cfg
+        c.site = self.champ_site.text().strip()
         c.dossier = self.champ_dossier.text()
         c.intervalle_heures = INTERVALLES.get(self.combo_intervalle.currentText(), 24)
         c.classement = CLASSEMENTS.get(self.combo_classement.currentText(), "galerie")
@@ -521,6 +534,7 @@ class Fenetre(QMainWindow):
 
         options = Options(
             dossier=dossier,
+            site=self.cfg.site,
             classement=self.cfg.classement,
             largeur_min=self.cfg.largeur_min,
             delai=self.cfg.delai_requetes,
