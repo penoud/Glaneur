@@ -23,9 +23,6 @@ jobs:
 
   linux:
     runs-on: ubuntu-22.04
-    env:
-      FLATPAK_USER_DIR: ${{ runner.temp }}/flatpak-user
-      XDG_DATA_HOME: ${{ runner.temp }}/xdg-data
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -43,14 +40,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
-          mkdir -p "$FLATPAK_USER_DIR" "$XDG_DATA_HOME"
-          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y flathub org.freedesktop.Sdk//24.08 org.freedesktop.Platform//24.08
+          sudo flatpak --system remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak --system install -y flathub org.freedesktop.Sdk//24.08 org.freedesktop.Platform//24.08
       - name: Build Flatpak bundle
         run: |
-          flatpak-builder --user --disable-rofiles-fuse --force-clean \
-            flatpak-build packaging/linux/org.wpimagedownloader.WpImageDownloader.yml
-          flatpak build-bundle "$FLATPAK_USER_DIR/repo" \
+          flatpak-builder --disable-rofiles-fuse --force-clean \
+            --repo=flatpak-repo flatpak-build \
+            packaging/linux/org.wpimagedownloader.WpImageDownloader.yml
+          flatpak build-bundle flatpak-repo \
             "dist/WpImageDownloader-${GITHUB_REF_NAME#v}.flatpak" \
             org.wpimagedownloader.WpImageDownloader
       - uses: actions/upload-artifact@v4

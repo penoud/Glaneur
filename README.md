@@ -214,6 +214,11 @@ bundle Flatpak (`.flatpak`). Ils contiennent le même exécutable PyInstaller qu
 la distribution Windows et sont générés automatiquement par GitHub Actions
 lorsqu'un tag de version est créé.
 
+En résumé, la construction installe les dépendances Python, compile l'application
+avec PyInstaller, puis l'empaquette selon le système cible : installateur Inno
+Setup sous Windows, paquet Debian et Flatpak sous Linux, archive `.zip` et image
+`.dmg` sous macOS. Les tests sont exécutés avant la publication des versions.
+
 Le même workflow produit une application macOS (`.app`) distribuée en archive
 `.zip` et en image disque `.dmg`.
 
