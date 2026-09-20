@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import threading
 import time
@@ -134,6 +135,63 @@ def restaurer(dossier: Path, ids: Iterable) -> int:
     if retablies:
         ecrire_manifeste(dossier, manifeste)
     return retablies
+
+
+def supprimer_image(dossier: Path, fichier: Path) -> bool:
+    """Efface `fichier` du disque et pose la marque `supprime` dans le manifeste.
+
+    Sans cette marque, la mise à jour suivante verrait l'image manquante et la
+    retéléchargerait : la suppression disque seule ne suffit pas.
+
+    Refuse (`False`) si `fichier` n'est pas à l'intérieur de `dossier` — une
+    fonction qui efface ne fait pas confiance à son appelant. La comparaison
+    passe par `realpath` + `normcase` puis `commonpath`, jamais par
+    `startswith` qui matcherait un dossier voisin de préfixe identique.
+    """
+    try:
+        base = os.path.normcase(os.path.realpath(str(dossier)))
+        cible = os.path.normcase(os.path.realpath(str(fichier)))
+    except OSError:
+        return False
+    try:
+        commun = os.path.commonpath([base, cible])
+    except ValueError:
+        return False   # lecteurs différents sous Windows
+    if commun != base or cible == base:
+        return False
+
+    # Chemin relatif à comparer aux entrées du manifeste. Un manifeste écrit
+    # sous Windows contient des antislashs ; on ramène les deux formes à un
+    # séparateur commun avant `normcase`.
+    try:
+        relatif = os.path.relpath(cible, base)
+    except ValueError:
+        return False
+    aiguille = os.path.normcase(relatif.replace("\\", "/"))
+
+    manifeste = lire_manifeste(dossier)
+    ident_trouve: str | None = None
+    for ident, etat in manifeste.items():
+        stocke = etat.get("fichier")
+        if not stocke:
+            continue
+        if os.path.normcase(str(stocke).replace("\\", "/")) == aiguille:
+            ident_trouve = ident
+            break
+
+    try:
+        Path(fichier).unlink()
+    except FileNotFoundError:
+        pass   # déjà absent : la marque est posée quand même
+    except OSError:
+        return False
+
+    if ident_trouve is not None:
+        entree = manifeste[ident_trouve]
+        entree["supprime"] = datetime.now().isoformat(timespec="seconds")
+        entree.pop("restaure", None)
+        ecrire_manifeste(dossier, manifeste)
+    return True
 
 
 # --------------------------------------------------------------------------- #

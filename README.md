@@ -24,7 +24,9 @@ servette-downloader/
 │   ├── config.py           Préférences persistées (JSON dans %APPDATA%)
 │   ├── engine.py           Moteur : API, manifeste, téléchargement, reprise
 │   ├── scheduler.py        Calcul d'échéance (logique pure, sans thread)
-│   └── systeme.py          Registre Windows, ouverture de dossier
+│   └── systeme.py          Registre Windows, ouverture de dossier, fond d'écran
+├── tests/
+│   └── test_moteur.py      Tests pytest du moteur (supprimer_image, ignorées…)
 └── build/
     ├── servette.spec       Recette PyInstaller
     ├── installer.iss       Script Inno Setup
@@ -102,6 +104,17 @@ a forcément été effacée par l'utilisateur : le manifeste la marque
 marque pour la remettre en file. `--force`, qui ignore le manifeste, efface
 aussi ces marques.
 
+**Supprimer le fond d'écran affiché (Windows uniquement).** Le bouton
+« Supprimer le fond actuel » — dupliqué en « Supprimer ce fond d'écran » dans
+le menu de la zone de notification, l'usage principal fenêtre masquée — lit
+l'image affichée via l'interface COM `IDesktopWallpaper` (`GetWallpaper`),
+l'efface définitivement du dossier suivi, pose la marque `supprime` dans le
+manifeste et fait avancer le diaporama à la photo suivante
+(`AdvanceSlideshow`). L'interface passe par ctypes brut, sans nouvelle
+dépendance ; hors Windows le bouton reste désactivé. `SPI_GETDESKWALLPAPER`
+n'est délibérément pas utilisé : sous diaporama il renverrait le cache
+TranscodedWallpaper, qui ne dit pas de quel original il provient.
+
 **Option « vérifier l'intégrité ».** Envoie une requête conditionnelle
 `If-None-Match` sur chaque fichier connu. Le serveur répond `304` sans
 transférer d'octets si sa copie est identique. Utile ponctuellement, inutile au
@@ -158,7 +171,7 @@ iscc build\installer.iss
 ```
 
 Résultats : `dist\ServetteDownloader\` puis
-`build\Output\ServetteDownloader-1.0.0-setup.exe`.
+`build\Output\ServetteDownloader-1.0.1-setup.exe`.
 
 **Icône.** Place un `servette.ico` dans `build\` (256×256, ICO
 multi-résolutions) et décommente `SetupIconFile` dans `installer.iss`. Sans ce
@@ -205,7 +218,27 @@ Pour diagnostiquer, `cli.py` affiche les mêmes messages sans passer par l'UI.
 
 ---
 
-## 7. Pistes d'évolution
+## 7. Tests
+
+Les tests du moteur vivent dans `tests/test_moteur.py` et se lancent avec
+pytest :
+
+```bash
+python -m pytest tests/
+```
+
+Ils couvrent en particulier `supprimer_image` : suppression normale,
+protection contre un fichier hors du dossier suivi (`commonpath` sur les
+`realpath` normalisés — pas un `startswith` naïf, qui matcherait un dossier
+voisin de préfixe identique), tolérance à un manifeste écrit sous Windows
+(antislashs) et vérification qu'une image marquée `supprime` n'est pas
+retéléchargée au passage suivant du moteur. Les tests n'ont besoin ni du
+réseau, ni des interfaces COM Windows — `_api` et `telecharger` sont
+mockés via `unittest.mock`.
+
+---
+
+## 8. Pistes d'évolution
 
 - **Tâche planifiée Windows** via `schtasks`, pour des mises à jour sans aucune
   application lancée. Le moteur est déjà utilisable en ligne de commande, il
@@ -219,7 +252,7 @@ Pour diagnostiquer, `cli.py` affiche les mêmes messages sans passer par l'UI.
 
 ---
 
-## 8. Droits d'usage
+## 9. Droits d'usage
 
 Les photographies appartiennent au Servette FC et à ses photographes ; le site
 porte la mention « tous droits réservés ». Cette application est prévue pour un

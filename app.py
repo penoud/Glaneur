@@ -9,6 +9,7 @@ touché depuis le thread de travail.
 
 from __future__ import annotations
 
+import os
 import sys
 import threading
 from datetime import datetime
@@ -51,11 +52,14 @@ from servette.engine import (
     format_octets,
     lister_supprimees,
     restaurer,
+    supprimer_image,
 )
 from servette.scheduler import Planificateur
 from servette.systeme import (
+    avancer_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,
+    fond_ecran_actuel,
     ouvrir_dossier,
 )
 
@@ -311,6 +315,14 @@ class Fenetre(QMainWindow):
         self.bouton_arreter.clicked.connect(self._arreter)
         ligne.addWidget(self.bouton_arreter)
 
+        self.bouton_supprimer_fond = QPushButton("Supprimer le fond actuel")
+        self.bouton_supprimer_fond.setToolTip(
+            "Efface l'image actuellement affichée par le diaporama Windows\n"
+            "et l'exclut des prochaines mises à jour.")
+        self.bouton_supprimer_fond.clicked.connect(self._supprimer_fond)
+        self.bouton_supprimer_fond.setEnabled(sys.platform == "win32")
+        ligne.addWidget(self.bouton_supprimer_fond)
+
         self.bouton_supprimees = QPushButton("Images supprimées…")
         self.bouton_supprimees.setToolTip(
             "Images effacées du dossier, que l'application ne retélécharge plus.")
@@ -354,6 +366,11 @@ class Fenetre(QMainWindow):
         self.action_maj = QAction("Mettre à jour maintenant", self)
         self.action_maj.triggered.connect(self._lancer)
         menu.addAction(self.action_maj)
+
+        self.action_supprimer_fond = QAction("Supprimer ce fond d'écran", self)
+        self.action_supprimer_fond.triggered.connect(self._supprimer_fond)
+        self.action_supprimer_fond.setEnabled(sys.platform == "win32")
+        menu.addAction(self.action_supprimer_fond)
 
         action = QAction("Ouvrir le dossier", self)
         action.triggered.connect(self._ouvrir_dossier)
@@ -438,6 +455,42 @@ class Fenetre(QMainWindow):
         n = restaurer(dossier, dialogue.choix())
         self._ecrire(f"{n} image(s) seront retéléchargées à la prochaine mise à jour.")
 
+    def _supprimer_fond(self) -> None:
+        fond = fond_ecran_actuel()
+        if fond is None:
+            QMessageBox.information(
+                self, "Fond d'écran",
+                "Impossible de déterminer l'image actuellement affichée.\n"
+                "Fonction disponible uniquement sous Windows, avec un\n"
+                "diaporama de fond d'écran actif.")
+            return
+        dossier = Path(self.champ_dossier.text()).expanduser()
+        # simple contrôle d'appartenance pour le message ; le moteur refera
+        # sa propre vérification avant d'effacer quoi que ce soit
+        try:
+            base = os.path.normcase(os.path.realpath(str(dossier)))
+            cible = os.path.normcase(os.path.realpath(str(fond)))
+            interne = os.path.commonpath([base, cible]) == base
+        except (OSError, ValueError):
+            interne = False
+        if not interne:
+            QMessageBox.information(
+                self, "Fond d'écran hors du dossier suivi",
+                f"L'image affichée n'appartient pas au dossier suivi :\n{fond}\n\n"
+                "Rien n'a été supprimé.")
+            return
+        reponse = QMessageBox.question(
+            self, "Supprimer le fond actuel",
+            f"Supprimer définitivement cette image ?\n{fond}\n\n"
+            "Elle ne sera plus retéléchargée par les mises à jour suivantes.")
+        if reponse != QMessageBox.Yes:
+            return
+        if supprimer_image(dossier, fond):
+            avancer_diaporama()
+            self._ecrire(f"Fond d'écran supprimé : {fond}")
+        else:
+            self._ecrire(f"Échec de suppression du fond : {fond}")
+
     def _lancer(self, auto: bool = False) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
@@ -457,9 +510,11 @@ class Fenetre(QMainWindow):
         self.arret.clear()
         self.bouton_lancer.setEnabled(False)
         self.action_maj.setEnabled(False)
-        # le moteur réécrit le manifeste en fin de course : restaurer pendant
-        # qu'il tourne perdrait la modification
+        # le moteur réécrit le manifeste en fin de course : restaurer ou
+        # supprimer pendant qu'il tourne perdrait la modification
         self.bouton_supprimees.setEnabled(False)
+        self.bouton_supprimer_fond.setEnabled(False)
+        self.action_supprimer_fond.setEnabled(False)
         self.bouton_arreter.setEnabled(True)
         self.barre.setRange(0, 0)          # indéterminé pendant l'inventaire
         self._ecrire(f"--- {datetime.now():%d/%m/%Y %H:%M} — début de la mise à jour")
@@ -506,6 +561,8 @@ class Fenetre(QMainWindow):
         self.bouton_lancer.setEnabled(True)
         self.action_maj.setEnabled(True)
         self.bouton_supprimees.setEnabled(True)
+        self.bouton_supprimer_fond.setEnabled(sys.platform == "win32")
+        self.action_supprimer_fond.setEnabled(sys.platform == "win32")
         self.bouton_arreter.setEnabled(False)
         self.barre.setRange(0, 100)
         self.barre.setValue(0 if res.interrompu else 100)

@@ -1,10 +1,10 @@
 ; Installateur Inno Setup pour ServetteDownloader
 ; Compiler après PyInstaller :  iscc build\installer.iss
-; Produit : build\Output\ServetteDownloader-1.0.0-setup.exe
+; Produit : build\Output\ServetteDownloader-1.0.1-setup.exe
 
 #define MonNom "Servette FC - Telechargeur d'images"
 #define MonNomCourt "ServetteDownloader"
-#define MaVersion "1.0.0"
+#define MaVersion "1.0.1"
 #define MonEditeur "Projet personnel"
 #define MonExe "ServetteDownloader.exe"
 
