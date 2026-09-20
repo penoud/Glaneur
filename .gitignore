@@ -3,6 +3,8 @@ __pycache__/
 *.pyo
 .pytest_cache/
 .venv/
+.coverage
+htmlcov/
 build/Output/
 dist/
 *.spec.bak

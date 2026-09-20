@@ -220,21 +220,34 @@ Pour diagnostiquer, `cli.py` affiche les mêmes messages sans passer par l'UI.
 
 ## 7. Tests
 
-Les tests du moteur vivent dans `tests/test_moteur.py` et se lancent avec
-pytest :
+Les tests vivent dans `tests/` et se lancent avec pytest :
 
 ```bash
-python -m pytest tests/
+python -m pytest tests/                              # rapide
+python -m pytest tests/ -v                           # détaillé
+python -m coverage run --source=servette -m pytest   # avec couverture
+python -m coverage report -m                         # rapport
 ```
 
-Ils couvrent en particulier `supprimer_image` : suppression normale,
-protection contre un fichier hors du dossier suivi (`commonpath` sur les
-`realpath` normalisés — pas un `startswith` naïf, qui matcherait un dossier
-voisin de préfixe identique), tolérance à un manifeste écrit sous Windows
-(antislashs) et vérification qu'une image marquée `supprime` n'est pas
-retéléchargée au passage suivant du moteur. Les tests n'ont besoin ni du
-réseau, ni des interfaces COM Windows — `_api` et `telecharger` sont
-mockés via `unittest.mock`.
+Un `conftest.py` à la racine rend le paquet `servette` importable sans
+installation. Aucun test n'a besoin du réseau ni des interfaces COM
+Windows : `_api`, `telecharger`, `session.get`, ainsi que
+`subprocess.Popen`/`os.startfile` sont mockés via `unittest.mock`. Les
+tests spécifiques à Windows (`fond_ecran_actuel` avec COM réel,
+`demarrage_automatique` avec `winreg`) sont marqués `skipif`.
+
+Répartition :
+
+| Fichier | Portée |
+|---|---|
+| `test_moteur.py` | utilitaires (`nettoyer`, `format_octets`), I/O du manifeste, `lister_supprimees`, `restaurer`, `supprimer_image` (avec les pièges `startswith`/antislash/OSError), méthodes du `Moteur` (`fichier_complet`, `dossier_pour`, `chemin_libre`, `_api` avec rejeu, `telecharger` incluant les cas 304/404/416/reprise/interruption, `lister_medias` avec pagination et déduplication, `resoudre_parents`, `executer` sur tous ses branches) |
+| `test_config.py` | chargement, sauvegarde atomique, validation, libellés, emplacements par plateforme |
+| `test_scheduler.py` | états `derniere`/`prochaine`/`echeance_atteinte`, formatage `texte_prochaine` en minutes/heures/jours |
+| `test_systeme.py` | comportement silencieux hors Windows, sélection de l'outil d'ouverture de dossier par plateforme |
+
+Couverture actuelle : ~99 % sur `engine.py`, 100 % sur `config.py`,
+98 % sur `scheduler.py`. Le solde de `systeme.py` (~55 %) est la partie
+COM Windows, testable uniquement sur cette plateforme.
 
 ---
 
