@@ -14,8 +14,41 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
       - run: pyinstaller build\WpImageDownloader.spec --noconfirm --clean
+      - name: Sign application when certificate is configured
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64)) {
+            Write-Warning "WINDOWS_PFX_BASE64 is not configured; the Windows build will be unsigned."
+            exit 0
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP "WpImagerDownloader.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found on the runner." }
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:WINDOWS_PFX_PASSWORD "dist\WpImagerDownloader\WpImagerDownloader.exe"
+          Remove-Item $pfx -Force
       - run: choco install innosetup --no-progress -y
       - run: iscc build\installer.iss
+      - name: Sign installer when certificate is configured
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64)) { exit 0 }
+          $pfx = Join-Path $env:RUNNER_TEMP "WpImagerDownloader.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if ($null -eq $signtool) { throw "signtool.exe was not found on the runner." }
+          $installer = Get-ChildItem "build\Output\WpImagerDownloader-*-setup.exe" | Select-Object -First 1
+          if ($null -eq $installer) { throw "The Windows installer was not found." }
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:WINDOWS_PFX_PASSWORD $installer.FullName
+          Remove-Item $pfx -Force
       - uses: actions/upload-artifact@v4
         with:
           name: WpImagerDownloader-setup

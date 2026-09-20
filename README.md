@@ -186,6 +186,15 @@ ICO fourni séparément au moment du build, l'application dessine à la volée u
 disque grenat marqué « S » : la zone de notification et la fenêtre restent
 correctes, seul l'exécutable garde l'icône Python par défaut.
 
+**Signature Windows.** Les exécutables PyInstaller non signés peuvent être
+classés à tort comme suspects par Microsoft Defender, notamment lors des
+premières publications. Pour obtenir un installateur reconnu, le workflow
+Windows signe l'exécutable et l'installateur lorsqu'un certificat Authenticode
+est fourni dans les secrets GitHub `WINDOWS_PFX_BASE64` et
+`WINDOWS_PFX_PASSWORD`. Sans ces secrets, la construction reste possible mais
+les avertissements Defender/SmartScreen ne peuvent pas être évités de manière
+fiable.
+
 **Taille.** Qt est volumineux. La liste `QT_INUTILES` du fichier `.spec`
 écarte QtWebEngine, Qt3D, QtQuick, QtMultimedia et une vingtaine d'autres
 modules dont l'application n'a que faire : la distribution passe d'environ
