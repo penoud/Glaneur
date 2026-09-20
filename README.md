@@ -207,6 +207,16 @@ celle de l'application écrit une entrée dans
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. Les deux passent
 l'argument `--reduit`, qui lance l'application en fenêtre réduite.
 
+### Paquets Linux
+
+Les versions publiées construisent également un paquet Debian (`.deb`) et un
+bundle Flatpak (`.flatpak`). Ils contiennent le même exécutable PyInstaller que
+la distribution Windows et sont générés automatiquement par GitHub Actions
+lorsqu'un tag de version est créé.
+
+Le même workflow produit une application macOS (`.app`) distribuée en archive
+`.zip` et en image disque `.dmg`.
+
 ---
 
 ## 6. Dépannage

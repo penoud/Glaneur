@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.wpimagedownloader.WpImageDownloader</id>
+  <name>WP Image Downloader</name>
+  <summary>Synchronise les images d'un site WordPress</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>Application de bureau pour synchroniser les images d'une médiathèque WordPress compatible avec son API REST.</p>
+  </description>
+  <launchable type="desktop-id">WpImageDownloader.desktop</launchable>
+  <developer id="org.wpimagedownloader">
+    <name>WP Image Downloader contributors</name>
+  </developer>
+  <content_rating type="oars-1.1" />
+</component>

@@ -92,6 +92,14 @@ Config.site
 - [ ] Revoir les fichiers et URLs historiques avant publication finale.
 - [ ] Commit de publication a effectuer par le mainteneur.
 
+## US-09 - Packaging Linux
+
+- [x] Ajouter le paquet Debian (`.deb`).
+- [x] Ajouter le manifeste Flatpak et son lanceur.
+- [x] Ajouter les métadonnées desktop et l'icône Linux.
+- [x] Construire les paquets Linux dans GitHub Actions sur les tags.
+- [x] Ajouter une application macOS (`.app`, `.zip` et `.dmg`).
+
 ## Definition of Done
 
 Le sprint est pret lorsque :
