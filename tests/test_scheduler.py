@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from servette.config import Config
-from servette.scheduler import Planificateur
+from WpImageDownloader.config import Config
+from WpImageDownloader.scheduler import Planificateur
 
 
 def _cfg(tmp_path, **kw):

@@ -15,7 +15,8 @@ présente.
 
 ## 1. Architecture
 
-Le découpage sépare strictement le moteur de l'interface : `servette/engine.py`
+Le découpage sépare strictement le moteur de l'interface :
+`WpImageDownloader/engine.py`
 n'importe rien de Tkinter et communique par callbacks. On peut donc le piloter
 depuis l'UI, depuis `cli.py`, ou depuis un futur service Windows sans rien
 réécrire.
@@ -26,13 +27,13 @@ servette-downloader/
 ├── cli.py                  Interface ligne de commande (mêmes fonctions)
 ├── requirements.txt
 ├── build.bat               Construction complète en une commande
-├── servette/
+├── WpImageDownloader/
 │   ├── config.py           Préférences persistées (JSON dans %APPDATA%)
 │   ├── engine.py           Moteur : API, manifeste, téléchargement, reprise
 │   ├── scheduler.py        Calcul d'échéance (logique pure, sans thread)
 │   └── systeme.py          Registre Windows, ouverture de dossier
 └── build/
-    ├── servette.spec       Recette PyInstaller
+    ├── WpImageDownloader.spec Recette PyInstaller
     └── installer.iss       Script Inno Setup
 ```
 
@@ -173,7 +174,7 @@ si `iscc.exe` est dans le PATH.
 
 ```bat
 pip install pyinstaller
-pyinstaller build\servette.spec --noconfirm --clean
+pyinstaller build\WpImageDownloader.spec --noconfirm --clean
 iscc build\installer.iss
 ```
 

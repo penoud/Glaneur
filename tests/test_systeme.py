@@ -11,8 +11,8 @@ import sys
 
 import pytest
 
-from servette import systeme
-from servette.systeme import (
+from WpImageDownloader import systeme
+from WpImageDownloader.systeme import (
     avancer_diaporama,
     commande_lancement,
     demarrage_automatique,
@@ -141,7 +141,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         cible = tmp_path / "pas-encore"
         monkeypatch.setattr(sys, "platform", "linux")
-        monkeypatch.setattr("servette.systeme.subprocess.Popen",
+        monkeypatch.setattr("WpImageDownloader.systeme.subprocess.Popen",
                             MagicMock(return_value=None))
         systeme.ouvrir_dossier(cible)
         assert cible.is_dir()
@@ -160,7 +160,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "darwin")
         popen = MagicMock()
-        monkeypatch.setattr("servette.systeme.subprocess.Popen", popen)
+        monkeypatch.setattr("WpImageDownloader.systeme.subprocess.Popen", popen)
         systeme.ouvrir_dossier(tmp_path)
         args = popen.call_args.args[0]
         assert args[0] == "open"
@@ -169,7 +169,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "linux")
         popen = MagicMock()
-        monkeypatch.setattr("servette.systeme.subprocess.Popen", popen)
+        monkeypatch.setattr("WpImageDownloader.systeme.subprocess.Popen", popen)
         systeme.ouvrir_dossier(tmp_path)
         args = popen.call_args.args[0]
         assert args[0] == "xdg-open"

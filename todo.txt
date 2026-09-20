@@ -87,7 +87,7 @@ Config.site
 - [x] Decrire le projet comme un telechargeur WordPress configurable.
 - [x] Documenter la distinction entre code et contenus telecharges.
 - [x] Verifier l'absence de fichiers image dans le depot.
-- [x] Verifier l'absence de constante de site dans `servette/engine.py`.
+- [x] Verifier l'absence de constante de site dans `WpImageDownloader/engine.py`.
 - [x] Verifier les espaces et fins de ligne avec `git diff --check`.
 - [ ] Revoir les fichiers et URLs historiques avant publication finale.
 - [ ] Commit de publication a effectuer par le mainteneur.

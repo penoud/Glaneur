@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from servette.config import (
+from WpImageDownloader.config import (
     CLASSEMENTS,
     INTERVALLES,
     Config,

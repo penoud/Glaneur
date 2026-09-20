@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from servette.engine import (
+from WpImageDownloader.engine import (
     Interrompu,
     Moteur,
     Options,

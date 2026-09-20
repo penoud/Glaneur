@@ -18,7 +18,7 @@ python -m pip install pyinstaller --quiet || goto :erreur
 
 echo [3/4] Compilation de l'executable...
 rmdir /s /q dist 2>nul
-pyinstaller build\servette.spec --noconfirm --clean || goto :erreur
+pyinstaller build\WpImageDownloader.spec --noconfirm --clean || goto :erreur
 
 echo [4/4] Creation de l'installateur...
 where iscc >nul 2>nul

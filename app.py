@@ -43,9 +43,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from servette import __version__
-from servette.config import CLASSEMENTS, INTERVALLES, Config
-from servette.engine import (
+from WpImageDownloader import __version__
+from WpImageDownloader.config import CLASSEMENTS, INTERVALLES, Config
+from WpImageDownloader.engine import (
     Moteur,
     Options,
     Resultat,
@@ -54,8 +54,8 @@ from servette.engine import (
     restaurer,
     supprimer_image,
 )
-from servette.scheduler import Planificateur
-from servette.systeme import (
+from WpImageDownloader.scheduler import Planificateur
+from WpImageDownloader.systeme import (
     avancer_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,

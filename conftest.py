@@ -1,4 +1,4 @@
-"""Rend le paquet `servette` importable pendant les tests."""
+"""Rend le paquet `WpImageDownloader` importable pendant les tests."""
 
 import sys
 from pathlib import Path

@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 """Recette PyInstaller pour l'application PySide6.
 
-    pyinstaller build/servette.spec --noconfirm --clean
+    pyinstaller build/WpImageDownloader.spec --noconfirm --clean
 
 Produit dist/ServetteDownloader/ServetteDownloader.exe (mode dossier).
 Le mode dossier est préféré au --onefile : démarrage plus rapide, et pas
@@ -38,8 +38,8 @@ a = Analysis(
     pathex=[str(RACINE)],
     binaries=[],
     datas=[(str(ICONE), "build")] if ICONE.exists() else [],
-    hiddenimports=["servette.config", "servette.engine",
-                   "servette.scheduler", "servette.systeme"],
+    hiddenimports=["WpImageDownloader.config", "WpImageDownloader.engine",
+                   "WpImageDownloader.scheduler", "WpImageDownloader.systeme"],
     hookspath=[],
     runtime_hooks=[],
     excludes=QT_INUTILES + [

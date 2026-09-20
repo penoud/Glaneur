@@ -11,8 +11,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from servette.config import Config
-from servette.engine import (
+from WpImageDownloader.config import Config
+from WpImageDownloader.engine import (
     Moteur,
     Options,
     format_octets,
