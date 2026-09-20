@@ -1,10 +1,10 @@
 ; Installateur Inno Setup pour ServetteDownloader
 ; Compiler après PyInstaller :  iscc build\installer.iss
-; Produit : build\Output\ServetteDownloader-1.0.2-setup.exe
+; Produit : build\Output\ServetteDownloader-1.0.3-setup.exe
 
 #define MonNom "Servette FC - Telechargeur d'images"
 #define MonNomCourt "ServetteDownloader"
-#define MaVersion "1.0.2"
+#define MaVersion "1.0.3"
 #define MonEditeur "Projet personnel"
 #define MonExe "ServetteDownloader.exe"
 
@@ -26,7 +26,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MonExe}
-SetupIconFile=servette.ico
+SetupIconFile=WpImageDownloader.ico
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"

@@ -12,7 +12,7 @@ avec Qt, dont le paquet est volumineux.
 from pathlib import Path
 
 RACINE = Path(SPECPATH).parent
-ICONE = RACINE / "build" / "servette.ico"
+ICONE = RACINE / "build" / "WpImageDownloader.ico"
 
 # Qt embarque beaucoup de modules dont une application comme celle-ci n'a que
 # faire. Les écarter fait passer la distribution d'environ 180 Mo à 60 Mo.

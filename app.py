@@ -73,9 +73,9 @@ PERIODE_AFFICHAGE = 1_000   # ms entre deux rafraîchissements du compte à rebo
 # --------------------------------------------------------------------------- #
 
 def icone_application() -> QIcon:
-    """Charge build/servette.ico si présent, sinon dessine un repli grenat."""
+    """Charge build/WpImageDownloader.ico si présent, sinon dessine un repli grenat."""
     for base in (Path(__file__).resolve().parent, Path(getattr(sys, "_MEIPASS", "."))):
-        fichier = base / "build" / "servette.ico"
+        fichier = base / "build" / "WpImageDownloader.ico"
         if fichier.exists():
             return QIcon(str(fichier))
 
