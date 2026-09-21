@@ -2,6 +2,11 @@
 
 Requiert `pytest-qt` et un display Qt : sur CI headless, définir
 `QT_QPA_PLATFORM=offscreen`.
+
+Chaque test appelle `thread.wait()` après avoir reçu le signal attendu :
+sans cela, le wrapper Python peut être garbage-collecté avant que Qt ait
+fini de terminer le QThread C++, ce qui déclenche
+« QThread: Destroyed while thread is still running » puis SIGABRT.
 """
 
 from __future__ import annotations
@@ -19,6 +24,11 @@ from WpImageDownloader.updater.qt_threads import (
 from WpImageDownloader.updater.version import Version
 
 
+def _attendre_fin_propre(thread) -> None:
+    """Attend que le QThread ait vraiment quitté run() avant le GC Python."""
+    assert thread.wait(2000), "QThread ne s'est pas terminé dans le délai imparti"
+
+
 # --------------------------------------------------------------------------- #
 # VerificationMiseAJour
 # --------------------------------------------------------------------------- #
@@ -32,6 +42,7 @@ class TestVerificationMiseAJour:
         thread = VerificationMiseAJour(provider=provider)
         with qtbot.waitSignal(thread.disponible, timeout=3000) as blocker:
             thread.start()
+        _attendre_fin_propre(thread)
         info = blocker.args[0]
         assert info.is_available
         assert info.latest.version == release.version
@@ -43,6 +54,7 @@ class TestVerificationMiseAJour:
         thread = VerificationMiseAJour(provider=provider)
         with qtbot.waitSignal(thread.aucune_maj, timeout=3000) as blocker:
             thread.start()
+        _attendre_fin_propre(thread)
         assert not blocker.args[0].is_available
 
     def test_emet_erreur_si_exception(self, qtbot):
@@ -52,6 +64,7 @@ class TestVerificationMiseAJour:
         thread = VerificationMiseAJour(provider=provider)
         with qtbot.waitSignal(thread.erreur, timeout=3000) as blocker:
             thread.start()
+        _attendre_fin_propre(thread)
         assert "boom" in blocker.args[0]
 
 
@@ -91,6 +104,7 @@ class TestTelechargementMiseAJour:
         thread = TelechargementMiseAJour(fausse_release)
         with qtbot.waitSignal(thread.termine, timeout=3000) as blocker:
             thread.start()
+        _attendre_fin_propre(thread)
         assert blocker.args[0] == installer_path
         assert installer_path.exists()  # non supprimé en cas de succès
 
@@ -117,6 +131,7 @@ class TestTelechargementMiseAJour:
         thread = TelechargementMiseAJour(fausse_release)
         with qtbot.waitSignal(thread.erreur, timeout=3000) as blocker:
             thread.start()
+        _attendre_fin_propre(thread)
         assert "SHA-256" in blocker.args[0]
         assert not installer_path.exists()  # nettoyé après échec de vérification
 
@@ -126,4 +141,5 @@ class TestTelechargementMiseAJour:
         thread = TelechargementMiseAJour(release_vide)
         with qtbot.waitSignal(thread.erreur, timeout=3000) as blocker:
             thread.start()
+        _attendre_fin_propre(thread)
         assert "Installateur" in blocker.args[0] or "checksum" in blocker.args[0]
