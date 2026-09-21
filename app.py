@@ -309,6 +309,14 @@ class DialoguePreferences(QDialog):
         self.case_demarrage.setEnabled(sys.platform == "win32")
         form.addRow("", self.case_demarrage)
 
+        self.case_maj_demarrage = QCheckBox("Vérifier les mises à jour au démarrage")
+        self.case_maj_demarrage.setChecked(cfg.verifier_maj_demarrage)
+        self.case_maj_demarrage.setEnabled(sys.platform == "win32")
+        self.case_maj_demarrage.setToolTip(
+            "Interroge GitHub en arrière-plan au lancement de l'application\n"
+            "pour proposer la dernière version stable si elle est plus récente.")
+        form.addRow("", self.case_maj_demarrage)
+
         colonne.addWidget(boite)
         colonne.addStretch(1)
 
@@ -339,6 +347,7 @@ class DialoguePreferences(QDialog):
         c.verifier_integrite = self.case_verifier.isChecked()
         c.diaporama_dossier = self.case_diaporama.isChecked()
         c.fermer_dans_barre = self.case_barre.isChecked()
+        c.verifier_maj_demarrage = self.case_maj_demarrage.isChecked()
         c.valider()
         c.sauver()
 
@@ -467,7 +476,7 @@ class Fenetre(QMainWindow):
         self.minuteur_affichage.start(PERIODE_AFFICHAGE)
         self._rafraichir_echeance()
 
-        if sys.platform == "win32":
+        if sys.platform == "win32" and self.cfg.verifier_maj_demarrage:
             QTimer.singleShot(3000, self._verifier_mise_a_jour)
 
     # ------------------------------------------------------------------ UI --

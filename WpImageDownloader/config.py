@@ -66,6 +66,7 @@ class Config:
     lancer_au_demarrage: bool = False
     fermer_dans_barre: bool = True        # la croix réduit dans la zone de notification
     notifications: bool = True            # bulle après une mise à jour automatique
+    verifier_maj_demarrage: bool = True   # interroge GitHub Releases au lancement
 
     _chemin: Path | None = field(default=None, repr=False, compare=False)
 

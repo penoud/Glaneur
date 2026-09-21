@@ -83,6 +83,7 @@ class TestChargement:
         assert cfg.largeur_min == 800
         assert cfg.verifier_integrite is False
         assert cfg.diaporama_dossier is False
+        assert cfg.verifier_maj_demarrage is True
         # dossier renseigné même sans fichier
         assert cfg.dossier
 
@@ -93,6 +94,7 @@ class TestChargement:
         c.largeur_min = 1200
         c.classement = "date"
         c.diaporama_dossier = True
+        c.verifier_maj_demarrage = False
         c.sauver()
 
         c2 = Config.charger(chemin)
@@ -100,6 +102,15 @@ class TestChargement:
         assert c2.largeur_min == 1200
         assert c2.classement == "date"
         assert c2.diaporama_dossier is True
+        assert c2.verifier_maj_demarrage is False
+
+    def test_verifier_maj_demarrage_absent_du_json_reprend_defaut(self, tmp_path):
+        # config antérieure à l'ajout du champ : doit se relire sans erreur
+        # et retomber sur la valeur par défaut True.
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({"intervalle_heures": 12}))
+        c = Config.charger(chemin)
+        assert c.verifier_maj_demarrage is True
 
     def test_json_invalide_recharge_par_defaut(self, tmp_path):
         chemin = tmp_path / "c.json"
