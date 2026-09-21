@@ -143,7 +143,18 @@ def run_updater(arguments: list[str]) -> int:
         logger.error("Timeout : le PID %d est toujours vivant après 30 s — abandon", args.pid)
         return 3
 
-    cmd = [str(args.installer), "/SILENT", "/CLOSEAPPLICATIONS"]
+    # /CLOSEAPPLICATIONSFILTER limite `/CLOSEAPPLICATIONS` à l'exe principal :
+    # sans filtre, Inno Setup tente aussi de fermer WpImageDownloaderUpdater.exe
+    # (ce process-ci, qui tourne dans le dossier d'install), échoue, et sort
+    # avec code 5 (installation interrompue).
+    # /SUPPRESSMSGBOXES empêche tout dialog invisible d'attendre en /SILENT.
+    cmd = [
+        str(args.installer),
+        "/SILENT",
+        "/SUPPRESSMSGBOXES",
+        "/CLOSEAPPLICATIONS",
+        "/CLOSEAPPLICATIONSFILTER=WpImagerDownloader.exe",
+    ]
     logger.info("Lancement de l'installateur : %r", cmd)
     try:
         result = subprocess.run(cmd, check=False)
