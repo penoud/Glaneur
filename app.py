@@ -13,7 +13,6 @@ la progression et le journal.
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 import threading
@@ -68,9 +67,10 @@ from WpImageDownloader.systeme import (
     fond_ecran_actuel,
     ouvrir_dossier,
 )
-from WpImageDownloader.updater.downloader import download, temporary_directory, verify_sha256
-from WpImageDownloader.updater.github_release import GitHubReleaseProvider
-from WpImageDownloader.updater.version import Version
+from WpImageDownloader.updater.qt_threads import (
+    TelechargementMiseAJour,
+    VerificationMiseAJour,
+)
 from WpImageDownloader.updater.windows import start as start_windows_updater
 
 GRENAT = "#471625"
@@ -133,57 +133,6 @@ class Travailleur(QThread):
             arret=self.arret,
         )
         self.fini.emit(moteur.executer())
-
-
-_logger_maj = logging.getLogger("WpImageDownloader.app.update")
-
-
-class VerificationMiseAJour(QThread):
-    """Interroge GitHub à propos d'une release plus récente que la version en cours."""
-
-    disponible = Signal(object)
-    aucune_maj = Signal(object)
-    erreur = Signal(str)
-
-    def run(self) -> None:
-        try:
-            info = GitHubReleaseProvider().check(Version.parse(__version__))
-            if info.is_available:
-                _logger_maj.info("Update available: %s", info.latest.version)
-                self.disponible.emit(info)
-            else:
-                self.aucune_maj.emit(info)
-        except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
-            _logger_maj.exception("Update check failed")
-            self.erreur.emit(f"Vérification de mise à jour impossible : {error}")
-
-
-class TelechargementMiseAJour(QThread):
-    """Récupère l'installateur Windows et son SHA-256 pour la release ciblée."""
-
-    termine = Signal(object, str)
-    erreur = Signal(str)
-
-    def __init__(self, release) -> None:
-        super().__init__()
-        self.release = release
-
-    def run(self) -> None:
-        try:
-            installer = self.release.windows_installer()
-            checksum = self.release.checksum_for(installer) if installer else None
-            if installer is None or checksum is None:
-                raise RuntimeError("Installateur Windows ou checksum absent de la release")
-            dossier = temporary_directory()
-            fichier = download(installer, dossier)
-            checksum_path = download(checksum, dossier)
-            if not verify_sha256(fichier, checksum_path.read_text(encoding="utf-8")):
-                fichier.unlink(missing_ok=True)
-                raise RuntimeError("Vérification SHA-256 échouée")
-            self.termine.emit(fichier, str(dossier))
-        except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
-            _logger_maj.exception("Update download failed")
-            self.erreur.emit(f"Téléchargement de la mise à jour impossible : {error}")
 
 
 # --------------------------------------------------------------------------- #

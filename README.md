@@ -75,6 +75,11 @@ Sous Linux, Qt réclame les bibliothèques X11 (`libxcb-cursor0`,
 `libxkbcommon-x11-0`). Pour un test sans affichage :
 `QT_QPA_PLATFORM=offscreen python app.py`.
 
+**Tests.** `pip install pytest pytest-qt` puis
+`QT_QPA_PLATFORM=offscreen python -m pytest -q`. `pytest-qt` est nécessaire
+pour la fixture `qtbot` utilisée par les tests des QThread updater ; les
+autres tests (moteur, scheduler, config, updater unitaire) tournent sans lui.
+
 ---
 
 ## 3. Fonctionnement
