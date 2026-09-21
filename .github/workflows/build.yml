@@ -109,7 +109,7 @@ jobs:
             --force-clean --disable-rofiles-fuse \
             --repo=flatpak-repo flatpak-build \
             packaging/linux/org.wpimagedownloader.WpImageDownloader.yml
-          flatpak build-bundle --user flatpak-repo \
+          flatpak build-bundle flatpak-repo \
             "dist/WpImageDownloader-${GITHUB_REF_NAME#v}.flatpak" \
             org.wpimagedownloader.WpImageDownloader
       - name: Generate Linux checksums
