@@ -19,8 +19,8 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QColor, QFont, QIcon, QKeySequence, QPainter, QPixmap
+from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -43,12 +43,14 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSystemTrayIcon,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from WpImageDownloader import __version__
-from WpImageDownloader.config import CLASSEMENTS, INTERVALLES, Config
+from WpImageDownloader.bug_report import build_issue_url, collect_context
+from WpImageDownloader.config import CLASSEMENTS, GITHUB_OWNER, GITHUB_REPOSITORY, INTERVALLES, Config
 from WpImageDownloader.engine import (
     Moteur,
     Options,
@@ -344,6 +346,70 @@ class DialoguePreferences(QDialog):
 # Dialogue « À propos »
 # --------------------------------------------------------------------------- #
 
+class DialogueSignalerBug(QDialog):
+    """Formulaire minimal qui compose une URL GitHub d'ouverture d'issue.
+
+    On n'embarque pas de token GitHub (sprint §38) : à la validation,
+    l'utilisateur est redirigé vers son navigateur avec titre et corps
+    déjà remplis, il n'a plus qu'à cliquer « Submit new issue ».
+    """
+
+    def __init__(self, parent, chemin_log: Path | None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Signaler un bug")
+        self.setMinimumSize(560, 460)
+        self._chemin_log = chemin_log
+
+        colonne = QVBoxLayout(self)
+        colonne.setContentsMargins(14, 14, 14, 14)
+        colonne.setSpacing(8)
+
+        intro = QLabel(
+            "Décris le problème ci-dessous. « Ouvrir sur GitHub » composera "
+            "l'issue et l'ouvrira dans ton navigateur : tu n'auras plus qu'à "
+            "cliquer « Submit new issue » sur la page GitHub.")
+        intro.setWordWrap(True)
+        colonne.addWidget(intro)
+
+        self.champ_titre = QLineEdit()
+        self.champ_titre.setPlaceholderText("Résumé court du problème")
+        colonne.addWidget(QLabel("Titre :"))
+        colonne.addWidget(self.champ_titre)
+
+        self.zone_desc = QTextEdit()
+        self.zone_desc.setPlaceholderText(
+            "Ce qui se passe, ce que tu attendais, comment reproduire.")
+        colonne.addWidget(QLabel("Description :"))
+        colonne.addWidget(self.zone_desc, 1)
+
+        self.case_contexte = QCheckBox(
+            "Joindre la version, la plateforme et les 50 dernières lignes de log")
+        self.case_contexte.setChecked(True)
+        colonne.addWidget(self.case_contexte)
+
+        boutons = QDialogButtonBox(self)
+        bouton_go = boutons.addButton("Ouvrir sur GitHub", QDialogButtonBox.AcceptRole)
+        boutons.addButton(QDialogButtonBox.Cancel)
+        bouton_go.clicked.connect(self._envoyer)
+        boutons.rejected.connect(self.reject)
+        colonne.addWidget(boutons)
+
+    def _envoyer(self) -> None:
+        titre = self.champ_titre.text().strip() or "Rapport de bug"
+        description = self.zone_desc.toPlainText().strip()
+        if not description:
+            QMessageBox.warning(
+                self, "Signaler un bug",
+                "Merci d'ajouter une description avant d'ouvrir l'issue.")
+            return
+        corps = description
+        if self.case_contexte.isChecked():
+            corps = f"{description}\n\n{collect_context(__version__, self._chemin_log)}"
+        url = build_issue_url(GITHUB_OWNER, GITHUB_REPOSITORY, titre, corps)
+        QDesktopServices.openUrl(QUrl(url))
+        self.accept()
+
+
 class DialogueAPropos(QDialog):
     """Fenêtre d'information sur l'application."""
 
@@ -479,6 +545,8 @@ class Fenetre(QMainWindow):
         action_check_maj.triggered.connect(
             lambda: self._verifier_mise_a_jour(manuel=True))
         action_check_maj.setEnabled(sys.platform == "win32")
+        action_signaler = menu_aide.addAction("&Signaler un bug…")
+        action_signaler.triggered.connect(self._ouvrir_signaler_bug)
         action_apropos = menu_aide.addAction("&À propos…")
         action_apropos.triggered.connect(self._ouvrir_apropos)
 
@@ -651,6 +719,11 @@ class Fenetre(QMainWindow):
 
     def _ouvrir_apropos(self) -> None:
         DialogueAPropos(self).exec()
+
+    def _ouvrir_signaler_bug(self) -> None:
+        from WpImageDownloader.config import dossier_config
+        chemin_log = dossier_config() / "logs" / "app.log"
+        DialogueSignalerBug(self, chemin_log if chemin_log.is_file() else None).exec()
 
     def _verifier_mise_a_jour(self, manuel: bool = False) -> None:
         if self.verification_mise_a_jour and self.verification_mise_a_jour.isRunning():
