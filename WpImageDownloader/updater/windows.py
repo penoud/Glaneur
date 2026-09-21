@@ -38,6 +38,9 @@ def start(installer: Path, application: Path, pid: int) -> None:
 # run_updater : exécuté dans WpImageDownloaderUpdater.exe (process séparé)
 # --------------------------------------------------------------------------- #
 
+_LOG_HANDLER: RotatingFileHandler | None = None
+
+
 def _configurer_log_updater() -> Path | None:
     """Ajoute un RotatingFileHandler dans <config>/logs/updater.log.
 
@@ -46,6 +49,7 @@ def _configurer_log_updater() -> Path | None:
     disparaît silencieusement. Renvoie le chemin du log ou None si le
     dossier config n'a pas pu être créé.
     """
+    global _LOG_HANDLER
     try:
         from ..config import dossier_config
         dossier = dossier_config() / "logs"
@@ -59,9 +63,21 @@ def _configurer_log_updater() -> Path | None:
         racine = logging.getLogger()
         racine.setLevel(logging.DEBUG)
         racine.addHandler(handler)
+        _LOG_HANDLER = handler
         return chemin
     except Exception:   # noqa: BLE001 - on ne veut jamais planter l'updater à cause du log
         return None
+
+
+def _flush() -> None:
+    """Force l'écriture du buffer sur disque — utile juste avant un point
+    de bloquage potentiel ou avant un os.kill/os.execv qui peut tuer le
+    process avant que Python n'ait flushé."""
+    if _LOG_HANDLER is not None:
+        try:
+            _LOG_HANDLER.flush()
+        except Exception:   # noqa: BLE001
+            pass
 
 
 def _process_vivant(pid: int) -> bool:
@@ -129,18 +145,37 @@ def run_updater(arguments: list[str]) -> int:
         logger.error("Refus : validation des chemins/PID échouée")
         return 2
 
-    deadline = time.monotonic() + 30
+    debut = time.monotonic()
+    deadline = debut + 30
     logger.info("Attente de la fermeture du PID %d (timeout 30 s)…", args.pid)
+    _flush()
     ticks = 0
+    prochain_heartbeat = debut + 2.0
     while time.monotonic() < deadline:
-        if not _process_vivant(args.pid):
+        try:
+            vivant = _process_vivant(args.pid)
+        except Exception:   # noqa: BLE001 - filet de sécurité pour la boucle
+            logger.exception("_process_vivant a levé une exception inattendue")
+            _flush()
+            return 3
+        if not vivant:
             logger.info("PID %d disparu après %d ticks (%.1fs)",
                         args.pid, ticks, ticks * 0.25)
+            _flush()
             break
         ticks += 1
+        # Heartbeat toutes les ~2 s pour distinguer « la boucle tourne bien
+        # mais le process reste vivant » d'« updater tué avant la fin de
+        # la boucle » (silence total dans le log = 2e cas).
+        if time.monotonic() >= prochain_heartbeat:
+            logger.info("PID %d encore vivant après %d ticks (%.1fs)",
+                        args.pid, ticks, ticks * 0.25)
+            _flush()
+            prochain_heartbeat += 2.0
         time.sleep(0.25)
     else:
         logger.error("Timeout : le PID %d est toujours vivant après 30 s — abandon", args.pid)
+        _flush()
         return 3
 
     # /VERYSILENT : aucune UI Inno visible.
