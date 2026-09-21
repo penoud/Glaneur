@@ -143,22 +143,36 @@ def run_updater(arguments: list[str]) -> int:
         logger.error("Timeout : le PID %d est toujours vivant après 30 s — abandon", args.pid)
         return 3
 
+    # /VERYSILENT : aucune UI Inno visible (même pas la barre de progression) —
+    #   toute fenêtre qui apparaîtrait quand même vient d'ailleurs (UAC,
+    #   SmartScreen, Defender), ce qui aide à localiser un blocage.
+    # /SUPPRESSMSGBOXES : supprime les msgboxes Inno résiduels.
     # /CLOSEAPPLICATIONSFILTER limite `/CLOSEAPPLICATIONS` à l'exe principal :
-    # sans filtre, Inno Setup tente aussi de fermer WpImageDownloaderUpdater.exe
-    # (ce process-ci, qui tourne dans le dossier d'install), échoue, et sort
-    # avec code 5 (installation interrompue).
-    # /SUPPRESSMSGBOXES empêche tout dialog invisible d'attendre en /SILENT.
+    #   sans filtre, Inno tente aussi de fermer WpImageDownloaderUpdater.exe
+    #   (ce process, qui tourne dans le dossier d'install) et sort code 5.
     cmd = [
         str(args.installer),
-        "/SILENT",
+        "/VERYSILENT",
         "/SUPPRESSMSGBOXES",
         "/CLOSEAPPLICATIONS",
         "/CLOSEAPPLICATIONSFILTER=WpImagerDownloader.exe",
     ]
     logger.info("Lancement de l'installateur : %r", cmd)
+    # L'updater tourne en DETACHED_PROCESS sans stdio valides : on redirige
+    # explicitement vers DEVNULL pour éviter tout blocage I/O du process
+    # enfant. Timeout large pour ne pas rester coincé éternellement si
+    # l'installateur attend une interaction invisible.
     try:
-        result = subprocess.run(cmd, check=False)
-    except OSError as error:
+        result = subprocess.run(
+            cmd, check=False, timeout=300,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired:
+        logger.error("Installateur bloqué plus de 300 s — abandon")
+        return 4
+    except OSError:
         logger.exception("Échec de lancement de l'installateur")
         return 4
     logger.info("Installateur terminé avec code=%d", result.returncode)
