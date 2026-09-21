@@ -91,21 +91,21 @@ jobs:
         # flatpak-builder d'apt (1.2.x sur ubuntu-22.04) invoque encore
         # `appstream-compose`, retiré de freedesktop-sdk >= 24.08. On
         # utilise à la place org.flatpak.Builder depuis Flathub.
-        # Tout est installé en --user (sans sudo) pour rester dans la même
-        # installation que celle vue par `flatpak run` du user runner —
-        # mélanger install --system et run user donnait « Unable to find
-        # sdk org.freedesktop.Sdk version 24.08 ».
+        # Note : org.flatpak.Builder tourne dans sa propre sandbox et ne
+        # voit pas les runtimes installés sur le host — on lui passe
+        # --install-deps-from=flathub pour qu'il résolve lui-même le SDK
+        # et la Platform, plutôt que de tenter de les installer nous-mêmes
+        # côté host.
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install --user -y flathub \
-            org.flatpak.Builder \
-            org.freedesktop.Sdk//24.08 \
-            org.freedesktop.Platform//24.08
+          flatpak install --user -y flathub org.flatpak.Builder
       - name: Build Flatpak bundle
         run: |
-          flatpak run org.flatpak.Builder --user --disable-rofiles-fuse --force-clean \
+          flatpak run org.flatpak.Builder \
+            --user --install-deps-from=flathub \
+            --force-clean --disable-rofiles-fuse \
             --repo=flatpak-repo flatpak-build \
             packaging/linux/org.wpimagedownloader.WpImageDownloader.yml
           flatpak build-bundle --user flatpak-repo \
