@@ -1016,6 +1016,12 @@ class Fenetre(QMainWindow):
 
         self.tray.hide()
         event.accept()
+        # setQuitOnLastWindowClosed(False) empêche l'app de quitter à la
+        # fermeture de la fenêtre — indispensable pour rester en tray, mais
+        # bloquant quand on veut vraiment sortir (menu Quitter, tray > Quitter,
+        # ou handoff à l'updater). On force le quit ici pour ces cas.
+        if self._quitter_demande:
+            QApplication.quit()
 
 
 # --------------------------------------------------------------------------- #
