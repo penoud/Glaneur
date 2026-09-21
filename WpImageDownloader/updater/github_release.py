@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import requests
@@ -9,6 +10,8 @@ import requests
 from ..config import GITHUB_OWNER, GITHUB_REPOSITORY
 from .models import Release, ReleaseAsset, UpdateInfo
 from .version import Version
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubReleaseProvider:
@@ -26,6 +29,8 @@ class GitHubReleaseProvider:
         self.url = f"https://api.github.com/repos/{owner}/{repository}/releases"
 
     def check(self, current: Version) -> UpdateInfo:
+        logger.info("Checking for updates: current=%s repo=%s/%s",
+                    current, self.owner, self.repository)
         response = self.session.get(
             self.url,
             params={"per_page": 20},
@@ -40,6 +45,8 @@ class GitHubReleaseProvider:
         releases = [release for release in releases if release is not None]
         latest = max((release for release in releases), default=None,
                      key=lambda release: release.version)
+        logger.info("Latest stable release: %s",
+                    latest.version if latest is not None else "none")
         return UpdateInfo(current, latest)
 
     @staticmethod

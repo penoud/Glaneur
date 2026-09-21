@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def updater_executable() -> Path:
@@ -23,6 +26,7 @@ def start(installer: Path, application: Path, pid: int) -> None:
     updater = updater_executable()
     if not updater.is_file():
         raise FileNotFoundError(updater)
+    logger.info("Starting updater for pid=%d installer=%s", pid, installer.name)
     subprocess.Popen([
         str(updater), "--installer", str(installer), "--pid", str(pid),
         "--application", str(application),

@@ -13,6 +13,7 @@ la progression et le journal.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import threading
@@ -134,6 +135,9 @@ class Travailleur(QThread):
         self.fini.emit(moteur.executer())
 
 
+_logger_maj = logging.getLogger("WpImageDownloader.app.update")
+
+
 class VerificationMiseAJour(QThread):
     """Interroge GitHub à propos d'une release plus récente que la version en cours."""
 
@@ -145,10 +149,12 @@ class VerificationMiseAJour(QThread):
         try:
             info = GitHubReleaseProvider().check(Version.parse(__version__))
             if info.is_available:
+                _logger_maj.info("Update available: %s", info.latest.version)
                 self.disponible.emit(info)
             else:
                 self.aucune_maj.emit(info)
         except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
+            _logger_maj.exception("Update check failed")
             self.erreur.emit(f"Vérification de mise à jour impossible : {error}")
 
 
@@ -176,6 +182,7 @@ class TelechargementMiseAJour(QThread):
                 raise RuntimeError("Vérification SHA-256 échouée")
             self.termine.emit(fichier, str(dossier))
         except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
+            _logger_maj.exception("Update download failed")
             self.erreur.emit(f"Téléchargement de la mise à jour impossible : {error}")
 
 
@@ -963,6 +970,10 @@ class Fenetre(QMainWindow):
 # --------------------------------------------------------------------------- #
 
 def main() -> int:
+    from WpImageDownloader.config import dossier_config
+    from WpImageDownloader.logsetup import configure_logging
+    configure_logging(dossier_config())
+
     app = QApplication(sys.argv)
     app.setApplicationName("WpImageDownloader")
     app.setWindowIcon(icone_application())
