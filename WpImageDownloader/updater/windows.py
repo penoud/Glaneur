@@ -69,6 +69,12 @@ def _process_vivant(pid: int) -> bool:
 
     PermissionError = process existe mais accès refusé → considéré vivant
     pour ne pas lancer l'installateur trop tôt.
+
+    Sous Windows, os.kill(pid, 0) peut lever OSError avec WinError 6
+    (« Descripteur non valide ») quand le process meurt entre l'OpenProcess
+    interne et le check — Python ne le remappe pas en ProcessLookupError.
+    On considère ce cas comme « mort », sinon l'updater tourne en boucle
+    jusqu'au timeout de 30 s.
     """
     try:
         os.kill(pid, 0)
@@ -78,6 +84,12 @@ def _process_vivant(pid: int) -> bool:
     except PermissionError:
         return True
     except OSError as error:
+        # Codes Windows synonymes de « process disparu » :
+        #   6   = ERROR_INVALID_HANDLE
+        #   87  = ERROR_INVALID_PARAMETER (déjà remappé en ProcessLookupError
+        #         par Python, mais on ceinture-et-bretelles)
+        if getattr(error, "winerror", None) in (6, 87):
+            return False
         logger.warning("os.kill(%d, 0) inattendu : %s", pid, error)
         return True
 
