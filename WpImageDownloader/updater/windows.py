@@ -143,31 +143,29 @@ def run_updater(arguments: list[str]) -> int:
         logger.error("Timeout : le PID %d est toujours vivant après 30 s — abandon", args.pid)
         return 3
 
-    # /VERYSILENT : aucune UI Inno visible (même pas la barre de progression) —
-    #   toute fenêtre qui apparaîtrait quand même vient d'ailleurs (UAC,
-    #   SmartScreen, Defender), ce qui aide à localiser un blocage.
+    # /VERYSILENT : aucune UI Inno visible.
     # /SUPPRESSMSGBOXES : supprime les msgboxes Inno résiduels.
-    # /CLOSEAPPLICATIONSFILTER limite `/CLOSEAPPLICATIONS` à l'exe principal :
-    #   sans filtre, Inno tente aussi de fermer WpImageDownloaderUpdater.exe
-    #   (ce process, qui tourne dans le dossier d'install) et sort code 5.
+    # /LOG : demande à Inno d'écrire son log détaillé (chemin renvoyé par
+    #   /LOG=... explicite, sinon %TEMP%\Setup Log YYYY-MM-DD #N.txt).
+    # Note : on a retiré /CLOSEAPPLICATIONS — l'app principale est déjà
+    #   fermée (0 ticks au wait PID), et le flag semblait déclencher code 5
+    #   quand Inno voyait WpImageDownloaderUpdater.exe (nous) verrouiller
+    #   des fichiers du dossier d'install.
+    log_inno = args.installer.parent / "inno-setup.log"
     cmd = [
         str(args.installer),
         "/VERYSILENT",
         "/SUPPRESSMSGBOXES",
-        "/CLOSEAPPLICATIONS",
-        "/CLOSEAPPLICATIONSFILTER=WpImagerDownloader.exe",
+        f"/LOG={log_inno}",
     ]
     logger.info("Lancement de l'installateur : %r", cmd)
-    # L'updater tourne en DETACHED_PROCESS sans stdio valides : on redirige
-    # explicitement vers DEVNULL pour éviter tout blocage I/O du process
-    # enfant. Timeout large pour ne pas rester coincé éternellement si
-    # l'installateur attend une interaction invisible.
     try:
         result = subprocess.run(
             cmd, check=False, timeout=300,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True, errors="replace",
         )
     except subprocess.TimeoutExpired:
         logger.error("Installateur bloqué plus de 300 s — abandon")
@@ -176,6 +174,17 @@ def run_updater(arguments: list[str]) -> int:
         logger.exception("Échec de lancement de l'installateur")
         return 4
     logger.info("Installateur terminé avec code=%d", result.returncode)
+    if result.stdout:
+        logger.info("Sortie installateur (%d o) : %s",
+                    len(result.stdout), result.stdout.strip()[:2000])
+    # Si Inno a écrit son log détaillé, on remonte les 40 dernières lignes.
+    try:
+        if log_inno.is_file():
+            lignes = log_inno.read_text(encoding="utf-8", errors="replace").splitlines()
+            logger.info("Log Inno Setup (%s, %d lignes, tail 40) :\n%s",
+                        log_inno, len(lignes), "\n".join(lignes[-40:]))
+    except OSError as error:
+        logger.warning("Log Inno illisible : %s", error)
     if result.returncode != 0:
         logger.error("Installateur en erreur (code %d) — pas de redémarrage", result.returncode)
         return result.returncode
