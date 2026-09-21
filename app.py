@@ -138,6 +138,7 @@ class VerificationMiseAJour(QThread):
     """Interroge GitHub à propos d'une release plus récente que la version en cours."""
 
     disponible = Signal(object)
+    aucune_maj = Signal(object)
     erreur = Signal(str)
 
     def run(self) -> None:
@@ -145,6 +146,8 @@ class VerificationMiseAJour(QThread):
             info = GitHubReleaseProvider().check(Version.parse(__version__))
             if info.is_available:
                 self.disponible.emit(info)
+            else:
+                self.aucune_maj.emit(info)
         except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
             self.erreur.emit(f"Vérification de mise à jour impossible : {error}")
 
@@ -516,6 +519,10 @@ class Fenetre(QMainWindow):
         action_prefs.triggered.connect(self._ouvrir_preferences)
 
         menu_aide = barre.addMenu("&Aide")
+        action_check_maj = menu_aide.addAction("&Rechercher des mises à jour…")
+        action_check_maj.triggered.connect(
+            lambda: self._verifier_mise_a_jour(manuel=True))
+        action_check_maj.setEnabled(sys.platform == "win32")
         action_apropos = menu_aide.addAction("&À propos…")
         action_apropos.triggered.connect(self._ouvrir_apropos)
 
@@ -689,15 +696,30 @@ class Fenetre(QMainWindow):
     def _ouvrir_apropos(self) -> None:
         DialogueAPropos(self).exec()
 
-    def _verifier_mise_a_jour(self) -> None:
+    def _verifier_mise_a_jour(self, manuel: bool = False) -> None:
         if self.verification_mise_a_jour and self.verification_mise_a_jour.isRunning():
             return
-        self.verification_mise_a_jour = VerificationMiseAJour(self)
-        self.verification_mise_a_jour.disponible.connect(self._mise_a_jour_disponible)
-        self.verification_mise_a_jour.erreur.connect(self._ecrire)
-        self.verification_mise_a_jour.finished.connect(
-            self.verification_mise_a_jour.deleteLater)
-        self.verification_mise_a_jour.start()
+        thread = VerificationMiseAJour(self)
+        thread.disponible.connect(self._mise_a_jour_disponible)
+        if manuel:
+            thread.aucune_maj.connect(self._aucune_mise_a_jour_manuel)
+            thread.erreur.connect(self._erreur_verification_manuel)
+        else:
+            thread.erreur.connect(self._ecrire)
+        thread.finished.connect(thread.deleteLater)
+        self.verification_mise_a_jour = thread
+        thread.start()
+
+    def _aucune_mise_a_jour_manuel(self, info) -> None:
+        QMessageBox.information(
+            self,
+            "Rechercher des mises à jour",
+            f"Vous utilisez déjà la dernière version ({info.current}).",
+        )
+
+    def _erreur_verification_manuel(self, message: str) -> None:
+        self._ecrire(message)
+        QMessageBox.warning(self, "Rechercher des mises à jour", message)
 
     def _mise_a_jour_disponible(self, info) -> None:
         release = info.latest
