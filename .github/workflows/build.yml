@@ -79,6 +79,10 @@ jobs:
         run: python -m pip install -r requirements.txt pyinstaller
       - name: Build application bundle
         run: python -m PyInstaller build/WpImageDownloader.spec --noconfirm --clean
+      - name: Bump AppStream metainfo version
+        run: |
+          chmod +x packaging/linux/bump-metainfo.sh
+          packaging/linux/bump-metainfo.sh "${GITHUB_REF_NAME#v}"
       - name: Build Debian package
         run: |
           chmod +x packaging/linux/build-deb.sh packaging/linux/WpImageDownloader-launcher
