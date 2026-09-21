@@ -774,12 +774,21 @@ class Fenetre(QMainWindow):
         self.telechargement_mise_a_jour.start()
 
     def _mise_a_jour_telechargee(self, installer: Path, dossier: str) -> None:
+        import logging
+        from WpImageDownloader.updater.windows import updater_executable
+        log = logging.getLogger("WpImageDownloader.app.update")
+        exe = updater_executable()
+        log.info("Handoff à l'updater : installer=%s (%d o), app=%s, pid=%d, updater=%s (existe=%s)",
+                 installer, installer.stat().st_size if installer.is_file() else -1,
+                 sys.executable, os.getpid(), exe, exe.is_file())
         try:
             start_windows_updater(installer, Path(sys.executable).resolve(), os.getpid())
+            log.info("Updater lancé, fermeture de l'app dans la foulée")
             self._ecrire("Mise à jour vérifiée, fermeture pour installation…")
             self._quitter_demande = True
             self.close()
         except (OSError, ValueError, RuntimeError) as error:
+            log.exception("Impossible de lancer l'updater")
             self._ecrire(f"Lancement de l'updater impossible : {error}")
 
     def _ouvrir_dossier(self) -> None:
