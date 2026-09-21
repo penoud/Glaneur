@@ -367,7 +367,10 @@ class DialogueSignalerBug(QDialog):
         intro = QLabel(
             "Décris le problème ci-dessous. « Ouvrir sur GitHub » composera "
             "l'issue et l'ouvrira dans ton navigateur : tu n'auras plus qu'à "
-            "cliquer « Submit new issue » sur la page GitHub.")
+            "cliquer « Submit new issue » sur la page GitHub.\n\n"
+            "Un compte GitHub est nécessaire pour soumettre l'issue. Si tu "
+            "n'en as pas encore, tu pourras t'en créer un gratuitement à "
+            "l'étape « Sign in » depuis la même page.")
         intro.setWordWrap(True)
         colonne.addWidget(intro)
 
