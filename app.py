@@ -73,7 +73,6 @@ from WpImageDownloader.updater.qt_threads import (
     TelechargementMiseAJour,
     VerificationMiseAJour,
 )
-from WpImageDownloader.updater.windows import start as start_windows_updater
 
 GRENAT = "#471625"
 PERIODE_ECHEANCE = 30_000   # ms entre deux contrôles d'échéance
@@ -795,21 +794,48 @@ class Fenetre(QMainWindow):
 
     def _mise_a_jour_telechargee(self, installer: Path, dossier: str) -> None:
         import logging
-        from WpImageDownloader.updater.windows import updater_executable
+        import subprocess
         log = logging.getLogger("WpImageDownloader.app.update")
-        exe = updater_executable()
-        log.info("Handoff à l'updater : installer=%s (%d o), app=%s, pid=%d, updater=%s (existe=%s)",
-                 installer, installer.stat().st_size if installer.is_file() else -1,
-                 sys.executable, os.getpid(), exe, exe.is_file())
+        # Lancement direct d'Inno Setup en détaché, sans passer par un
+        # updater séparé : l'ancien intermédiaire (WpImageDownloaderUpdater.exe)
+        # tournait depuis le dossier d'install, RestartManager le détectait
+        # comme process verrouillant des fichiers cibles, et Setup abandonnait
+        # (« Some applications could not be shut down »). Ici, l'app elle-même
+        # est visée par /CLOSEAPPLICATIONS via RestartManager — ça marche bien
+        # puisqu'elle n'est PAS le process qui lance Setup — puis Inno remplace
+        # les fichiers et relance l'app via [Run] en fin d'install.
+        log_inno = installer.parent / "inno-setup.log"
+        cmd = [
+            str(installer),
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/CLOSEAPPLICATIONS",
+            "/CLOSEAPPLICATIONSFILTER=WpImagerDownloader.exe",
+            f"/LOG={log_inno}",
+        ]
+        log.info("Lancement de l'installateur (détaché) : %r", cmd)
+        creationflags = 0
+        if sys.platform == "win32":
+            creationflags = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                             | getattr(subprocess, "CREATE_BREAKAWAY_FROM_JOB", 0)
+                             | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
         try:
-            start_windows_updater(installer, Path(sys.executable).resolve(), os.getpid())
-            log.info("Updater lancé, fermeture de l'app dans la foulée")
-            self._ecrire("Mise à jour vérifiée, fermeture pour installation…")
-            self._quitter_demande = True
-            self.close()
-        except (OSError, ValueError, RuntimeError) as error:
-            log.exception("Impossible de lancer l'updater")
-            self._ecrire(f"Lancement de l'updater impossible : {error}")
+            subprocess.Popen(
+                cmd,
+                close_fds=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=creationflags,
+            )
+        except OSError as error:
+            log.exception("Lancement de l'installateur impossible")
+            self._ecrire(f"Lancement de l'installateur impossible : {error}")
+            return
+        log.info("Installateur lancé, log Inno attendu ici : %s. Fermeture de l'app.", log_inno)
+        self._ecrire("Mise à jour lancée, fermeture pour installation…")
+        self._quitter_demande = True
+        self.close()
 
     def _ouvrir_dossier(self) -> None:
         try:

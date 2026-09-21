@@ -1,11 +1,11 @@
 ; Installateur Inno Setup pour WpImagerDownloader
 ; Compiler après PyInstaller :  iscc build\installer.iss
-; Produit : build\Output\WpImagerDownloader-1.0.34-setup.exe
+; Produit : build\Output\WpImagerDownloader-1.0.35-setup.exe
 
 #define MonNom "WpImagerDownloader"
 #define MonNomCourt "WpImagerDownloader"
 #ifndef MaVersion
-  #define MaVersion "1.0.34"
+  #define MaVersion "1.0.35"
 #endif
 #define MonEditeur "Projet personnel"
 #define MonExe "WpImagerDownloader.exe"
@@ -54,8 +54,11 @@ Name: "{userstartup}\{#MonNom}"; Filename: "{app}\{#MonExe}"; \
     Parameters: "--reduit"; Tasks: startup
 
 [Run]
-Filename: "{app}\{#MonExe}"; Description: "Lancer {#MonNom}"; \
-    Flags: nowait postinstall skipifsilent
+; `nowait` seul : garantit que l'app est relancée en fin d'install même
+; en mode /VERYSILENT (postinstall + skipifsilent étaient tous deux
+; bloquants dans ce cas, ce qui empêchait l'auto-update de finaliser).
+Filename: "{app}\{#MonExe}"; Parameters: "--reduit"; \
+    Description: "Lancer {#MonNom}"; Flags: nowait
 
 [UninstallDelete]
 ; l'entrée de démarrage éventuellement posée par l'application elle-même
