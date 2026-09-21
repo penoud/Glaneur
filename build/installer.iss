@@ -15,6 +15,8 @@ AppId={{8F3C1A42-6B2E-4D91-9C07-2E5A7D44B118}
 AppName={#MonNom}
 AppVersion={#MaVersion}
 AppPublisher={#MonEditeur}
+; Avec PrivilegesRequired=lowest, {autopf} résout vers {userpf} =
+; %LOCALAPPDATA%\Programs\{#MonNomCourt} (install user-scope, pas d'UAC).
 DefaultDirName={autopf}\{#MonNomCourt}
 DefaultGroupName={#MonNom}
 DisableProgramGroupPage=yes

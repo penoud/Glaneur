@@ -218,6 +218,10 @@ l'intégrité, un petit updater séparé ferme l'application, lance Inno Setup p
 relance l'application. Les erreurs réseau ou un choix « Plus tard » laissent
 l'application fonctionner normalement.
 
+L'installation est **user-scope** : `PrivilegesRequired=lowest` combiné à
+`DefaultDirName={autopf}` résout vers `%LOCALAPPDATA%\Programs\WpImagerDownloader`,
+donc aucune élévation UAC n'est demandée à l'installation ni aux mises à jour.
+
 **Taille.** Qt est volumineux. La liste `QT_INUTILES` du fichier `.spec`
 écarte QtWebEngine, Qt3D, QtQuick, QtMultimedia et une vingtaine d'autres
 modules dont l'application n'a que faire : la distribution passe d'environ
