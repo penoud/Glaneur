@@ -4,22 +4,22 @@ runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 command: WpImageDownloader
 finish-args:
-	- --share=network
-	- --share=ipc
-	- --socket=fallback-x11
-	- --socket=wayland
-	- --device=dri
-	- --filesystem=home
+  - --share=network
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
 modules:
-	- name: WpImageDownloader
-		buildsystem: simple
-		build-commands:
-			- install -d /app/lib/WpImageDownloader
-			- cp -a dist/WpImagerDownloader/. /app/lib/WpImageDownloader/
-			- install -Dm755 packaging/linux/WpImageDownloader-launcher /app/bin/WpImageDownloader
-			- install -Dm644 packaging/linux/WpImageDownloader.desktop /app/share/applications/org.wpimagedownloader.WpImageDownloader.desktop
-			- install -Dm644 packaging/linux/org.wpimagedownloader.WpImageDownloader.metainfo.xml /app/share/metainfo/org.wpimagedownloader.WpImageDownloader.metainfo.xml
-			- install -Dm644 packaging/linux/org.wpimagedownloader.WpImageDownloader.svg /app/share/icons/hicolor/scalable/apps/org.wpimagedownloader.WpImageDownloader.svg
-		sources:
-			- type: dir
-				path: ../..
+  - name: WpImageDownloader
+    buildsystem: simple
+    build-commands:
+      - install -d /app/lib/WpImageDownloader
+      - cp -a dist/WpImagerDownloader/. /app/lib/WpImageDownloader/
+      - install -Dm755 packaging/linux/WpImageDownloader-launcher /app/bin/WpImageDownloader
+      - install -Dm644 packaging/linux/WpImageDownloader.desktop /app/share/applications/org.wpimagedownloader.WpImageDownloader.desktop
+      - install -Dm644 packaging/linux/org.wpimagedownloader.WpImageDownloader.metainfo.xml /app/share/metainfo/org.wpimagedownloader.WpImageDownloader.metainfo.xml
+      - install -Dm644 packaging/linux/org.wpimagedownloader.WpImageDownloader.svg /app/share/icons/hicolor/scalable/apps/org.wpimagedownloader.WpImageDownloader.svg
+    sources:
+      - type: dir
+        path: ../..
