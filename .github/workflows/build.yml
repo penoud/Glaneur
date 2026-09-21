@@ -91,19 +91,20 @@ jobs:
         # flatpak-builder d'apt (1.2.x sur ubuntu-22.04) invoque encore
         # `appstream-compose`, retiré de freedesktop-sdk >= 24.08. On
         # utilise à la place org.flatpak.Builder depuis Flathub.
-        # Note : org.flatpak.Builder tourne dans sa propre sandbox et ne
-        # voit pas les runtimes installés sur le host — on lui passe
-        # --install-deps-from=flathub pour qu'il résolve lui-même le SDK
-        # et la Platform, plutôt que de tenter de les installer nous-mêmes
-        # côté host.
+        # `dbus-user-session` fournit `dbus-run-session`, indispensable
+        # pour que `flatpak install` puisse démarrer une session D-Bus
+        # dans le runner headless (sinon : « Cannot autolaunch D-Bus
+        # without X11 $DISPLAY » quand Builder résout le SDK).
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak
+          sudo apt-get install -y flatpak dbus-user-session
           flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub org.flatpak.Builder
       - name: Build Flatpak bundle
+        # dbus-run-session enveloppe l'exécution pour fournir un DBUS_SESSION_BUS_ADDRESS,
+        # ce qui débloque l'install du SDK/Platform 24.08 réclamée par Builder.
         run: |
-          flatpak run org.flatpak.Builder \
+          dbus-run-session -- flatpak run org.flatpak.Builder \
             --user --install-deps-from=flathub \
             --force-clean --disable-rofiles-fuse \
             --repo=flatpak-repo flatpak-build \
