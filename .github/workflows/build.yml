@@ -88,14 +88,21 @@ jobs:
           chmod +x packaging/linux/build-deb.sh packaging/linux/WpImageDownloader-launcher
           packaging/linux/build-deb.sh "${GITHUB_REF_NAME#v}"
       - name: Install Flatpak tooling
+        # On installe flatpak-builder depuis Flathub (org.flatpak.Builder)
+        # plutôt que celui d'apt : le paquet Ubuntu 22.04 (1.2.x) invoque
+        # `appstream-compose`, retiré de freedesktop-sdk >= 24.08 au profit
+        # de `appstreamcli compose`, ce qui fait échouer le build.
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak
           sudo flatpak --system remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          sudo flatpak --system install -y flathub org.freedesktop.Sdk//24.08 org.freedesktop.Platform//24.08
+          sudo flatpak --system install -y flathub \
+            org.flatpak.Builder \
+            org.freedesktop.Sdk//24.08 \
+            org.freedesktop.Platform//24.08
       - name: Build Flatpak bundle
         run: |
-          flatpak-builder --disable-rofiles-fuse --force-clean \
+          flatpak run org.flatpak.Builder --disable-rofiles-fuse --force-clean \
             --repo=flatpak-repo flatpak-build \
             packaging/linux/org.wpimagedownloader.WpImageDownloader.yml
           flatpak build-bundle flatpak-repo \
