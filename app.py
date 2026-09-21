@@ -729,7 +729,7 @@ class Fenetre(QMainWindow):
         DialogueSignalerBug(self, chemin_log if chemin_log.is_file() else None).exec()
 
     def _verifier_mise_a_jour(self, manuel: bool = False) -> None:
-        if self.verification_mise_a_jour and self.verification_mise_a_jour.isRunning():
+        if self._thread_maj_en_cours(self.verification_mise_a_jour):
             return
         thread = VerificationMiseAJour(self)
         thread.disponible.connect(self._mise_a_jour_disponible)
@@ -738,9 +738,26 @@ class Fenetre(QMainWindow):
             thread.erreur.connect(self._erreur_verification_manuel)
         else:
             thread.erreur.connect(self._ecrire)
+        thread.finished.connect(self._maj_verif_terminee)
         thread.finished.connect(thread.deleteLater)
         self.verification_mise_a_jour = thread
         thread.start()
+
+    def _maj_verif_terminee(self) -> None:
+        # Libère la référence avant que deleteLater ne supprime le C++ QThread,
+        # sinon l'attribut pointerait vers un wrapper mort et un clic suivant
+        # sur « Rechercher des mises à jour… » lèverait RuntimeError.
+        self.verification_mise_a_jour = None
+
+    @staticmethod
+    def _thread_maj_en_cours(thread) -> bool:
+        """True si `thread` n'est ni None ni un wrapper mort et tourne encore."""
+        if thread is None:
+            return False
+        try:
+            return thread.isRunning()
+        except RuntimeError:
+            return False
 
     def _aucune_mise_a_jour_manuel(self, info) -> None:
         QMessageBox.information(
