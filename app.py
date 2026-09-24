@@ -571,6 +571,8 @@ class Fenetre(QMainWindow):
         self.verification_mise_a_jour: VerificationMiseAJour | None = None
         self.telechargement_mise_a_jour: TelechargementMiseAJour | None = None
 
+        self._avertissement_tray_montre = False
+
         self._construire_menu()
         self._construire()
         self._construire_barre_notification()
@@ -742,21 +744,33 @@ class Fenetre(QMainWindow):
         self._rafraichir_bandeau()
 
     def _construire_barre_notification(self) -> None:
+        # Actions rappelées ailleurs (setEnabled pendant/après un run) : on les
+        # crée dans tous les cas, quitte à ne pas les attacher à un menu si
+        # aucun tray n'est disponible.
+        self.action_afficher = QAction("Afficher la fenêtre", self)
+        self.action_afficher.triggered.connect(self._afficher)
+        self.action_maj_tray = QAction("Mettre à jour maintenant", self)
+        self.action_maj_tray.triggered.connect(self._lancer)
+        self.action_supprimer_fond_tray = QAction("Supprimer ce fond d'écran", self)
+        self.action_supprimer_fond_tray.triggered.connect(self._supprimer_fond)
+        self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
+
+        # Sur Linux sans tray host (GNOME sans AppIndicator, WM minimal…),
+        # instancier QSystemTrayIcon.show() déclenche l'erreur D-Bus
+        # `org.freedesktop.DBus.Error.ServiceUnknown` et l'icône ne s'affiche
+        # pas. On détecte le cas et on n'installe simplement pas de tray :
+        # `main()` bascule alors sur QuitOnLastWindowClosed(True), et
+        # `closeEvent` avertit l'utilisateur au premier close.
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self.tray = None
+            return
+
         self.tray = QSystemTrayIcon(icone_application(), self)
         self.tray.setToolTip("WpImageDownloader — Téléchargeur d'images")
 
         menu = QMenu()
-        self.action_afficher = QAction("Afficher la fenêtre", self)
-        self.action_afficher.triggered.connect(self._afficher)
         menu.addAction(self.action_afficher)
-
-        self.action_maj_tray = QAction("Mettre à jour maintenant", self)
-        self.action_maj_tray.triggered.connect(self._lancer)
         menu.addAction(self.action_maj_tray)
-
-        self.action_supprimer_fond_tray = QAction("Supprimer ce fond d'écran", self)
-        self.action_supprimer_fond_tray.triggered.connect(self._supprimer_fond)
-        self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
         menu.addAction(self.action_supprimer_fond_tray)
 
         action = QAction("Ouvrir le dossier", self)
@@ -1075,8 +1089,8 @@ class Fenetre(QMainWindow):
         self._rafraichir_echeance()
 
         # bulle d'information seulement si l'utilisateur ne regardait pas
-        if (self.auto_en_cours and self.cfg.notifications and res.telechargees
-                and not self.isVisible()):
+        if (self.tray and self.auto_en_cours and self.cfg.notifications
+                and res.telechargees and not self.isVisible()):
             self.tray.showMessage(
                 "WpImageDownloader",
                 f"{res.telechargees} nouvelle(s) image(s) — {format_octets(res.octets)}",
@@ -1093,7 +1107,8 @@ class Fenetre(QMainWindow):
     def _rafraichir_echeance(self) -> None:
         texte = self.planificateur.texte_prochaine()
         self.label_echeance.setText(texte)
-        self.tray.setToolTip(f"WpImageDownloader — {texte}")
+        if self.tray:
+            self.tray.setToolTip(f"WpImageDownloader — {texte}")
 
     def _ecrire(self, message: str) -> None:
         self.journal.appendPlainText(f"{datetime.now():%H:%M:%S}  {message}")
@@ -1103,7 +1118,7 @@ class Fenetre(QMainWindow):
     def closeEvent(self, event) -> None:
         # la croix réduit dans la zone de notification, sauf demande explicite
         if (not self._quitter_demande and self.cfg.fermer_dans_barre
-                and self.tray.isVisible()):
+                and self.tray and self.tray.isVisible()):
             event.ignore()
             self.hide()
             self.tray.showMessage(
@@ -1111,6 +1126,23 @@ class Fenetre(QMainWindow):
                 "L'application continue en arrière-plan. Clic droit sur l'icône pour quitter.",
                 icone_application(), 4000)
             return
+
+        # Sur Linux sans tray host, l'application ne peut pas rester en fond :
+        # on prévient l'utilisateur (une fois par session) avant de vraiment
+        # quitter, en pointant vers l'extension à installer.
+        if (self.tray is None and sys.platform.startswith("linux")
+                and not self._quitter_demande
+                and self.cfg.fermer_dans_barre
+                and not self._avertissement_tray_montre):
+            self._avertissement_tray_montre = True
+            QMessageBox.information(
+                self, "Fermeture de WpImageDownloader",
+                "Aucun indicateur système n'est disponible sur cette session Linux, "
+                "l'application ne peut pas rester en arrière-plan et va se fermer.\n\n"
+                "Pour qu'elle continue à tourner icône dans la barre système, installer "
+                "l'extension « AppIndicator and KStatusNotifierItem Support » "
+                "(GNOME Shell) ou l'équivalent de votre environnement, puis relancer "
+                "l'application.")
 
         if self.travailleur and self.travailleur.isRunning():
             reponse = QMessageBox.question(
@@ -1124,7 +1156,8 @@ class Fenetre(QMainWindow):
             self.arret.set()
             self.travailleur.wait(5000)
 
-        self.tray.hide()
+        if self.tray:
+            self.tray.hide()
         event.accept()
         # setQuitOnLastWindowClosed(False) empêche l'app de quitter à la
         # fermeture de la fenêtre — indispensable pour rester en tray, mais
@@ -1148,7 +1181,14 @@ def main() -> int:
     app.setQuitOnLastWindowClosed(False)
 
     fenetre = Fenetre()
-    if "--reduit" not in sys.argv:
+    # Sans tray (Linux sans AppIndicator), rester ouvert après la fermeture de
+    # la fenêtre laisserait l'appli orpheline : on rebranche le quit standard.
+    # `--reduit` (démarrage sans fenêtre visible) n'a pas de sens non plus
+    # sans tray — sinon l'appli serait invisible et quitterait aussitôt.
+    if fenetre.tray is None:
+        app.setQuitOnLastWindowClosed(True)
+        fenetre.show()
+    elif "--reduit" not in sys.argv:
         fenetre.show()
 
     # rattrapage : échéance dépassée pendant que l'application était fermée
