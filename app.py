@@ -50,7 +50,16 @@ from PySide6.QtWidgets import (
 
 from WpImageDownloader import __version__
 from WpImageDownloader.bug_report import build_issue_url, collect_context
-from WpImageDownloader.config import CLASSEMENTS, GITHUB_OWNER, GITHUB_REPOSITORY, INTERVALLES, Config
+from WpImageDownloader.config import (
+    CLASSEMENTS,
+    FORMATS_DJANGOPLICITY,
+    GITHUB_OWNER,
+    GITHUB_REPOSITORY,
+    INTERVALLES,
+    TYPES_SOURCE,
+    Config,
+)
+from WpImageDownloader.sources import classements_pour
 from WpImageDownloader.engine import (
     Moteur,
     Options,
@@ -197,14 +206,47 @@ class DialoguePreferences(QDialog):
         colonne.setContentsMargins(14, 14, 14, 14)
         colonne.setSpacing(10)
 
-        # --- site WordPress -----------------------------------------------
-        boite = QGroupBox("Site WordPress")
-        ligne = QHBoxLayout(boite)
+        # --- site ---------------------------------------------------------
+        boite = QGroupBox("Site")
+        forme_site = QFormLayout(boite)
+        forme_site.setLabelAlignment(Qt.AlignLeft)
+
+        self.combo_type = QComboBox()
+        self.combo_type.addItems(list(TYPES_SOURCE))
+        libelle_type_courant = next(
+            (libelle for libelle, val in TYPES_SOURCE.items()
+             if val == cfg.type_source),
+            next(iter(TYPES_SOURCE)),
+        )
+        self.combo_type.setCurrentText(libelle_type_courant)
+        self.combo_type.setToolTip(
+            "Type de site à interroger. WordPress lit l'API REST /wp-json,\n"
+            "Djangoplicity lit le flux JSON /images/d2d/ (ESO, ESA/Hubble…).")
+        forme_site.addRow("Type :", self.combo_type)
+
         self.champ_site = QLineEdit(cfg.site)
         self.champ_site.setPlaceholderText("https://exemple.com")
         self.champ_site.setToolTip(
-            "URL du site WordPress compatible avec l'API REST utilisée.")
-        ligne.addWidget(self.champ_site, 1)
+            "URL de base du site (sans /wp-json ni /images/d2d selon le type).")
+        forme_site.addRow("URL :", self.champ_site)
+
+        # Format visible seulement pour Djangoplicity : les fichiers `Original`
+        # sont des TIFF de plusieurs centaines de Mo, l'avertissement est
+        # dans le libellé de l'option.
+        self.combo_format = QComboBox()
+        self.combo_format.addItems(list(FORMATS_DJANGOPLICITY))
+        libelle_format_courant = next(
+            (libelle for libelle, val in FORMATS_DJANGOPLICITY.items()
+             if val == cfg.format_image),
+            next(iter(FORMATS_DJANGOPLICITY)),
+        )
+        self.combo_format.setCurrentText(libelle_format_courant)
+        self.combo_format.setToolTip(
+            "Résolution téléchargée pour Djangoplicity. Original = TIFF (souvent >100 Mo).")
+        self.label_format = QLabel("Format :")
+        forme_site.addRow(self.label_format, self.combo_format)
+
+        self.combo_type.currentTextChanged.connect(self._sur_changement_type)
         colonne.addWidget(boite)
 
         # --- destination ---------------------------------------------------
@@ -234,6 +276,10 @@ class DialoguePreferences(QDialog):
             "Change la destination des nouvelles images. Les images déjà\n"
             "téléchargées restent là où elles sont.")
         form.addRow("Classement :", self.combo_classement)
+
+        # Ajuste la visibilité du format et le grisage du classement en
+        # fonction du type initial.
+        self._sur_changement_type(self.combo_type.currentText())
 
         self.spin_largeur = QSpinBox()
         self.spin_largeur.setRange(0, 10000)
@@ -294,6 +340,39 @@ class DialoguePreferences(QDialog):
         if choix:
             self.champ_dossier.setText(choix)
 
+    def _sur_changement_type(self, libelle: str) -> None:
+        """Le format n'a de sens que pour Djangoplicity ; les classements
+        non supportés par la source choisie sont grisés dans le combo (et si
+        celui qui était sélectionné vient d'être grisé, on retombe sur
+        « Par date »)."""
+        type_courant = TYPES_SOURCE.get(libelle, "wordpress")
+        est_djangoplicity = type_courant == "djangoplicity"
+        # Pour éviter d'importer les adaptateurs dans l'UI, le moteur expose
+        # `classements_pour(type)`.
+        supportes = classements_pour(type_courant)
+
+        # Format image : seulement pour Djangoplicity.
+        for widget in (self.label_format, self.combo_format):
+            widget.setVisible(est_djangoplicity)
+
+        # Grisage des classements non supportés.
+        modele = self.combo_classement.model()
+        for i in range(self.combo_classement.count()):
+            libelle_item = self.combo_classement.itemText(i)
+            valeur = CLASSEMENTS.get(libelle_item)
+            item = modele.item(i)
+            if item is not None:
+                item.setEnabled(valeur in supportes)
+
+        # Si la sélection courante vient d'être désactivée, bascule sur
+        # « Par date » (défaut cohérent pour toutes les sources).
+        valeur_courante = CLASSEMENTS.get(self.combo_classement.currentText())
+        if valeur_courante not in supportes:
+            for libelle_item, valeur in CLASSEMENTS.items():
+                if valeur == "date":
+                    self.combo_classement.setCurrentText(libelle_item)
+                    break
+
     def appliquer(self) -> str | None:
         """Reporte les valeurs saisies sur la config, les valide, les sauve, et
         propage aux intégrations système. Renvoie un message d'erreur non
@@ -303,6 +382,9 @@ class DialoguePreferences(QDialog):
         c.dossier = self.champ_dossier.text()
         c.intervalle_heures = INTERVALLES.get(self.combo_intervalle.currentText(), 24)
         c.classement = CLASSEMENTS.get(self.combo_classement.currentText(), "galerie")
+        c.type_source = TYPES_SOURCE.get(self.combo_type.currentText(), "wordpress")
+        c.format_image = FORMATS_DJANGOPLICITY.get(
+            self.combo_format.currentText(), "Large")
         c.largeur_min = self.spin_largeur.value()
         c.verifier_integrite = self.case_verifier.isChecked()
         c.diaporama_dossier = self.case_diaporama.isChecked()
@@ -930,6 +1012,8 @@ class Fenetre(QMainWindow):
             largeur_min=self.cfg.largeur_min,
             delai=self.cfg.delai_requetes,
             verifier=self.cfg.verifier_integrite,
+            type_source=self.cfg.type_source,
+            format_image=self.cfg.format_image,
         )
         self.travailleur = Travailleur(options, self.arret)
         self.travailleur.journal.connect(self._ecrire)

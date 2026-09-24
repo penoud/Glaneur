@@ -283,6 +283,11 @@ Pour diagnostiquer, `cli.py` affiche les mêmes messages sans passer par l'UI.
 
 ## 7. Pistes d'évolution
 
+- **Nouveau (1.1) : Djangoplicity.** Le type de site est réglable dans les
+  préférences (ou via `cli.py --type djangoplicity`) ; le format d'image
+  Djangoplicity par défaut est `Large`, avec repli automatique sur `Small`
+  si le `Large` manque pour une entrée donnée. Testé sur le flux `d2d/` de
+  `www.eso.org/public`.
 - **Tâche planifiée Windows** via `schtasks`, pour des mises à jour sans aucune
   application lancée. Le moteur est déjà utilisable en ligne de commande, il
   suffirait d'un `cli.py --silencieux`.

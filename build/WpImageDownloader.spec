@@ -39,7 +39,11 @@ a = Analysis(
     binaries=[],
     datas=[(str(ICONE), "build")] if ICONE.exists() else [],
     hiddenimports=["WpImageDownloader.config", "WpImageDownloader.engine",
-                   "WpImageDownloader.scheduler", "WpImageDownloader.systeme"],
+                   "WpImageDownloader.scheduler", "WpImageDownloader.systeme",
+                   "WpImageDownloader.sources",
+                   "WpImageDownloader.sources.base",
+                   "WpImageDownloader.sources.wordpress",
+                   "WpImageDownloader.sources.djangoplicity"],
     hookspath=[],
     runtime_hooks=[],
     excludes=QT_INUTILES + [

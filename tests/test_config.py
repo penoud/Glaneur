@@ -9,7 +9,9 @@ import pytest
 
 from WpImageDownloader.config import (
     CLASSEMENTS,
+    FORMATS_DJANGOPLICITY,
     INTERVALLES,
+    TYPES_SOURCE,
     Config,
     dossier_config,
     dossier_images_defaut,
@@ -210,6 +212,66 @@ class TestValider:
         c.delai_requetes = 999
         c.valider()
         assert c.delai_requetes == 10.0
+
+    def test_type_source_par_defaut_wordpress(self, tmp_path):
+        # config vierge : type_source défaut = "wordpress", zéro migration
+        c = self._neuve(tmp_path)
+        assert c.type_source == "wordpress"
+        assert c.format_image == "Large"
+
+    def test_type_source_inconnu_snap_wordpress(self, tmp_path):
+        c = self._neuve(tmp_path)
+        c.type_source = "n-importe-quoi"
+        c.valider()
+        assert c.type_source == "wordpress"
+
+    def test_format_image_inconnu_snap_large(self, tmp_path):
+        c = self._neuve(tmp_path)
+        c.format_image = "Ultra"
+        c.valider()
+        assert c.format_image == "Large"
+
+    def test_classement_snap_si_source_ne_le_supporte_pas(self, tmp_path):
+        # Djangoplicity ne fait pas "galerie" : `valider` rabat sur "date"
+        c = self._neuve(tmp_path)
+        c.type_source = "djangoplicity"
+        c.classement = "galerie"
+        c.valider()
+        assert c.classement == "date"
+
+    def test_classement_conserve_si_supporte(self, tmp_path):
+        # WordPress supporte "galerie" : rien à changer
+        c = self._neuve(tmp_path)
+        c.type_source = "wordpress"
+        c.classement = "galerie"
+        c.valider()
+        assert c.classement == "galerie"
+
+    def test_v1038_config_charge_sans_champs_nouveaux(self, tmp_path):
+        # config écrite par 1.0.38 (sans type_source ni format_image) :
+        # elle doit se relire sans erreur, avec les valeurs par défaut,
+        # et le comportement WordPress est préservé.
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "site": "https://old.example",
+            "intervalle_heures": 6,
+            "classement": "galerie",
+        }))
+        c = Config.charger(chemin)
+        assert c.type_source == "wordpress"
+        assert c.format_image == "Large"
+        assert c.classement == "galerie"   # non snapée car WP la supporte
+
+
+class TestConstantesSource:
+    def test_types_source_contient_wordpress_et_djangoplicity(self):
+        # sanity check : les deux clés attendues par l'engine sont là.
+        valeurs = set(TYPES_SOURCE.values())
+        assert "wordpress" in valeurs
+        assert "djangoplicity" in valeurs
+
+    def test_formats_djangoplicity_contient_large(self):
+        assert "Large" in FORMATS_DJANGOPLICITY.values()
 
 
 # --------------------------------------------------------------------------- #
