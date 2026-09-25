@@ -1,4 +1,4 @@
-# Téléchargeur d'images WordPress
+# Téléchargeur d'images multi-sources
 
 > **Disclaimer**
 >
@@ -7,9 +7,11 @@
 > éventuellement mentionnés sont utilisés uniquement à titre descriptif.
 
 Application Windows qui synchronise en local les images publiées sur un site
-WordPress compatible avec l'API REST utilisée. Elle tourne en arrière-plan,
-se met à jour à l'intervalle choisi et ne retélécharge jamais une image déjà
-présente.
+distant. Deux types de source sont supportés :
+`WordPress` (via l'API REST `/wp-json/wp/v2`) et
+`Djangoplicity` (flux `d2d/` des sites ESO, ESA/Hubble…). Elle tourne en
+arrière-plan, se met à jour à l'intervalle choisi et ne retélécharge jamais
+une image déjà présente.
 
 ---
 
@@ -29,9 +31,21 @@ wp-image-downloader/
 ├── build.bat               Construction complète en une commande
 ├── WpImageDownloader/
 │   ├── config.py           Préférences persistées (JSON dans %APPDATA%)
-│   ├── engine.py           Moteur : API, manifeste, téléchargement, reprise
+│   ├── engine.py           Moteur : orchestration, manifeste, téléchargement, reprise
 │   ├── scheduler.py        Calcul d'échéance (logique pure, sans thread)
-│   └── systeme.py          Registre Windows, ouverture de dossier
+│   ├── systeme.py          Registre Windows, ouverture de dossier
+│   ├── logsetup.py         Logger fichier rotatif (%APPDATA%\WpImageDownloader\app.log)
+│   ├── bug_report.py       Compose l'URL GitHub issues/new du menu Aide → Signaler un bug
+│   ├── i18n.py             Charge QTranslator au démarrage (voir §4 Internationalisation)
+│   ├── sources/            Adaptateurs par type de site (contrat commun `Source`)
+│   │   ├── base.py         Classe abstraite `Source` + `Transport` HTTP partagé
+│   │   ├── wordpress.py    API REST `/wp-json/wp/v2`
+│   │   └── djangoplicity.py Flux `d2d/` (ESO, ESA/Hubble…)
+│   └── updater/            Mise à jour in-app depuis GitHub Release
+│       ├── github_release.py  Interrogation de l'API Releases
+│       ├── downloader.py      Téléchargement + vérification SHA-256
+│       ├── qt_threads.py      Threads Qt (check / download) et handoff
+│       ├── models.py, version.py
 └── build/
     ├── WpImageDownloader.spec Recette PyInstaller
     └── installer.iss       Script Inno Setup
@@ -84,9 +98,24 @@ autres tests (moteur, scheduler, config, updater unitaire) tournent sans lui.
 
 ## 3. Fonctionnement
 
-**Inventaire.** Une requête `GET /wp-json/wp/v2/media?per_page=100` par page,
-paginée d'après l'en-tête `X-WP-TotalPages`. Le champ `source_url` donne
-directement l'original en pleine résolution.
+**Sources.** Le moteur délègue à un adaptateur `Source` (dans
+`WpImageDownloader/sources/`) qui expose deux méthodes : `inventaire()` liste
+les images disponibles, `titre_parent()` résout un ID de galerie en libellé
+lisible. Deux implémentations sont fournies :
+
+- `wordpress` — API REST `GET /wp-json/wp/v2/media?per_page=100`, paginée
+  d'après l'en-tête `X-WP-TotalPages`. Le champ `source_url` donne
+  directement l'original en pleine résolution.
+- `djangoplicity` — flux `d2d/` des sites style ESO/ESA/Hubble ; le format
+  d'image est réglable (défaut `Large`, repli automatique sur `Small` si
+  le `Large` manque pour une entrée).
+
+Le choix se fait dans **Préférences → « Type de site »**, ou via
+`cli.py --type {wordpress,djangoplicity}`. Ajouter une source revient à
+implémenter `Source` et à l'enregistrer dans `sources/SOURCES`.
+
+**Inventaire (WordPress).** Une requête par page, paginée via
+`X-WP-TotalPages`. Le champ `source_url` donne l'original.
 
 **Filtrage.** Les entrées sous la largeur minimale (800 px par défaut) sont
 écartées : ce sont les logos sponsors, favicons et vignettes.
@@ -141,20 +170,26 @@ Fichier : `%APPDATA%\WpImageDownloader\config.json`
 (`~/.config/wp-image-downloader/` ailleurs).
 
 La fenêtre principale expose les actions (mise à jour, arrêter, supprimer le
-fond, images supprimées) et le journal ; les paramètres — URL du site,
+fond, images supprimées) et le journal ; les paramètres — type de site, URL,
 destination, intervalle, classement, largeur minimale, intégration système —
-vivent dans **Configuration → Préférences…** (raccourci `Ctrl+,`). Le moteur
-utilise l'URL du site comme préfixe de l'endpoint `/wp-json/wp/v2`. Le menu
-**Aide → À propos…** rappelle la version et le dépôt.
+vivent dans **Configuration → Préférences…** (raccourci `Ctrl+,`). Le menu
+**Aide → À propos…** rappelle la version et le dépôt, et **Aide → Signaler un
+bug…** ouvre une issue GitHub préremplie (version, plateforme et 50 dernières
+lignes de log compactées).
 
 | Clé | Rôle | Défaut |
 |---|---|---|
-| `site` | URL du site WordPress cible | configurée dans l'application |
+| `type_source` | `wordpress` ou `djangoplicity` | `wordpress` |
+| `site` | URL du site cible | configurée dans l'application |
 | `dossier` | destination des images | dossier Images de l'utilisateur |
 | `intervalle_heures` | 0, 6, 12, 24 ou 168 | `24` |
 | `largeur_min` | seuil en pixels | `800` |
 | `classement` | `galerie`, `date` ou `plat` | `galerie` |
+| `format_image` | Djangoplicity : `Large` / `Small` / `Original` | `Large` |
 | `verifier_integrite` | revalidation conditionnelle | `false` |
+| `verifier_maj_demarrage` | interroge GitHub Releases au lancement | `true` |
+| `lancer_au_demarrage` | entrée `HKCU\...\Run` avec `--reduit` | `false` |
+| `langue` | code ISO (`fr`, `en`) ; vide = locale système | `""` |
 | `fermer_dans_barre` | la croix réduit au lieu de quitter | `true` |
 | `notifications` | bulle après une mise à jour automatique | `true` |
 | `delai_requetes` | pause entre requêtes, en secondes | `0.5` |
@@ -165,6 +200,32 @@ Les paramètres sont sauvegardés à la validation de la fenêtre Préférences
 (bouton OK). Les valeurs hors bornes sont ramenées à des valeurs saines au
 chargement ; `delai_requetes` est plafonné à un minimum de 0,2 s pour ne pas
 marteler le serveur cible.
+
+### Internationalisation
+
+Toutes les chaînes d'interface passent par `self.tr(...)` (widgets) ou
+`QCoreApplication.translate("BugReport", ...)` (module `bug_report.py`).
+Les sources sont en français ; les autres langues vivent dans
+`translations/wpimagedownloader_<code>.ts`, compilées en `.qm` que
+`WpImageDownloader/i18n.py` installe au démarrage selon la préférence
+`langue` (ou la locale système si vide). Le changement de langue prend
+effet au **prochain lancement** — pas de retranslation à chaud.
+
+Workflow traducteur :
+
+```bash
+# 1. Après avoir modifié du code : (ré)extraire les strings vers les .ts
+python translations/build_translations.py update
+
+# 2. Ouvrir et traduire dans Qt Linguist
+pyside6-linguist translations/wpimagedownloader_en.ts
+
+# 3. Compiler les .ts en .qm consommés par l'app
+python translations/build_translations.py release
+```
+
+`build.bat` appelle automatiquement l'étape 3 avant PyInstaller. Les `.qm`
+ne sont pas versionnés (générés au build) ; les `.ts` le sont.
 
 ### Licence et contenus téléchargés
 
@@ -198,7 +259,7 @@ iscc build\installer.iss
 ```
 
 Résultats : `dist\WpImagerDownloader\` puis
-`build\Output\WpImagerDownloader-1.0.39-setup.exe`.
+`build\Output\WpImagerDownloader-1.0.40-setup.exe`.
 
 **Icône.** Aucun logo ou blason tiers n'est distribué dans le dépôt. Sans fichier
 ICO fourni séparément au moment du build, l'application dessine à la volée un
@@ -278,16 +339,14 @@ Le même workflow produit une application macOS (`.app`) distribuée en archive
 | L'antivirus met l'exe en quarantaine | faux positif classique sur PyInstaller ; vérifier que UPX reste désactivé |
 
 Pour diagnostiquer, `cli.py` affiche les mêmes messages sans passer par l'UI.
+Le fichier log complet vit dans `%APPDATA%\WpImageDownloader\app.log`
+(rotation gérée par `logsetup.py`) ; **Aide → Signaler un bug…** en attache
+les 50 dernières lignes à une issue GitHub préremplie.
 
 ---
 
 ## 7. Pistes d'évolution
 
-- **Nouveau (1.1) : Djangoplicity.** Le type de site est réglable dans les
-  préférences (ou via `cli.py --type djangoplicity`) ; le format d'image
-  Djangoplicity par défaut est `Large`, avec repli automatique sur `Small`
-  si le `Large` manque pour une entrée donnée. Testé sur le flux `d2d/` de
-  `www.eso.org/public`.
 - **Tâche planifiée Windows** via `schtasks`, pour des mises à jour sans aucune
   application lancée. Le moteur est déjà utilisable en ligne de commande, il
   suffirait d'un `cli.py --silencieux`.

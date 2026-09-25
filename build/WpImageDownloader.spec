@@ -33,13 +33,22 @@ QT_INUTILES = [
     "PySide6.QtWebEngineWidgets", "PySide6.QtWebSockets",
 ]
 
+datas = []
+if ICONE.exists():
+    datas.append((str(ICONE), "build"))
+# Fichiers .qm de traduction (i18n.py cherche `translations/` à côté du bundle).
+dossier_traductions = RACINE / "translations"
+for qm in dossier_traductions.glob("*.qm"):
+    datas.append((str(qm), "translations"))
+
 a = Analysis(
     [str(RACINE / "app.py")],
     pathex=[str(RACINE)],
     binaries=[],
-    datas=[(str(ICONE), "build")] if ICONE.exists() else [],
+    datas=datas,
     hiddenimports=["WpImageDownloader.config", "WpImageDownloader.engine",
                    "WpImageDownloader.scheduler", "WpImageDownloader.systeme",
+                   "WpImageDownloader.i18n",
                    "WpImageDownloader.sources",
                    "WpImageDownloader.sources.base",
                    "WpImageDownloader.sources.wordpress",

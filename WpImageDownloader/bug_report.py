@@ -14,6 +14,12 @@ import sys
 from pathlib import Path
 from urllib.parse import urlencode
 
+from PySide6.QtCore import QCoreApplication
+
+# NB : lupdate n'extrait que les appels QCoreApplication.translate("Ctx", "src")
+# avec contexte ET source *littéraux* — un alias `_tr()` ne serait pas
+# détecté. On inline donc, avec le contexte fixe « BugReport ».
+
 # --------------------------------------------------------------------------- #
 # Compactage des lignes de log — chaque char économisé laisse plus de place
 # au texte de l'utilisateur avant que l'URL GitHub ne dépasse le plafond.
@@ -81,17 +87,19 @@ def collect_context(
     """Renvoie un bloc Markdown avec version, plateforme et dernières lignes
     de log. `chemin_log=None` ou fichier absent = section log omise. Le log
     est compacté (préfixe logger + chemins Windows + timestamps) pour laisser
-    de la place au texte de l'utilisateur."""
+    de la place au texte de l'utilisateur. Les entêtes Markdown passent par
+    Qt tr() : ils apparaissent dans l'issue GitHub dans la langue de l'app."""
     lignes = [
-        "### Contexte",
+        f"### {QCoreApplication.translate('BugReport', 'Contexte')}",
         "",
-        f"- **Version** : {version}",
-        f"- **Plateforme** : {platform.platform()}",
-        f"- **Python** : {sys.version.split()[0]}",
+        f"- **{QCoreApplication.translate('BugReport', 'Version')}** : {version}",
+        f"- **{QCoreApplication.translate('BugReport', 'Plateforme')}** : {platform.platform()}",
+        f"- **{QCoreApplication.translate('BugReport', 'Python')}** : {sys.version.split()[0]}",
     ]
     tail, note = _tail_log(chemin_log, nb_lignes) if chemin_log else ("", "")
     if tail:
-        entete = f"### Dernières lignes de log ({nb_lignes} max)"
+        entete = "### " + QCoreApplication.translate(
+            "BugReport", "Dernières lignes de log ({n} max)").format(n=nb_lignes)
         if note:
             entete += f" — {note}"
         lignes += ["", entete, "", "```", tail, "```"]
@@ -112,7 +120,8 @@ def _tail_log(chemin: Path, nb_lignes: int) -> tuple[str, str]:
     date_commune = _all_same_date(lignes_recentes)
     compactees = [_compact_line(l, drop_date=bool(date_commune))
                   for l in lignes_recentes]
-    note = f"date : {date_commune}" if date_commune else ""
+    note = (QCoreApplication.translate("BugReport", "date : {date}").format(date=date_commune)
+            if date_commune else "")
     return "\n".join(compactees).rstrip(), note
 
 

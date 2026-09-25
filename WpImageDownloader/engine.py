@@ -6,6 +6,11 @@ Il peut donc servir aussi bien à l'UI PySide6 qu'à un script en ligne de comma
 
 Il ne connaît pas non plus WordPress ni Djangoplicity. Il consomme des
 `Element` produits par un adaptateur de `WpImageDownloader.sources`.
+
+Seule dépendance Qt : `QCoreApplication.translate` pour localiser les
+messages remontés au journal et à `res.message` — pas de widget, pas de
+thread introduit, et `.translate()` retombe sur la source FR quand aucune
+QCoreApplication n'existe (cas de la CLI et des tests unitaires).
 """
 
 from __future__ import annotations
@@ -24,8 +29,12 @@ from typing import Callable, Iterable
 from urllib.parse import urlparse
 
 import requests
+from PySide6.QtCore import QCoreApplication
 
 from .sources import SOURCES, Element, Interrompu, Transport
+
+# lupdate n'extrait QCoreApplication.translate("Ctx", "src") que si contexte
+# et source sont littéraux : on inline plutôt que d'aliaser un _tr().
 
 # Réexport de `Interrompu` pour les appelants qui l'importent via `engine`.
 Interrompu = Interrompu   # noqa: PLW0127 — alias explicite
@@ -276,7 +285,7 @@ class Moteur:
             return {}
         manifeste = lire_manifeste(self.o.dossier)
         if not manifeste:
-            self._journal("Manifeste illisible, reconstruction complète.")
+            self._journal(QCoreApplication.translate("Moteur", "Manifeste illisible, reconstruction complète."))
         return manifeste
 
     def sauver_manifeste(self, manifeste: dict) -> None:
@@ -393,7 +402,7 @@ class Moteur:
             return ("repris" if reprise else "ok"), infos
 
         except requests.RequestException as e:
-            return f"erreur : {e}", None
+            return QCoreApplication.translate("Moteur", "erreur : {erreur}").format(erreur=e), None
 
     # -- orchestration ------------------------------------------------------ #
 
@@ -403,7 +412,7 @@ class Moteur:
         manifeste = self.charger_manifeste()
         cache = self.charger_cache()
         if manifeste:
-            self._journal(f"{len(manifeste)} image(s) déjà connues.")
+            self._journal(QCoreApplication.translate("Moteur", "{n} image(s) déjà connues.").format(n=len(manifeste)))
 
         # Cache : on ne l'utilise que si l'utilisateur n'a pas déjà borné la
         # période — dans ce cas, ses bornes priment sur la mémoire du cache.
@@ -411,9 +420,10 @@ class Moteur:
         if not (self.o.depuis or self.o.jusqua):
             depuis_cache = cache.get("derniere_date_media")
             if depuis_cache:
-                self._journal(
-                    f"Cache : ne redemande à l'API que les médias postérieurs à "
-                    f"{depuis_cache[:19]}.")
+                self._journal(QCoreApplication.translate(
+                    "Moteur",
+                    "Cache : ne redemande à l'API que les médias postérieurs à {date}.").format(
+                    date=depuis_cache[:19]))
 
         try:
             depuis = self.source.convertir_depuis(depuis_cache) or self.o.depuis
@@ -429,11 +439,13 @@ class Moteur:
                 # demandée) ne peut plus être téléchargé : il file en `ignorees`.
                 ecartees = avant - len(elements)
                 if ecartees:
-                    self._journal(f"{ecartees} vignette(s) ou logo(s) écarté(s) "
-                                  f"(moins de {self.o.largeur_min} px).")
+                    self._journal(QCoreApplication.translate(
+                        "Moteur",
+                        "{n} vignette(s) ou logo(s) écarté(s) (moins de {min} px).").format(
+                        n=ecartees, min=self.o.largeur_min))
 
             if not elements:
-                res.message = "Aucune image ne correspond aux critères."
+                res.message = QCoreApplication.translate("Moteur", "Aucune image ne correspond aux critères.")
                 return res
 
             # noms déjà attribués, pour qu'une image n'en écrase pas une autre
@@ -464,12 +476,15 @@ class Moteur:
                     continue
                 a_faire.append((e, connu))
 
-            self._journal(f"{res.deja_presentes} déjà à jour, {len(a_faire)} à traiter.")
+            self._journal(QCoreApplication.translate("Moteur", "{connues} déjà à jour, {a_faire} à traiter.").format(
+                connues=res.deja_presentes, a_faire=len(a_faire)))
             if res.supprimees:
-                self._journal(f"{res.supprimees} image(s) effacée(s) sur le disque, "
-                              "elles ne seront plus retéléchargées.")
+                self._journal(QCoreApplication.translate(
+                    "Moteur",
+                    "{n} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées."
+                ).format(n=res.supprimees))
             if not a_faire:
-                res.message = "Tout est déjà à jour."
+                res.message = QCoreApplication.translate("Moteur", "Tout est déjà à jour.")
                 self._progression(1, 1, res.message)
                 return res
 
@@ -481,7 +496,7 @@ class Moteur:
             if (self.o.classement == "galerie"
                     and "galerie" in self.source.classements
                     and inconnus):
-                self._progression(0, len(a_faire), "Identification des galeries…")
+                self._progression(0, len(a_faire), QCoreApplication.translate("Moteur", "Identification des galeries…"))
                 titres = self.source.resoudre_groupes(
                     inconnus, connus=titres_caches)
 
@@ -518,14 +533,17 @@ class Moteur:
                     res.inchangees += 1
                 else:
                     res.echecs += 1
-                    self._journal(f"{fichier.name} : {statut}")
+                    # `statut` peut être un code interne ("introuvable") ou une
+                    # phrase déjà traduite (voir télécharger()).
+                    affiche = QCoreApplication.translate("Moteur", "introuvable") if statut == "introuvable" else statut
+                    self._journal(f"{fichier.name} : {affiche}")
 
                 self._progression(i, len(a_faire), f"{fichier.parent.name}/{fichier.name}")
                 if i % 25 == 0:
                     self.sauver_manifeste(manifeste)
 
-            res.message = (f"{res.telechargees} nouvelle(s) image(s), "
-                           f"{format_octets(res.octets)} téléchargés.")
+            res.message = QCoreApplication.translate("Moteur", "{n} nouvelle(s) image(s), {taille} téléchargés.").format(
+                n=res.telechargees, taille=format_octets(res.octets))
 
             # Mise à jour du cache : date maximale et titres nouvellement résolus.
             # On ne l'écrit qu'en sortie normale, jamais après une interruption
@@ -542,12 +560,12 @@ class Moteur:
 
         except Interrompu:
             res.interrompu = True
-            res.message = "Interrompu — la reprise repartira d'ici."
+            res.message = QCoreApplication.translate("Moteur", "Interrompu — la reprise repartira d'ici.")
         except RuntimeError as e:
             res.message = str(e)
-            self._journal(f"Erreur : {e}")
+            self._journal(QCoreApplication.translate("Moteur", "Erreur : {erreur}").format(erreur=e))
         except OSError as e:
-            res.message = f"Problème d'écriture : {e}"
+            res.message = QCoreApplication.translate("Moteur", "Problème d'écriture : {erreur}").format(erreur=e)
             self._journal(res.message)
         finally:
             self.sauver_manifeste(manifeste)

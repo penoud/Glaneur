@@ -8,3 +8,7 @@ htmlcov/
 build/Output/
 dist/
 *.spec.bak
+
+# Traductions compilées : générées par `python translations/build_translations.py release`
+# (les .ts, sources de traduction, sont bien versionnés).
+translations/*.qm
