@@ -159,26 +159,27 @@ class DialogueSupprimees(QDialog):
 
     def __init__(self, parent, entrees: list[dict]) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Images supprimées")
+        self.setWindowTitle(self.tr("Images supprimées"))
         self.resize(540, 380)
         self.entrees = entrees
 
         colonne = QVBoxLayout(self)
-        colonne.addWidget(QLabel(
+        colonne.addWidget(QLabel(self.tr(
             "Ces images ont été téléchargées puis effacées du dossier.\n"
-            "Cochez celles à retélécharger à la prochaine mise à jour."))
+            "Cochez celles à retélécharger à la prochaine mise à jour.")))
 
         self.liste = QListWidget()
         for e in entrees:
-            item = QListWidgetItem(
-                f"{e.get('fichier', '?')}    (effacée le {e.get('supprime', '')[:10]})")
+            item = QListWidgetItem(self.tr("{fichier}    (effacée le {date})").format(
+                fichier=e.get("fichier", "?"),
+                date=e.get("supprime", "")[:10]))
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
             self.liste.addItem(item)
         colonne.addWidget(self.liste, 1)
 
         boutons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
-        boutons.addButton("Tout cocher", QDialogButtonBox.ActionRole).clicked.connect(
+        boutons.addButton(self.tr("Tout cocher"), QDialogButtonBox.ActionRole).clicked.connect(
             self._tout_cocher)
         boutons.accepted.connect(self.accept)
         boutons.rejected.connect(self.reject)
@@ -203,7 +204,7 @@ class DialoguePreferences(QDialog):
 
     def __init__(self, parent, cfg: Config) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Préférences")
+        self.setWindowTitle(self.tr("Préférences"))
         self.setMinimumSize(560, 420)
         self.cfg = cfg
 
@@ -212,7 +213,7 @@ class DialoguePreferences(QDialog):
         colonne.setSpacing(10)
 
         # --- site ---------------------------------------------------------
-        boite = QGroupBox("Site")
+        boite = QGroupBox(self.tr("Site"))
         forme_site = QFormLayout(boite)
         forme_site.setLabelAlignment(Qt.AlignLeft)
 
@@ -224,16 +225,16 @@ class DialoguePreferences(QDialog):
             next(iter(TYPES_SOURCE)),
         )
         self.combo_type.setCurrentText(libelle_type_courant)
-        self.combo_type.setToolTip(
+        self.combo_type.setToolTip(self.tr(
             "Type de site à interroger. WordPress lit l'API REST /wp-json,\n"
-            "Djangoplicity lit le flux JSON /images/d2d/ (ESO, ESA/Hubble…).")
-        forme_site.addRow("Type :", self.combo_type)
+            "Djangoplicity lit le flux JSON /images/d2d/ (ESO, ESA/Hubble…)."))
+        forme_site.addRow(self.tr("Type :"), self.combo_type)
 
         self.champ_site = QLineEdit(cfg.site)
-        self.champ_site.setPlaceholderText("https://exemple.com")
-        self.champ_site.setToolTip(
-            "URL de base du site (sans /wp-json ni /images/d2d selon le type).")
-        forme_site.addRow("URL :", self.champ_site)
+        self.champ_site.setPlaceholderText(self.tr("https://exemple.com"))
+        self.champ_site.setToolTip(self.tr(
+            "URL de base du site (sans /wp-json ni /images/d2d selon le type)."))
+        forme_site.addRow(self.tr("URL :"), self.champ_site)
 
         # Format visible seulement pour Djangoplicity : les fichiers `Original`
         # sont des TIFF de plusieurs centaines de Mo, l'avertissement est
@@ -246,41 +247,41 @@ class DialoguePreferences(QDialog):
             next(iter(FORMATS_DJANGOPLICITY)),
         )
         self.combo_format.setCurrentText(libelle_format_courant)
-        self.combo_format.setToolTip(
-            "Résolution téléchargée pour Djangoplicity. Original = TIFF (souvent >100 Mo).")
-        self.label_format = QLabel("Format :")
+        self.combo_format.setToolTip(self.tr(
+            "Résolution téléchargée pour Djangoplicity. Original = TIFF (souvent >100 Mo)."))
+        self.label_format = QLabel(self.tr("Format :"))
         forme_site.addRow(self.label_format, self.combo_format)
 
         self.combo_type.currentTextChanged.connect(self._sur_changement_type)
         colonne.addWidget(boite)
 
         # --- destination ---------------------------------------------------
-        boite = QGroupBox("Destination")
+        boite = QGroupBox(self.tr("Destination"))
         ligne = QHBoxLayout(boite)
         self.champ_dossier = QLineEdit(cfg.dossier)
         ligne.addWidget(self.champ_dossier, 1)
-        bouton = QPushButton("Parcourir…")
+        bouton = QPushButton(self.tr("Parcourir…"))
         bouton.clicked.connect(self._choisir_dossier)
         ligne.addWidget(bouton)
         colonne.addWidget(boite)
 
         # --- options -------------------------------------------------------
-        boite = QGroupBox("Options")
+        boite = QGroupBox(self.tr("Options"))
         form = QFormLayout(boite)
         form.setLabelAlignment(Qt.AlignLeft)
 
         self.combo_intervalle = QComboBox()
         self.combo_intervalle.addItems(list(INTERVALLES))
         self.combo_intervalle.setCurrentText(cfg.libelle_intervalle)
-        form.addRow("Mise à jour :", self.combo_intervalle)
+        form.addRow(self.tr("Mise à jour :"), self.combo_intervalle)
 
         self.combo_classement = QComboBox()
         self.combo_classement.addItems(list(CLASSEMENTS))
         self.combo_classement.setCurrentText(cfg.libelle_classement)
-        self.combo_classement.setToolTip(
+        self.combo_classement.setToolTip(self.tr(
             "Change la destination des nouvelles images. Les images déjà\n"
-            "téléchargées restent là où elles sont.")
-        form.addRow("Classement :", self.combo_classement)
+            "téléchargées restent là où elles sont."))
+        form.addRow(self.tr("Classement :"), self.combo_classement)
 
         # Ajuste la visibilité du format et le grisage du classement en
         # fonction du type initial.
@@ -289,44 +290,58 @@ class DialoguePreferences(QDialog):
         self.spin_largeur = QSpinBox()
         self.spin_largeur.setRange(0, 10000)
         self.spin_largeur.setSingleStep(100)
-        self.spin_largeur.setSuffix(" px")
+        self.spin_largeur.setSuffix(self.tr(" px"))
         self.spin_largeur.setValue(cfg.largeur_min)
-        self.spin_largeur.setToolTip(
-            "Écarte les logos et vignettes sous cette largeur. 0 pour tout garder.")
-        form.addRow("Largeur minimale :", self.spin_largeur)
+        self.spin_largeur.setToolTip(self.tr(
+            "Écarte les logos et vignettes sous cette largeur. 0 pour tout garder."))
+        form.addRow(self.tr("Largeur minimale :"), self.spin_largeur)
 
-        self.case_verifier = QCheckBox("Vérifier l'intégrité des fichiers existants")
+        self.case_verifier = QCheckBox(self.tr("Vérifier l'intégrité des fichiers existants"))
         self.case_verifier.setChecked(cfg.verifier_integrite)
-        self.case_verifier.setToolTip(
+        self.case_verifier.setToolTip(self.tr(
             "Interroge le serveur sur chaque fichier connu (réponse 304 si identique).\n"
-            "Plus lent, à réserver à un contrôle ponctuel.")
+            "Plus lent, à réserver à un contrôle ponctuel."))
         form.addRow("", self.case_verifier)
 
-        self.case_diaporama = QCheckBox(
-            "Utiliser ce dossier pour le diaporama Windows")
+        self.case_diaporama = QCheckBox(self.tr(
+            "Utiliser ce dossier pour le diaporama Windows"))
         self.case_diaporama.setChecked(cfg.diaporama_dossier)
         self.case_diaporama.setEnabled(sys.platform == "win32")
-        self.case_diaporama.setToolTip(
+        self.case_diaporama.setToolTip(self.tr(
             "Configure le diaporama de fond d'écran Windows pour piocher\n"
-            "dans le dossier de téléchargement.")
+            "dans le dossier de téléchargement."))
         form.addRow("", self.case_diaporama)
 
-        self.case_barre = QCheckBox("Réduire dans la zone de notification à la fermeture")
+        self.case_barre = QCheckBox(self.tr("Réduire dans la zone de notification à la fermeture"))
         self.case_barre.setChecked(cfg.fermer_dans_barre)
         form.addRow("", self.case_barre)
 
-        self.case_demarrage = QCheckBox("Lancer au démarrage de Windows")
+        self.case_demarrage = QCheckBox(self.tr("Lancer au démarrage de Windows"))
         self.case_demarrage.setChecked(demarrage_automatique_actif())
         self.case_demarrage.setEnabled(sys.platform == "win32")
         form.addRow("", self.case_demarrage)
 
-        self.case_maj_demarrage = QCheckBox("Vérifier les mises à jour au démarrage")
+        self.case_maj_demarrage = QCheckBox(self.tr("Vérifier les mises à jour au démarrage"))
         self.case_maj_demarrage.setChecked(cfg.verifier_maj_demarrage)
         self.case_maj_demarrage.setEnabled(sys.platform == "win32")
-        self.case_maj_demarrage.setToolTip(
+        self.case_maj_demarrage.setToolTip(self.tr(
             "Interroge GitHub en arrière-plan au lancement de l'application\n"
-            "pour proposer la dernière version stable si elle est plus récente.")
+            "pour proposer la dernière version stable si elle est plus récente."))
         form.addRow("", self.case_maj_demarrage)
+
+        # --- langue --------------------------------------------------------
+        from WpImageDownloader.i18n import LANGUES_DISPONIBLES
+        self.combo_langue = QComboBox()
+        self.combo_langue.addItem(self.tr("Langue du système"), "")
+        for code, libelle in LANGUES_DISPONIBLES.items():
+            self.combo_langue.addItem(libelle, code)
+        for i in range(self.combo_langue.count()):
+            if self.combo_langue.itemData(i) == cfg.langue:
+                self.combo_langue.setCurrentIndex(i)
+                break
+        self.combo_langue.setToolTip(self.tr(
+            "Le changement de langue prend effet au prochain lancement."))
+        form.addRow(self.tr("Langue :"), self.combo_langue)
 
         colonne.addWidget(boite)
         colonne.addStretch(1)
@@ -340,7 +355,7 @@ class DialoguePreferences(QDialog):
 
     def _choisir_dossier(self) -> None:
         choix = QFileDialog.getExistingDirectory(
-            self, "Où enregistrer les images ?",
+            self, self.tr("Où enregistrer les images ?"),
             self.champ_dossier.text() or str(Path.home()))
         if choix:
             self.champ_dossier.setText(choix)
@@ -395,6 +410,7 @@ class DialoguePreferences(QDialog):
         c.diaporama_dossier = self.case_diaporama.isChecked()
         c.fermer_dans_barre = self.case_barre.isChecked()
         c.verifier_maj_demarrage = self.case_maj_demarrage.isChecked()
+        c.langue = self.combo_langue.currentData() or ""
         c.valider()
         c.sauver()
 
@@ -404,8 +420,8 @@ class DialoguePreferences(QDialog):
             voulu = self.case_demarrage.isChecked()
             obtenu = demarrage_automatique(voulu)
             if obtenu != voulu:
-                problemes.append(
-                    "Impossible de modifier le démarrage automatique de Windows.")
+                problemes.append(self.tr(
+                    "Impossible de modifier le démarrage automatique de Windows."))
             c.lancer_au_demarrage = obtenu
             c.sauver()
 
@@ -417,12 +433,13 @@ class DialoguePreferences(QDialog):
                 try:
                     dossier.mkdir(parents=True, exist_ok=True)
                 except OSError as e:
-                    problemes.append(f"Dossier de destination inaccessible : {e}")
+                    problemes.append(
+                        self.tr("Dossier de destination inaccessible : {erreur}").format(erreur=e))
                 else:
                     if not definir_dossier_diaporama(dossier):
-                        problemes.append(
+                        problemes.append(self.tr(
                             "Impossible de configurer le diaporama Windows "
-                            "(dossier vide ou COM indisponible).")
+                            "(dossier vide ou COM indisponible)."))
                         c.diaporama_dossier = False
                         c.sauver()
         return "\n".join(problemes) if problemes else None
@@ -442,7 +459,7 @@ class DialogueSignalerBug(QDialog):
 
     def __init__(self, parent, chemin_log: Path | None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Signaler un bug")
+        self.setWindowTitle(self.tr("Signaler un bug"))
         self.setMinimumSize(560, 460)
         self._chemin_log = chemin_log
 
@@ -450,46 +467,46 @@ class DialogueSignalerBug(QDialog):
         colonne.setContentsMargins(14, 14, 14, 14)
         colonne.setSpacing(8)
 
-        intro = QLabel(
+        intro = QLabel(self.tr(
             "Décris le problème ci-dessous. « Ouvrir sur GitHub » composera "
             "l'issue et l'ouvrira dans ton navigateur : tu n'auras plus qu'à "
             "cliquer « Submit new issue » sur la page GitHub.\n\n"
             "Un compte GitHub est nécessaire pour soumettre l'issue. Si tu "
             "n'en as pas encore, tu pourras t'en créer un gratuitement à "
-            "l'étape « Sign in » depuis la même page.")
+            "l'étape « Sign in » depuis la même page."))
         intro.setWordWrap(True)
         colonne.addWidget(intro)
 
         self.champ_titre = QLineEdit()
-        self.champ_titre.setPlaceholderText("Résumé court du problème")
-        colonne.addWidget(QLabel("Titre :"))
+        self.champ_titre.setPlaceholderText(self.tr("Résumé court du problème"))
+        colonne.addWidget(QLabel(self.tr("Titre :")))
         colonne.addWidget(self.champ_titre)
 
         self.zone_desc = QTextEdit()
-        self.zone_desc.setPlaceholderText(
-            "Ce qui se passe, ce que tu attendais, comment reproduire.")
-        colonne.addWidget(QLabel("Description :"))
+        self.zone_desc.setPlaceholderText(self.tr(
+            "Ce qui se passe, ce que tu attendais, comment reproduire."))
+        colonne.addWidget(QLabel(self.tr("Description :")))
         colonne.addWidget(self.zone_desc, 1)
 
-        self.case_contexte = QCheckBox(
-            "Joindre la version, la plateforme et les 50 dernières lignes de log")
+        self.case_contexte = QCheckBox(self.tr(
+            "Joindre la version, la plateforme et les 50 dernières lignes de log"))
         self.case_contexte.setChecked(True)
         colonne.addWidget(self.case_contexte)
 
         boutons = QDialogButtonBox(self)
-        bouton_go = boutons.addButton("Ouvrir sur GitHub", QDialogButtonBox.AcceptRole)
+        bouton_go = boutons.addButton(self.tr("Ouvrir sur GitHub"), QDialogButtonBox.AcceptRole)
         boutons.addButton(QDialogButtonBox.Cancel)
         bouton_go.clicked.connect(self._envoyer)
         boutons.rejected.connect(self.reject)
         colonne.addWidget(boutons)
 
     def _envoyer(self) -> None:
-        titre = self.champ_titre.text().strip() or "Rapport de bug"
+        titre = self.champ_titre.text().strip() or self.tr("Rapport de bug")
         description = self.zone_desc.toPlainText().strip()
         if not description:
             QMessageBox.warning(
-                self, "Signaler un bug",
-                "Merci d'ajouter une description avant d'ouvrir l'issue.")
+                self, self.tr("Signaler un bug"),
+                self.tr("Merci d'ajouter une description avant d'ouvrir l'issue."))
             return
         corps = description
         contexte_joint = self.case_contexte.isChecked()
@@ -498,17 +515,18 @@ class DialogueSignalerBug(QDialog):
         url = build_issue_url(GITHUB_OWNER, GITHUB_REPOSITORY, titre, corps)
         if is_url_too_long(url):
             piste = (
-                "Décoche « Joindre la version, la plateforme et les 50 dernières "
-                "lignes de log » (tu pourras coller le log dans un commentaire), "
-                "ou raccourcis la description."
+                self.tr("Décoche « Joindre la version, la plateforme et les 50 dernières "
+                        "lignes de log » (tu pourras coller le log dans un commentaire), "
+                        "ou raccourcis la description.")
                 if contexte_joint
-                else "Raccourcis la description avant de réessayer."
+                else self.tr("Raccourcis la description avant de réessayer.")
             )
             QMessageBox.warning(
-                self, "Signaler un bug",
-                f"Ton rapport est trop long pour être pré-rempli via l'URL "
-                f"GitHub ({len(url)} caractères, maximum {MAX_URL_LENGTH}).\n\n"
-                f"{piste}")
+                self, self.tr("Signaler un bug"),
+                self.tr("Ton rapport est trop long pour être pré-rempli via l'URL "
+                        "GitHub ({longueur} caractères, maximum {plafond}).\n\n"
+                        "{piste}").format(
+                    longueur=len(url), plafond=MAX_URL_LENGTH, piste=piste))
             return
         QDesktopServices.openUrl(QUrl(url))
         self.accept()
@@ -519,7 +537,7 @@ class DialogueAPropos(QDialog):
 
     def __init__(self, parent) -> None:
         super().__init__(parent)
-        self.setWindowTitle("À propos de WpImageDownloader")
+        self.setWindowTitle(self.tr("À propos de WpImageDownloader"))
         self.setFixedSize(440, 320)
 
         colonne = QVBoxLayout(self)
@@ -536,16 +554,16 @@ class DialogueAPropos(QDialog):
         titre.setAlignment(Qt.AlignCenter)
         colonne.addWidget(titre)
 
-        version = QLabel(f"Version {__version__}")
+        version = QLabel(self.tr("Version {version}").format(version=__version__))
         version.setStyleSheet("color: #666;")
         version.setAlignment(Qt.AlignCenter)
         colonne.addWidget(version)
 
         colonne.addSpacing(6)
 
-        desc = QLabel(
-            "Télécharge et synchronise en local les images publiées via l'API "
-            "REST WordPress d'un site.")
+        desc = QLabel(self.tr(
+            "Télécharge et synchronise en local les images publiées par un site "
+            "distant (WordPress, Djangoplicity…)."))
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignCenter)
         colonne.addWidget(desc)
@@ -555,8 +573,8 @@ class DialogueAPropos(QDialog):
         lien.setAlignment(Qt.AlignCenter)
         colonne.addWidget(lien)
 
-        licence = QLabel(
-            "Distribué sous licence GNU GPL v3. Voir le fichier LICENSE.")
+        licence = QLabel(self.tr(
+            "Distribué sous licence GNU GPL v3. Voir le fichier LICENSE."))
         licence.setStyleSheet("color: #666; font-size: 11px;")
         licence.setAlignment(Qt.AlignCenter)
         licence.setWordWrap(True)
@@ -577,7 +595,8 @@ class DialogueAPropos(QDialog):
 class Fenetre(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"WpImageDownloader — Téléchargeur d'images {__version__}")
+        self.setWindowTitle(self.tr("WpImageDownloader — Téléchargeur d'images {version}").format(
+            version=__version__))
         self.setWindowIcon(icone_application())
         self.resize(760, 520)
         self.setMinimumSize(QSize(600, 400))
@@ -615,45 +634,45 @@ class Fenetre(QMainWindow):
     def _construire_menu(self) -> None:
         barre = self.menuBar()
 
-        menu_fichier = barre.addMenu("&Fichier")
-        self.action_maj = menu_fichier.addAction("&Mettre à jour maintenant")
+        menu_fichier = barre.addMenu(self.tr("&Fichier"))
+        self.action_maj = menu_fichier.addAction(self.tr("&Mettre à jour maintenant"))
         self.action_maj.setShortcut(QKeySequence("Ctrl+R"))
         self.action_maj.triggered.connect(self._lancer)
 
-        self.action_arreter_menu = menu_fichier.addAction("&Arrêter")
+        self.action_arreter_menu = menu_fichier.addAction(self.tr("&Arrêter"))
         self.action_arreter_menu.setEnabled(False)
         self.action_arreter_menu.triggered.connect(self._arreter)
 
         menu_fichier.addSeparator()
-        action_ouvrir = menu_fichier.addAction("&Ouvrir le dossier")
+        action_ouvrir = menu_fichier.addAction(self.tr("&Ouvrir le dossier"))
         action_ouvrir.triggered.connect(self._ouvrir_dossier)
 
         menu_fichier.addSeparator()
-        action_supprimees = menu_fichier.addAction("&Images supprimées…")
+        action_supprimees = menu_fichier.addAction(self.tr("&Images supprimées…"))
         action_supprimees.triggered.connect(self._gerer_supprimees)
 
-        self.action_supprimer_fond = menu_fichier.addAction("Supprimer ce &fond d'écran")
+        self.action_supprimer_fond = menu_fichier.addAction(self.tr("Supprimer ce &fond d'écran"))
         self.action_supprimer_fond.triggered.connect(self._supprimer_fond)
         self.action_supprimer_fond.setEnabled(sys.platform == "win32")
 
         menu_fichier.addSeparator()
-        action_quitter = menu_fichier.addAction("&Quitter")
+        action_quitter = menu_fichier.addAction(self.tr("&Quitter"))
         action_quitter.setShortcut(QKeySequence("Ctrl+Q"))
         action_quitter.triggered.connect(self._quitter)
 
-        menu_conf = barre.addMenu("&Configuration")
-        action_prefs = menu_conf.addAction("&Préférences…")
+        menu_conf = barre.addMenu(self.tr("&Configuration"))
+        action_prefs = menu_conf.addAction(self.tr("&Préférences…"))
         action_prefs.setShortcut(QKeySequence("Ctrl+,"))
         action_prefs.triggered.connect(self._ouvrir_preferences)
 
-        menu_aide = barre.addMenu("&Aide")
-        action_check_maj = menu_aide.addAction("&Rechercher des mises à jour…")
+        menu_aide = barre.addMenu(self.tr("&Aide"))
+        action_check_maj = menu_aide.addAction(self.tr("&Rechercher des mises à jour…"))
         action_check_maj.triggered.connect(
             lambda: self._verifier_mise_a_jour(manuel=True))
         action_check_maj.setEnabled(sys.platform == "win32")
-        action_signaler = menu_aide.addAction("&Signaler un bug…")
+        action_signaler = menu_aide.addAction(self.tr("&Signaler un bug…"))
         action_signaler.triggered.connect(self._ouvrir_signaler_bug)
-        action_apropos = menu_aide.addAction("&À propos…")
+        action_apropos = menu_aide.addAction(self.tr("&À propos…"))
         action_apropos.triggered.connect(self._ouvrir_apropos)
 
     def _construire(self) -> None:
@@ -696,43 +715,43 @@ class Fenetre(QMainWindow):
         racine.setContentsMargins(14, 14, 14, 14)
         racine.setSpacing(10)
 
-        titre = QLabel("WpImageDownloader — Téléchargeur d'images")
+        titre = QLabel(self.tr("WpImageDownloader — Téléchargeur d'images"))
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
         self.label_site = QLabel()
         self.label_site.setStyleSheet("color: #666;")
-        self.label_site.setToolTip("Modifiable dans Configuration → Préférences…")
+        self.label_site.setToolTip(self.tr("Modifiable dans Configuration → Préférences…"))
         racine.addWidget(self.label_site)
 
         self.label_dossier = QLabel()
         self.label_dossier.setStyleSheet("color: #666;")
-        self.label_dossier.setToolTip("Modifiable dans Configuration → Préférences…")
+        self.label_dossier.setToolTip(self.tr("Modifiable dans Configuration → Préférences…"))
         racine.addWidget(self.label_dossier)
 
         # --- actions -------------------------------------------------------
         ligne = QHBoxLayout()
-        self.bouton_lancer = QPushButton("Mettre à jour maintenant")
+        self.bouton_lancer = QPushButton(self.tr("Mettre à jour maintenant"))
         self.bouton_lancer.setObjectName("principal")
         self.bouton_lancer.clicked.connect(self._lancer)
         ligne.addWidget(self.bouton_lancer)
 
-        self.bouton_arreter = QPushButton("Arrêter")
+        self.bouton_arreter = QPushButton(self.tr("Arrêter"))
         self.bouton_arreter.setEnabled(False)
         self.bouton_arreter.clicked.connect(self._arreter)
         ligne.addWidget(self.bouton_arreter)
 
-        self.bouton_supprimer_fond = QPushButton("Supprimer le fond actuel")
-        self.bouton_supprimer_fond.setToolTip(
+        self.bouton_supprimer_fond = QPushButton(self.tr("Supprimer le fond actuel"))
+        self.bouton_supprimer_fond.setToolTip(self.tr(
             "Efface l'image actuellement affichée par le diaporama Windows\n"
-            "et l'exclut des prochaines mises à jour.")
+            "et l'exclut des prochaines mises à jour."))
         self.bouton_supprimer_fond.clicked.connect(self._supprimer_fond)
         self.bouton_supprimer_fond.setEnabled(sys.platform == "win32")
         ligne.addWidget(self.bouton_supprimer_fond)
 
-        self.bouton_supprimees = QPushButton("Images supprimées…")
-        self.bouton_supprimees.setToolTip(
-            "Images effacées du dossier, que l'application ne retélécharge plus.")
+        self.bouton_supprimees = QPushButton(self.tr("Images supprimées…"))
+        self.bouton_supprimees.setToolTip(self.tr(
+            "Images effacées du dossier, que l'application ne retélécharge plus."))
         self.bouton_supprimees.clicked.connect(self._gerer_supprimees)
         ligne.addWidget(self.bouton_supprimees)
         ligne.addStretch(1)
@@ -748,11 +767,11 @@ class Fenetre(QMainWindow):
         self.barre.setValue(0)
         racine.addWidget(self.barre)
 
-        self.label_statut = QLabel("Prêt.")
+        self.label_statut = QLabel(self.tr("Prêt."))
         racine.addWidget(self.label_statut)
 
         # --- journal -------------------------------------------------------
-        boite = QGroupBox("Journal")
+        boite = QGroupBox(self.tr("Journal"))
         colonne = QVBoxLayout(boite)
         self.journal = QPlainTextEdit()
         self.journal.setReadOnly(True)
@@ -767,11 +786,11 @@ class Fenetre(QMainWindow):
         # Actions rappelées ailleurs (setEnabled pendant/après un run) : on les
         # crée dans tous les cas, quitte à ne pas les attacher à un menu si
         # aucun tray n'est disponible.
-        self.action_afficher = QAction("Afficher la fenêtre", self)
+        self.action_afficher = QAction(self.tr("Afficher la fenêtre"), self)
         self.action_afficher.triggered.connect(self._afficher)
-        self.action_maj_tray = QAction("Mettre à jour maintenant", self)
+        self.action_maj_tray = QAction(self.tr("Mettre à jour maintenant"), self)
         self.action_maj_tray.triggered.connect(self._lancer)
-        self.action_supprimer_fond_tray = QAction("Supprimer ce fond d'écran", self)
+        self.action_supprimer_fond_tray = QAction(self.tr("Supprimer ce fond d'écran"), self)
         self.action_supprimer_fond_tray.triggered.connect(self._supprimer_fond)
         self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
 
@@ -786,24 +805,24 @@ class Fenetre(QMainWindow):
             return
 
         self.tray = QSystemTrayIcon(icone_application(), self)
-        self.tray.setToolTip("WpImageDownloader — Téléchargeur d'images")
+        self.tray.setToolTip(self.tr("WpImageDownloader — Téléchargeur d'images"))
 
         menu = QMenu()
         menu.addAction(self.action_afficher)
         menu.addAction(self.action_maj_tray)
         menu.addAction(self.action_supprimer_fond_tray)
 
-        action = QAction("Ouvrir le dossier", self)
+        action = QAction(self.tr("Ouvrir le dossier"), self)
         action.triggered.connect(self._ouvrir_dossier)
         menu.addAction(action)
         menu.addSeparator()
 
-        action = QAction("Préférences…", self)
+        action = QAction(self.tr("Préférences…"), self)
         action.triggered.connect(self._ouvrir_preferences)
         menu.addAction(action)
         menu.addSeparator()
 
-        action = QAction("Quitter", self)
+        action = QAction(self.tr("Quitter"), self)
         action.triggered.connect(self._quitter)
         menu.addAction(action)
 
@@ -813,8 +832,9 @@ class Fenetre(QMainWindow):
 
     def _rafraichir_bandeau(self) -> None:
         """Rafraîchit les labels d'affichage du site et du dossier."""
-        self.label_site.setText(f"Site : {self.cfg.site or '—'}")
-        self.label_dossier.setText(f"Dossier : {self.cfg.dossier or '—'}")
+        self.label_site.setText(self.tr("Site : {site}").format(site=self.cfg.site or "—"))
+        self.label_dossier.setText(self.tr("Dossier : {dossier}").format(
+            dossier=self.cfg.dossier or "—"))
 
     def _appliquer_diaporama_au_demarrage(self) -> None:
         """Reconfigure le diaporama à chaque lancement si l'option est active
@@ -833,7 +853,7 @@ class Fenetre(QMainWindow):
             self._rafraichir_bandeau()
             self._rafraichir_echeance()
             if probleme:
-                QMessageBox.warning(self, "Préférences", probleme)
+                QMessageBox.warning(self, self.tr("Préférences"), probleme)
 
     def _ouvrir_apropos(self) -> None:
         DialogueAPropos(self).exec()
@@ -877,30 +897,34 @@ class Fenetre(QMainWindow):
     def _aucune_mise_a_jour_manuel(self, info) -> None:
         QMessageBox.information(
             self,
-            "Rechercher des mises à jour",
-            f"Vous utilisez déjà la dernière version ({info.current}).",
+            self.tr("Rechercher des mises à jour"),
+            self.tr("Vous utilisez déjà la dernière version ({version}).").format(
+                version=info.current),
         )
 
     def _erreur_verification_manuel(self, message: str) -> None:
         self._ecrire(message)
-        QMessageBox.warning(self, "Rechercher des mises à jour", message)
+        QMessageBox.warning(self, self.tr("Rechercher des mises à jour"), message)
 
     def _mise_a_jour_disponible(self, info) -> None:
         release = info.latest
         reponse = QMessageBox.question(
             self,
-            "Mise à jour disponible",
-            f"Une nouvelle version est disponible.\n\n"
-            f"Version actuelle : {info.current}\n"
-            f"Nouvelle version : {release.version}\n\n"
-            "Télécharger et installer maintenant ?",
+            self.tr("Mise à jour disponible"),
+            self.tr("Une nouvelle version est disponible.\n\n"
+                    "Version actuelle : {actuelle}\n"
+                    "Nouvelle version : {nouvelle}\n\n"
+                    "Télécharger et installer maintenant ?").format(
+                actuelle=info.current, nouvelle=release.version),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
         if reponse != QMessageBox.Yes:
-            self._ecrire(f"Mise à jour {release.version} reportée.")
+            self._ecrire(self.tr("Mise à jour {version} reportée.").format(
+                version=release.version))
             return
-        self._ecrire(f"Téléchargement de la mise à jour {release.version}…")
+        self._ecrire(self.tr("Téléchargement de la mise à jour {version}…").format(
+            version=release.version))
         self.telechargement_mise_a_jour = TelechargementMiseAJour(release)
         self.telechargement_mise_a_jour.termine.connect(self._mise_a_jour_telechargee)
         self.telechargement_mise_a_jour.erreur.connect(self._ecrire)
@@ -946,10 +970,11 @@ class Fenetre(QMainWindow):
             )
         except OSError as error:
             log.exception("Lancement de l'installateur impossible")
-            self._ecrire(f"Lancement de l'installateur impossible : {error}")
+            self._ecrire(self.tr("Lancement de l'installateur impossible : {erreur}").format(
+                erreur=error))
             return
         log.info("Installateur lancé, log Inno attendu ici : %s. Fermeture de l'app.", log_inno)
-        self._ecrire("Mise à jour lancée, fermeture pour installation…")
+        self._ecrire(self.tr("Mise à jour lancée, fermeture pour installation…"))
         self._quitter_demande = True
         self.close()
 
@@ -957,30 +982,30 @@ class Fenetre(QMainWindow):
         try:
             ouvrir_dossier(Path(self.cfg.dossier))
         except OSError as e:
-            QMessageBox.warning(self, "Dossier inaccessible", str(e))
+            QMessageBox.warning(self, self.tr("Dossier inaccessible"), str(e))
 
     def _gerer_supprimees(self) -> None:
         dossier = Path(self.cfg.dossier).expanduser()
         entrees = lister_supprimees(dossier)
         if not entrees:
             QMessageBox.information(
-                self, "Images supprimées",
-                "Aucune image effacée n'est mémorisée pour ce dossier.")
+                self, self.tr("Images supprimées"),
+                self.tr("Aucune image effacée n'est mémorisée pour ce dossier."))
             return
         dialogue = DialogueSupprimees(self, entrees)
         if dialogue.exec() != QDialog.Accepted or not dialogue.choix():
             return
         n = restaurer(dossier, dialogue.choix())
-        self._ecrire(f"{n} image(s) seront retéléchargées à la prochaine mise à jour.")
+        self._ecrire(self.tr("{n} image(s) seront retéléchargées à la prochaine mise à jour.").format(n=n))
 
     def _supprimer_fond(self) -> None:
         fond = fond_ecran_actuel()
         if fond is None:
             QMessageBox.information(
-                self, "Fond d'écran",
-                "Impossible de déterminer l'image actuellement affichée.\n"
-                "Fonction disponible uniquement sous Windows, avec un\n"
-                "diaporama de fond d'écran actif.")
+                self, self.tr("Fond d'écran"),
+                self.tr("Impossible de déterminer l'image actuellement affichée.\n"
+                        "Fonction disponible uniquement sous Windows, avec un\n"
+                        "diaporama de fond d'écran actif."))
             return
         dossier = Path(self.cfg.dossier).expanduser()
         # simple contrôle d'appartenance pour le message ; le moteur refera
@@ -993,21 +1018,22 @@ class Fenetre(QMainWindow):
             interne = False
         if not interne:
             QMessageBox.information(
-                self, "Fond d'écran hors du dossier suivi",
-                f"L'image affichée n'appartient pas au dossier suivi :\n{fond}\n\n"
-                "Rien n'a été supprimé.")
+                self, self.tr("Fond d'écran hors du dossier suivi"),
+                self.tr("L'image affichée n'appartient pas au dossier suivi :\n{fond}\n\n"
+                        "Rien n'a été supprimé.").format(fond=fond))
             return
         reponse = QMessageBox.question(
-            self, "Supprimer le fond actuel",
-            f"Supprimer définitivement cette image ?\n{fond}\n\n"
-            "Elle ne sera plus retéléchargée par les mises à jour suivantes.")
+            self, self.tr("Supprimer le fond actuel"),
+            self.tr("Supprimer définitivement cette image ?\n{fond}\n\n"
+                    "Elle ne sera plus retéléchargée par les mises à jour suivantes.").format(
+                fond=fond))
         if reponse != QMessageBox.Yes:
             return
         if supprimer_image(dossier, fond):
             avancer_diaporama()
-            self._ecrire(f"Fond d'écran supprimé : {fond}")
+            self._ecrire(self.tr("Fond d'écran supprimé : {fond}").format(fond=fond))
         else:
-            self._ecrire(f"Échec de suppression du fond : {fond}")
+            self._ecrire(self.tr("Échec de suppression du fond : {fond}").format(fond=fond))
 
     def _lancer(self, auto: bool = False) -> None:
         if self.travailleur and self.travailleur.isRunning():
@@ -1016,11 +1042,11 @@ class Fenetre(QMainWindow):
         try:
             dossier.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            message = f"Impossible d'utiliser ce dossier :\n{e}"
+            message = self.tr("Impossible d'utiliser ce dossier :\n{erreur}").format(erreur=e)
             if auto:
                 self._ecrire(message.replace("\n", " "))
                 return
-            QMessageBox.critical(self, "Dossier invalide", message)
+            QMessageBox.critical(self, self.tr("Dossier invalide"), message)
             return
 
         self.auto_en_cours = bool(auto)
@@ -1037,7 +1063,8 @@ class Fenetre(QMainWindow):
         self.bouton_arreter.setEnabled(True)
         self.action_arreter_menu.setEnabled(True)
         self.barre.setRange(0, 0)          # indéterminé pendant l'inventaire
-        self._ecrire(f"--- {datetime.now():%d/%m/%Y %H:%M} — début de la mise à jour")
+        self._ecrire(self.tr("--- {horodatage} — début de la mise à jour").format(
+            horodatage=f"{datetime.now():%d/%m/%Y %H:%M}"))
 
         options = Options(
             dossier=dossier,
@@ -1059,7 +1086,7 @@ class Fenetre(QMainWindow):
         self.arret.set()
         self.bouton_arreter.setEnabled(False)
         self.action_arreter_menu.setEnabled(False)
-        self.label_statut.setText("Arrêt en cours…")
+        self.label_statut.setText(self.tr("Arrêt en cours…"))
 
     def _quitter(self) -> None:
         self._quitter_demande = True
@@ -1079,7 +1106,8 @@ class Fenetre(QMainWindow):
     def _progres(self, fait: int, total: int, etiquette: str) -> None:
         self.barre.setRange(0, max(total, 1))
         self.barre.setValue(fait)
-        self.label_statut.setText(f"{fait}/{total} — {etiquette}")
+        self.label_statut.setText(self.tr("{fait}/{total} — {etiquette}").format(
+            fait=fait, total=total, etiquette=etiquette))
 
     def _terminer(self, res: Resultat) -> None:
         self.bouton_lancer.setEnabled(True)
@@ -1097,12 +1125,15 @@ class Fenetre(QMainWindow):
         self.label_statut.setText(res.message)
         self._ecrire(res.message)
         if res.deja_presentes:
-            self._ecrire(f"{res.deja_presentes} image(s) déjà présentes, non retéléchargées.")
+            self._ecrire(self.tr("{n} image(s) déjà présentes, non retéléchargées.").format(
+                n=res.deja_presentes))
         if res.ignorees:
-            self._ecrire(f"{res.ignorees} image(s) que vous aviez supprimée(s), ignorée(s) — "
-                         "bouton « Images supprimées… » pour en recharger.")
+            self._ecrire(self.tr(
+                "{n} image(s) que vous aviez supprimée(s), ignorée(s) — "
+                "bouton « Images supprimées… » pour en recharger.").format(n=res.ignorees))
         if res.echecs:
-            self._ecrire(f"{res.echecs} échec(s) — seront retentés à la prochaine mise à jour.")
+            self._ecrire(self.tr("{n} échec(s) — seront retentés à la prochaine mise à jour.").format(
+                n=res.echecs))
 
         if not res.interrompu:
             self.planificateur.marquer_execution()
@@ -1113,7 +1144,8 @@ class Fenetre(QMainWindow):
                 and res.telechargees and not self.isVisible()):
             self.tray.showMessage(
                 "WpImageDownloader",
-                f"{res.telechargees} nouvelle(s) image(s) — {format_octets(res.octets)}",
+                self.tr("{n} nouvelle(s) image(s) — {taille}").format(
+                    n=res.telechargees, taille=format_octets(res.octets)),
                 icone_application(), 5000)
         self.auto_en_cours = False
 
@@ -1121,14 +1153,14 @@ class Fenetre(QMainWindow):
         if self.travailleur and self.travailleur.isRunning():
             return
         if self.planificateur.echeance_atteinte():
-            self._ecrire("Mise à jour automatique déclenchée.")
+            self._ecrire(self.tr("Mise à jour automatique déclenchée."))
             self._lancer(auto=True)
 
     def _rafraichir_echeance(self) -> None:
         texte = self.planificateur.texte_prochaine()
         self.label_echeance.setText(texte)
         if self.tray:
-            self.tray.setToolTip(f"WpImageDownloader — {texte}")
+            self.tray.setToolTip(self.tr("WpImageDownloader — {texte}").format(texte=texte))
 
     def _ecrire(self, message: str) -> None:
         self.journal.appendPlainText(f"{datetime.now():%H:%M:%S}  {message}")
@@ -1143,7 +1175,7 @@ class Fenetre(QMainWindow):
             self.hide()
             self.tray.showMessage(
                 "WpImageDownloader",
-                "L'application continue en arrière-plan. Clic droit sur l'icône pour quitter.",
+                self.tr("L'application continue en arrière-plan. Clic droit sur l'icône pour quitter."),
                 icone_application(), 4000)
             return
 
@@ -1156,19 +1188,20 @@ class Fenetre(QMainWindow):
                 and not self._avertissement_tray_montre):
             self._avertissement_tray_montre = True
             QMessageBox.information(
-                self, "Fermeture de WpImageDownloader",
-                "Aucun indicateur système n'est disponible sur cette session Linux, "
-                "l'application ne peut pas rester en arrière-plan et va se fermer.\n\n"
-                "Pour qu'elle continue à tourner icône dans la barre système, installer "
-                "l'extension « AppIndicator and KStatusNotifierItem Support » "
-                "(GNOME Shell) ou l'équivalent de votre environnement, puis relancer "
-                "l'application.")
+                self, self.tr("Fermeture de WpImageDownloader"),
+                self.tr(
+                    "Aucun indicateur système n'est disponible sur cette session Linux, "
+                    "l'application ne peut pas rester en arrière-plan et va se fermer.\n\n"
+                    "Pour qu'elle continue à tourner icône dans la barre système, installer "
+                    "l'extension « AppIndicator and KStatusNotifierItem Support » "
+                    "(GNOME Shell) ou l'équivalent de votre environnement, puis relancer "
+                    "l'application."))
 
         if self.travailleur and self.travailleur.isRunning():
             reponse = QMessageBox.question(
-                self, "Quitter",
-                "Une mise à jour est en cours. Elle reprendra au prochain lancement.\n"
-                "Quitter maintenant ?")
+                self, self.tr("Quitter"),
+                self.tr("Une mise à jour est en cours. Elle reprendra au prochain lancement.\n"
+                        "Quitter maintenant ?"))
             if reponse != QMessageBox.Yes:
                 self._quitter_demande = False
                 event.ignore()
@@ -1191,6 +1224,7 @@ class Fenetre(QMainWindow):
 
 def main() -> int:
     from WpImageDownloader.config import dossier_config
+    from WpImageDownloader.i18n import installer_traducteur
     from WpImageDownloader.logsetup import configure_logging
     configure_logging(dossier_config())
 
@@ -1199,6 +1233,10 @@ def main() -> int:
     app.setWindowIcon(icone_application())
     # l'application survit à la fermeture de la fenêtre grâce à l'icône de barre
     app.setQuitOnLastWindowClosed(False)
+
+    # Traducteur installé AVANT toute construction de widget : les self.tr()
+    # évalués dans les __init__ récupèrent alors la bonne langue.
+    installer_traducteur(app, Config.charger().langue)
 
     fenetre = Fenetre()
     # Sans tray (Linux sans AppIndicator), rester ouvert après la fermeture de
