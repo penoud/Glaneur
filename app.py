@@ -1223,9 +1223,13 @@ class Fenetre(QMainWindow):
 # --------------------------------------------------------------------------- #
 
 def main() -> int:
-    from Glaneur.config import dossier_config
+    from Glaneur.config import dossier_config, migrer_depuis_ancien_nom
     from Glaneur.i18n import installer_traducteur
     from Glaneur.logsetup import configure_logging
+    # Avant tout : si l'utilisateur a un ancien install WpImageDownloader et
+    # aucune config Glaneur encore, on récupère sa config héritée. Passe
+    # avant configure_logging() pour que les logs héritent aussi du dossier.
+    migrer_depuis_ancien_nom()
     configure_logging(dossier_config())
 
     app = QApplication(sys.argv)

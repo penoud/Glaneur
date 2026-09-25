@@ -15,6 +15,7 @@ from Glaneur.config import (
     Config,
     dossier_config,
     dossier_images_defaut,
+    migrer_depuis_ancien_nom,
 )
 
 
@@ -71,6 +72,64 @@ class TestEmplacements:
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: vide))
         d = dossier_images_defaut()
         assert d == vide / "Glaneur"
+
+
+# --------------------------------------------------------------------------- #
+# Migration depuis l'ancien nom WpImageDownloader
+# --------------------------------------------------------------------------- #
+
+class TestMigrationAncienNom:
+    def test_copie_ancienne_config_si_cible_absente(self, monkeypatch, tmp_path):
+        # Simule un ancien dossier `%APPDATA%\WpImageDownloader\` peuplé
+        # et une nouvelle cible `%APPDATA%\Glaneur\` inexistante.
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setattr("sys.platform", "win32")
+        ancien = tmp_path / "WpImageDownloader"
+        ancien.mkdir()
+        (ancien / "config.json").write_text('{"site": "https://ex.com"}')
+        (ancien / "logs").mkdir()
+        (ancien / "logs" / "app.log").write_text("historique\n")
+
+        source = migrer_depuis_ancien_nom()
+
+        assert source == ancien
+        cible = tmp_path / "Glaneur"
+        assert (cible / "config.json").read_text() == '{"site": "https://ex.com"}'
+        assert (cible / "logs" / "app.log").read_text() == "historique\n"
+        # L'ancien reste intact (copie, pas move)
+        assert (ancien / "config.json").exists()
+
+    def test_ne_ecrase_pas_config_glaneur_existante(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setattr("sys.platform", "win32")
+        ancien = tmp_path / "WpImageDownloader"
+        ancien.mkdir()
+        (ancien / "config.json").write_text("ancien")
+        cible = tmp_path / "Glaneur"
+        cible.mkdir()
+        (cible / "config.json").write_text("actuel")
+
+        source = migrer_depuis_ancien_nom()
+
+        assert source is None
+        assert (cible / "config.json").read_text() == "actuel"
+
+    def test_no_op_si_pas_d_ancien(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setattr("sys.platform", "win32")
+        assert migrer_depuis_ancien_nom() is None
+
+    def test_xdg_linux(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("sys.platform", "linux")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        ancien = tmp_path / "wp-image-downloader"
+        ancien.mkdir()
+        (ancien / "config.json").write_text("x")
+
+        source = migrer_depuis_ancien_nom()
+
+        assert source == ancien
+        assert (tmp_path / "glaneur" / "config.json").read_text() == "x"
 
 
 # --------------------------------------------------------------------------- #
