@@ -84,11 +84,24 @@ def collect_context(
     chemin_log: Path | None = None,
     nb_lignes: int = 50,
 ) -> str:
-    """Renvoie un bloc Markdown avec version, plateforme et dernières lignes
-    de log. `chemin_log=None` ou fichier absent = section log omise. Le log
-    est compacté (préfixe logger + chemins Windows + timestamps) pour laisser
-    de la place au texte de l'utilisateur. Les entêtes Markdown passent par
-    Qt tr() : ils apparaissent dans l'issue GitHub dans la langue de l'app."""
+    """Assemble un bloc Markdown à joindre à un rapport de bug.
+
+    Contient version, plateforme, version Python, puis (optionnellement)
+    les dernières lignes du log. Le log est compacté (préfixe logger,
+    chemins Windows, timestamps) pour laisser de la place au texte
+    utilisateur avant que l'URL GitHub ne dépasse ``MAX_URL_LENGTH``.
+    Les en-têtes Markdown passent par ``QCoreApplication.translate`` :
+    ils apparaissent dans l'issue GitHub dans la langue de l'application.
+
+    Args:
+        version: Version de l'application (typiquement ``__version__``).
+        chemin_log: Chemin du fichier de log à extraire. ``None`` ou
+            fichier absent : section log omise.
+        nb_lignes: Nombre maximum de lignes de log à joindre.
+
+    Returns:
+        Le bloc Markdown, prêt à concaténer au body de l'issue.
+    """
     lignes = [
         f"### {QCoreApplication.translate('BugReport', 'Contexte')}",
         "",
@@ -133,14 +146,31 @@ def build_issue_url(
 ) -> str:
     """Construit l'URL GitHub d'ouverture d'issue préremplie.
 
-    Ne tronque pas : le caller doit vérifier `is_url_too_long()` et avertir
-    l'utilisateur avant d'ouvrir l'URL — sinon GitHub renvoie « Whoops,
-    something went wrong! » sur les rapports trop longs.
+    Ne tronque pas : le caller doit vérifier :func:`is_url_too_long`
+    et avertir l'utilisateur avant d'ouvrir l'URL — sinon GitHub renvoie
+    « Whoops, something went wrong! » sur les rapports trop longs.
+
+    Args:
+        owner: Propriétaire du dépôt GitHub.
+        repository: Nom du dépôt.
+        title: Titre suggéré pour l'issue.
+        body: Contenu Markdown du corps de l'issue.
+
+    Returns:
+        L'URL ``https://github.com/OWNER/REPO/issues/new?title=…&body=…``.
     """
     params = urlencode({"title": title, "body": body})
     return f"https://github.com/{owner}/{repository}/issues/new?{params}"
 
 
 def is_url_too_long(url: str, max_length: int = MAX_URL_LENGTH) -> bool:
-    """Vrai si l'URL dépasse le seuil que GitHub accepte pour un préremplissage."""
+    """Indique si l'URL dépasse le plafond de préremplissage GitHub.
+
+    Args:
+        url: URL à mesurer.
+        max_length: Plafond, en octets ; par défaut ``MAX_URL_LENGTH``.
+
+    Returns:
+        ``True`` si ``url`` est trop longue, ``False`` sinon.
+    """
     return len(url) > max_length

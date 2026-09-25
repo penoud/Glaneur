@@ -1,4 +1,15 @@
-"""Petites intégrations système, isolées ici pour garder l'UI lisible."""
+"""Petites intégrations système, isolées ici pour garder l'UI lisible.
+
+Ce module rassemble les points de contact avec l'OS : détection de
+l'exécutable PyInstaller, entrée de démarrage Windows, ouverture d'un
+dossier dans l'explorateur, et pilotage du diaporama Windows via l'API
+COM ``IDesktopWallpaper`` en ``ctypes`` brut (pour ne pas dépendre de
+``pywin32`` ou ``comtypes``).
+
+Hors Windows, les fonctions liées au diaporama et au démarrage
+automatique renvoient un « rien à faire » silencieux plutôt que de
+lever.
+"""
 
 from __future__ import annotations
 
@@ -35,12 +46,26 @@ _DSD_FORWARD = 0
 
 
 def est_gele() -> bool:
-    """Vrai si on tourne depuis l'exécutable PyInstaller."""
+    """Indique si l'application tourne depuis l'exécutable PyInstaller.
+
+    Returns:
+        ``True`` sous PyInstaller (attribut ``sys.frozen`` positionné),
+        ``False`` en exécution Python directe.
+    """
     return getattr(sys, "frozen", False)
 
 
 def commande_lancement() -> str:
-    """Commande à inscrire dans le registre pour relancer l'application."""
+    """Commande à inscrire dans le registre pour relancer l'application.
+
+    En build PyInstaller, la commande pointe directement sur l'exécutable ;
+    en développement, elle enchaîne ``python`` et le script racine
+    ``app.py``. L'option ``--reduit`` demande un démarrage minimisé
+    dans la zone de notification.
+
+    Returns:
+        La ligne de commande, avec chemin d'exécutable entre guillemets.
+    """
     if est_gele():
         return f'"{Path(sys.executable)}" --reduit'
     script = Path(__file__).resolve().parent.parent / "app.py"
@@ -48,7 +73,15 @@ def commande_lancement() -> str:
 
 
 def demarrage_automatique(actif: bool) -> bool:
-    """Ajoute ou retire l'entrée de démarrage Windows. Renvoie l'état obtenu."""
+    """Ajoute ou retire l'entrée de démarrage Windows.
+
+    Args:
+        actif: ``True`` pour ajouter, ``False`` pour retirer.
+
+    Returns:
+        L'état obtenu (``True`` si l'entrée est en place après appel,
+        ``False`` sinon ou hors Windows).
+    """
     if sys.platform != "win32":
         return False
     import winreg
@@ -68,6 +101,12 @@ def demarrage_automatique(actif: bool) -> bool:
 
 
 def demarrage_automatique_actif() -> bool:
+    """Indique si l'entrée de démarrage Windows est présente.
+
+    Returns:
+        ``True`` si l'entrée existe dans ``HKCU\\...\\Run``, ``False``
+        sinon ou hors Windows.
+    """
     if sys.platform != "win32":
         return False
     import winreg
@@ -80,7 +119,14 @@ def demarrage_automatique_actif() -> bool:
 
 
 def ouvrir_dossier(chemin: Path) -> None:
-    """Ouvre le dossier dans l'explorateur de fichiers du système."""
+    """Ouvre le dossier dans l'explorateur de fichiers du système.
+
+    Crée le dossier s'il n'existe pas encore (utile juste après un
+    premier lancement où le dossier cible n'a rien reçu).
+
+    Args:
+        chemin: Dossier à ouvrir.
+    """
     chemin.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
         os.startfile(chemin)  # noqa: S606
@@ -222,7 +268,21 @@ def _creer_tableau_images(chemin: Path):
 
 
 def definir_dossier_diaporama(chemin: Path) -> bool:
-    """Configure le diaporama Windows pour utiliser `chemin` comme source."""
+    """Configure le diaporama Windows pour utiliser ``chemin`` comme source.
+
+    Fait un ``IDesktopWallpaper::SetSlideshow`` avec un
+    ``IShellItemArray`` construit à partir des images du dossier.
+    Aucune erreur COM ne fuite : elles sont converties en ``False``.
+
+    Args:
+        chemin: Dossier contenant les images (récursif). Extensions
+            reconnues : ``.bmp``, ``.gif``, ``.jpeg``, ``.jpg``, ``.png``,
+            ``.tif``, ``.tiff``, ``.webp``.
+
+    Returns:
+        ``True`` si le diaporama a été activé, ``False`` sinon (hors
+        Windows, dossier vide, ou échec COM).
+    """
     if sys.platform != "win32" or not chemin.is_dir():
         return False
     bureau, uninit = _instancier_bureau()
@@ -245,12 +305,17 @@ def definir_dossier_diaporama(chemin: Path) -> bool:
 
 
 def fond_ecran_actuel() -> Path | None:
-    """Chemin de l'image affichée par le diaporama de fond d'écran Windows.
+    """Renvoie le chemin de l'image actuellement affichée en fond d'écran.
 
-    Passe par IDesktopWallpaper.GetWallpaper : sous diaporama,
-    SystemParametersInfo(SPI_GETDESKWALLPAPER) renverrait le cache
-    TranscodedWallpaper, qui n'indique pas de quel original il provient.
-    Renvoie None hors Windows ou si l'appel COM échoue.
+    Passe par ``IDesktopWallpaper::GetWallpaper``. Sous diaporama,
+    ``SystemParametersInfo(SPI_GETDESKWALLPAPER)`` ne renverrait que le
+    cache ``TranscodedWallpaper``, qui n'indique pas de quel original il
+    provient — l'appel COM est donc nécessaire pour connaître le
+    fichier réellement projeté.
+
+    Returns:
+        Le chemin de l'image, ou ``None`` hors Windows ou si l'appel
+        COM échoue.
     """
     ptr, uninit = _instancier_bureau()
     if ptr is None:
@@ -299,7 +364,11 @@ def fond_ecran_actuel() -> Path | None:
 
 
 def avancer_diaporama() -> None:
-    """Passe à l'image suivante du diaporama Windows. Silencieux si indisponible."""
+    """Passe à l'image suivante du diaporama Windows.
+
+    Silencieux si le diaporama n'est pas configuré, si Windows refuse
+    l'appel COM, ou hors Windows.
+    """
     ptr, uninit = _instancier_bureau()
     if ptr is None:
         return

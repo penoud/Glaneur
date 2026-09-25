@@ -73,11 +73,14 @@ Un module = un commit, dans l'ordre :
 - [x] `Glaneur/config.py` — 7 nouveaux docstrings + enrichissement, Config
       passe aux commentaires `#:`. Refs internes en double-backtick.
       40 tests test_config verts.
-- [ ] `Glaneur/scheduler.py`
-- [ ] `Glaneur/systeme.py`
-- [ ] `Glaneur/i18n.py`
-- [ ] `Glaneur/logsetup.py`
-- [ ] `Glaneur/bug_report.py`
+- [x] `Glaneur/scheduler.py` — 6 nouveaux docstrings, enrichissement
+      Napoleon. Refs vers Config en double-backtick (Sphinx nitpicky
+      ne résout pas les xrefs vers un autre module sans FQN).
+- [x] `Glaneur/systeme.py` — 1 nouveau docstring (demarrage_automatique_actif),
+      enrichissement des 8 autres.
+- [x] `Glaneur/i18n.py` — enrichissement Napoleon des 3 fonctions.
+- [x] `Glaneur/logsetup.py` — enrichissement Napoleon de configure_logging.
+- [x] `Glaneur/bug_report.py` — enrichissement Napoleon des 3 fonctions.
 - [ ] `Glaneur/updater/`
 - [ ] `app.py`
 - [ ] `cli.py`

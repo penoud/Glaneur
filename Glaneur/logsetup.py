@@ -17,11 +17,20 @@ _TAG = "wpid.file"
 
 
 def configure_logging(dossier: Path, debug: bool = False) -> Path:
-    """Ajoute un handler fichier tournant dans `dossier/logs/app.log`.
+    """Ajoute un handler fichier tournant dans ``dossier/logs/app.log``.
 
-    Renvoie le chemin du fichier de log. Sûr à appeler plusieurs fois :
-    le handler fichier est identifié par un tag et n'est jamais dupliqué.
-    Si `WPID_DEBUG` est défini dans l'environnement, force le niveau DEBUG.
+    Sûr à appeler plusieurs fois : le handler fichier est identifié par
+    un tag interne et n'est jamais dupliqué.
+
+    Args:
+        dossier: Racine où créer le sous-dossier ``logs/`` et le fichier
+            ``app.log``. Créé si nécessaire.
+        debug: Force le niveau ``DEBUG``. Sans effet si la variable
+            d'environnement ``WPID_DEBUG`` est déjà positionnée
+            (même comportement).
+
+    Returns:
+        Le chemin absolu du fichier de log courant.
     """
     niveau = logging.DEBUG if (debug or os.environ.get("WPID_DEBUG")) else logging.INFO
 
