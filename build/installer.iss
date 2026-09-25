@@ -1,17 +1,20 @@
-; Installateur Inno Setup pour WpImagerDownloader
+; Installateur Inno Setup pour Glaneur
 ; Compiler après PyInstaller :  iscc build\installer.iss
-; Produit : build\Output\WpImagerDownloader-1.0.38-setup.exe
+; Produit : build\Output\Glaneur-1.1.0-setup.exe
 
-#define MonNom "WpImagerDownloader"
-#define MonNomCourt "WpImagerDownloader"
+#define MonNom "Glaneur"
+#define MonNomCourt "Glaneur"
 #ifndef MaVersion
-  #define MaVersion "1.0.38"
+  #define MaVersion "1.1.0"
 #endif
 #define MonEditeur "Projet personnel"
-#define MonExe "WpImagerDownloader.exe"
+#define MonExe "Glaneur.exe"
 
 [Setup]
-AppId={{8F3C1A42-6B2E-4D91-9C07-2E5A7D44B118}
+; AppId propre à Glaneur — GUID différent de celui de l'ancien
+; WpImagerDownloader (8F3C1A42-…) pour permettre les deux d'être
+; installés côte à côte pendant la transition.
+AppId={{D4C5047C-DE6D-43CE-96E0-EA544236FD7B}
 AppName={#MonNom}
 AppVersion={#MaVersion}
 AppPublisher={#MonEditeur}
@@ -30,7 +33,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MonExe}
-SetupIconFile=WpImageDownloader.ico
+SetupIconFile=Glaneur.ico
 
 [Languages]
 Name: "french"; MessagesFile: "compiler:Languages\French.isl"
@@ -43,7 +46,7 @@ Name: "startup"; Description: "Lancer au démarrage de Windows (mise à jour en 
 
 [Files]
 ; le dossier produit par PyInstaller en mode COLLECT
-Source: "..\dist\WpImagerDownloader\*"; DestDir: "{app}"; \
+Source: "..\dist\Glaneur\*"; DestDir: "{app}"; \
     Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
@@ -72,7 +75,7 @@ var
 begin
   if CurUninstallStep = usPostUninstall then
   begin
-    Config := ExpandConstant('{userappdata}\WpImageDownloader');
+    Config := ExpandConstant('{userappdata}\Glaneur');
     if DirExists(Config) then
     begin
       if MsgBox('Supprimer également vos préférences ?' + #13#10 +

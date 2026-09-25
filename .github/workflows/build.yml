@@ -11,12 +11,17 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
-      - run: pyinstaller build\WpImageDownloader.spec --noconfirm --clean
+      - name: Compile translations
+        # Sans cette étape, translations/*.qm est vide et le .spec ne
+        # bundle aucun fichier de traduction — l'app tourne alors en FR
+        # même quand Config.langue vaut "en".
+        run: python translations\build_translations.py release
+      - run: pyinstaller build\Glaneur.spec --noconfirm --clean
       - name: Sign application when certificate is configured
         env:
           WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
@@ -27,18 +32,18 @@ jobs:
             Write-Warning "WINDOWS_PFX_BASE64 is not configured; the Windows build will be unsigned."
             exit 0
           }
-          $pfx = Join-Path $env:RUNNER_TEMP "WpImagerDownloader.pfx"
+          $pfx = Join-Path $env:RUNNER_TEMP "Glaneur.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
             Sort-Object FullName -Descending | Select-Object -First 1
           if ($null -eq $signtool) { throw "signtool.exe was not found on the runner." }
-          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:WINDOWS_PFX_PASSWORD "dist\WpImagerDownloader\WpImagerDownloader.exe"
+          & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:WINDOWS_PFX_PASSWORD "dist\Glaneur\Glaneur.exe"
           Remove-Item $pfx -Force
       - run: choco install innosetup --no-progress -y
       - name: Build installer
         shell: pwsh
         run: |
-          $version = (python -c "from WpImageDownloader import __version__; print(__version__)").Trim()
+          $version = (python -c "from Glaneur import __version__; print(__version__)").Trim()
           iscc "/DMaVersion=$version" build\installer.iss
       - name: Sign installer when certificate is configured
         env:
@@ -47,25 +52,25 @@ jobs:
         shell: pwsh
         run: |
           if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PFX_BASE64)) { exit 0 }
-          $pfx = Join-Path $env:RUNNER_TEMP "WpImagerDownloader.pfx"
+          $pfx = Join-Path $env:RUNNER_TEMP "Glaneur.pfx"
           [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse |
             Sort-Object FullName -Descending | Select-Object -First 1
           if ($null -eq $signtool) { throw "signtool.exe was not found on the runner." }
-          $installer = Get-ChildItem "build\Output\WpImagerDownloader-*-setup.exe" | Select-Object -First 1
+          $installer = Get-ChildItem "build\Output\Glaneur-*-setup.exe" | Select-Object -First 1
           if ($null -eq $installer) { throw "The Windows installer was not found." }
           & $signtool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $pfx /p $env:WINDOWS_PFX_PASSWORD $installer.FullName
           Remove-Item $pfx -Force
       - name: Generate Windows checksum
         shell: pwsh
         run: |
-          $installer = Get-ChildItem "build\Output\WpImagerDownloader-*-setup.exe" | Select-Object -First 1
+          $installer = Get-ChildItem "build\Output\Glaneur-*-setup.exe" | Select-Object -First 1
           if ($null -eq $installer) { throw "The Windows installer was not found." }
           $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($installer.Name)" | Set-Content "$($installer.FullName).sha256" -NoNewline
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
-          name: WpImagerDownloader-setup
+          name: Glaneur-setup
           path: build/Output/*
 
   # Build Linux désactivé temporairement. Décommenter le bloc ci-dessous
@@ -73,21 +78,21 @@ jobs:
   # linux:
   #   runs-on: ubuntu-22.04
   #   steps:
-  #     - uses: actions/checkout@v5
-  #     - uses: actions/setup-python@v6
+  #     - uses: actions/checkout@v7
+  #     - uses: actions/setup-python@v7
   #       with:
   #         python-version: "3.11"
   #     - name: Install Python dependencies
   #       run: python -m pip install -r requirements.txt pyinstaller
   #     - name: Build application bundle
-  #       run: python -m PyInstaller build/WpImageDownloader.spec --noconfirm --clean
+  #       run: python -m PyInstaller build/Glaneur.spec --noconfirm --clean
   #     - name: Bump AppStream metainfo version
   #       run: |
   #         chmod +x packaging/linux/bump-metainfo.sh
   #         packaging/linux/bump-metainfo.sh "${GITHUB_REF_NAME#v}"
   #     - name: Build Debian package
   #       run: |
-  #         chmod +x packaging/linux/build-deb.sh packaging/linux/WpImageDownloader-launcher
+  #         chmod +x packaging/linux/build-deb.sh packaging/linux/Glaneur-launcher
   #         packaging/linux/build-deb.sh "${GITHUB_REF_NAME#v}"
   #     - name: Install Flatpak tooling
   #       # flatpak-builder d'apt (1.2.x sur ubuntu-22.04) invoque encore
@@ -110,15 +115,15 @@ jobs:
   #           --user --install-deps-from=flathub \
   #           --force-clean --disable-rofiles-fuse \
   #           --repo=flatpak-repo flatpak-build \
-  #           packaging/linux/org.wpimagedownloader.WpImageDownloader.yml
+  #           packaging/linux/org.glaneur.Glaneur.yml
   #         flatpak build-bundle flatpak-repo \
-  #           "dist/WpImageDownloader-${GITHUB_REF_NAME#v}.flatpak" \
-  #           org.wpimagedownloader.WpImageDownloader
+  #           "dist/Glaneur-${GITHUB_REF_NAME#v}.flatpak" \
+  #           org.glaneur.Glaneur
   #     - name: Generate Linux checksums
   #       run: sha256sum dist/*.deb dist/*.flatpak > dist/SHA256SUMS-linux
-  #     - uses: actions/upload-artifact@v5
+  #     - uses: actions/upload-artifact@v7
   #       with:
-  #         name: WpImageDownloader-linux
+  #         name: Glaneur-linux
   #         path: |
   #           dist/*.deb
   #           dist/*.flatpak
@@ -129,30 +134,30 @@ jobs:
   # macos:
   #   runs-on: macos-13
   #   steps:
-  #     - uses: actions/checkout@v5
-  #     - uses: actions/setup-python@v6
+  #     - uses: actions/checkout@v7
+  #     - uses: actions/setup-python@v7
   #       with:
   #         python-version: "3.11"
   #     - name: Install Python dependencies
   #       run: python -m pip install -r requirements.txt pyinstaller
   #     - name: Build macOS application
-  #       run: python -m PyInstaller build/WpImageDownloader-macos.spec --noconfirm --clean
+  #       run: python -m PyInstaller build/Glaneur-macos.spec --noconfirm --clean
   #     - name: Create macOS archives
   #       env:
   #         VERSION: ${{ github.ref_name }}
   #       run: |
   #         VERSION="${VERSION#v}"
   #         ditto -c -k --sequesterRsrc --keepParent \
-  #           dist/WpImageDownloader.app "dist/WpImageDownloader-${VERSION}-macos.zip"
+  #           dist/Glaneur.app "dist/Glaneur-${VERSION}-macos.zip"
   #         hdiutil create -volname "WP Image Downloader" -srcfolder \
-  #           dist/WpImageDownloader.app -ov -format UDZO \
-  #           "dist/WpImageDownloader-${VERSION}-macos.dmg"
+  #           dist/Glaneur.app -ov -format UDZO \
+  #           "dist/Glaneur-${VERSION}-macos.dmg"
   #     - name: Generate macOS checksums
   #       run: shasum -a 256 dist/*.zip dist/*.dmg > dist/SHA256SUMS-macos
   #
-  #     - uses: actions/upload-artifact@v5
+  #     - uses: actions/upload-artifact@v7
   #       with:
-  #         name: WpImageDownloader-macos
+  #         name: Glaneur-macos
   #         path: |
   #           dist/*.zip
   #           dist/*.dmg
@@ -165,7 +170,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: "*"
           path: release-assets
@@ -181,7 +186,7 @@ jobs:
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag \
               "${prerelease[@]}" \
-              --title "WpImageDownloader $GITHUB_REF_NAME" \
+              --title "Glaneur $GITHUB_REF_NAME" \
               --notes "Automated release $GITHUB_REF_NAME"
           fi
           gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \

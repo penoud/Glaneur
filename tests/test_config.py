@@ -7,12 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from WpImageDownloader.config import (
+from Glaneur.config import (
     CLASSEMENTS,
+    FORMATS_DJANGOPLICITY,
     INTERVALLES,
+    TYPES_SOURCE,
     Config,
     dossier_config,
     dossier_images_defaut,
+    migrer_depuis_ancien_nom,
 )
 
 
@@ -29,46 +32,104 @@ class TestEmplacements:
     def test_dossier_images_defaut_pointe_vers_home(self):
         d = dossier_images_defaut()
         # doit contenir le nom d'application quelque part dans le chemin
-        assert "WpImageDownloader" in str(d)
+        assert "Glaneur" in str(d)
 
     def test_dossier_config_windows(self, monkeypatch, tmp_path):
         monkeypatch.setattr("sys.platform", "win32")
         monkeypatch.setenv("APPDATA", str(tmp_path))
         d = dossier_config()
-        assert d == tmp_path / "WpImageDownloader"
+        assert d == tmp_path / "Glaneur"
 
     def test_dossier_config_windows_sans_appdata(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "win32")
         monkeypatch.delenv("APPDATA", raising=False)
         d = dossier_config()
-        assert d.name == "WpImageDownloader"
+        assert d.name == "Glaneur"
         assert "AppData" in str(d) or "Roaming" in str(d)
 
     def test_dossier_config_macos(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "darwin")
         d = dossier_config()
         assert "Library" in str(d)
-        assert d.name == "WpImageDownloader"
+        assert d.name == "Glaneur"
 
     def test_dossier_config_linux_xdg(self, monkeypatch, tmp_path):
         monkeypatch.setattr("sys.platform", "linux")
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
         d = dossier_config()
-        assert d == tmp_path / "wp-image-downloader"
+        assert d == tmp_path / "glaneur"
 
     def test_dossier_config_linux_sans_xdg(self, monkeypatch):
         monkeypatch.setattr("sys.platform", "linux")
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         d = dossier_config()
-        assert d.name == "wp-image-downloader"
+        assert d.name == "glaneur"
 
     def test_dossier_images_defaut_repli_sur_home(self, monkeypatch, tmp_path):
-        # aucun dossier "Pictures"/"Images" présent -> repli sur ~/WpImageDownloader
+        # aucun dossier "Pictures"/"Images" présent -> repli sur ~/Glaneur
         vide = tmp_path / "vide-home"
         vide.mkdir()
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: vide))
         d = dossier_images_defaut()
-        assert d == vide / "WpImageDownloader"
+        assert d == vide / "Glaneur"
+
+
+# --------------------------------------------------------------------------- #
+# Migration depuis l'ancien nom WpImageDownloader
+# --------------------------------------------------------------------------- #
+
+class TestMigrationAncienNom:
+    def test_copie_ancienne_config_si_cible_absente(self, monkeypatch, tmp_path):
+        # Simule un ancien dossier `%APPDATA%\WpImageDownloader\` peuplé
+        # et une nouvelle cible `%APPDATA%\Glaneur\` inexistante.
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setattr("sys.platform", "win32")
+        ancien = tmp_path / "WpImageDownloader"
+        ancien.mkdir()
+        (ancien / "config.json").write_text('{"site": "https://ex.com"}')
+        (ancien / "logs").mkdir()
+        (ancien / "logs" / "app.log").write_text("historique\n")
+
+        source = migrer_depuis_ancien_nom()
+
+        assert source == ancien
+        cible = tmp_path / "Glaneur"
+        assert (cible / "config.json").read_text() == '{"site": "https://ex.com"}'
+        assert (cible / "logs" / "app.log").read_text() == "historique\n"
+        # L'ancien reste intact (copie, pas move)
+        assert (ancien / "config.json").exists()
+
+    def test_ne_ecrase_pas_config_glaneur_existante(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setattr("sys.platform", "win32")
+        ancien = tmp_path / "WpImageDownloader"
+        ancien.mkdir()
+        (ancien / "config.json").write_text("ancien")
+        cible = tmp_path / "Glaneur"
+        cible.mkdir()
+        (cible / "config.json").write_text("actuel")
+
+        source = migrer_depuis_ancien_nom()
+
+        assert source is None
+        assert (cible / "config.json").read_text() == "actuel"
+
+    def test_no_op_si_pas_d_ancien(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("APPDATA", str(tmp_path))
+        monkeypatch.setattr("sys.platform", "win32")
+        assert migrer_depuis_ancien_nom() is None
+
+    def test_xdg_linux(self, monkeypatch, tmp_path):
+        monkeypatch.setattr("sys.platform", "linux")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+        ancien = tmp_path / "wp-image-downloader"
+        ancien.mkdir()
+        (ancien / "config.json").write_text("x")
+
+        source = migrer_depuis_ancien_nom()
+
+        assert source == ancien
+        assert (tmp_path / "glaneur" / "config.json").read_text() == "x"
 
 
 # --------------------------------------------------------------------------- #
@@ -210,6 +271,66 @@ class TestValider:
         c.delai_requetes = 999
         c.valider()
         assert c.delai_requetes == 10.0
+
+    def test_type_source_par_defaut_wordpress(self, tmp_path):
+        # config vierge : type_source défaut = "wordpress", zéro migration
+        c = self._neuve(tmp_path)
+        assert c.type_source == "wordpress"
+        assert c.format_image == "Large"
+
+    def test_type_source_inconnu_snap_wordpress(self, tmp_path):
+        c = self._neuve(tmp_path)
+        c.type_source = "n-importe-quoi"
+        c.valider()
+        assert c.type_source == "wordpress"
+
+    def test_format_image_inconnu_snap_large(self, tmp_path):
+        c = self._neuve(tmp_path)
+        c.format_image = "Ultra"
+        c.valider()
+        assert c.format_image == "Large"
+
+    def test_classement_snap_si_source_ne_le_supporte_pas(self, tmp_path):
+        # Djangoplicity ne fait pas "galerie" : `valider` rabat sur "date"
+        c = self._neuve(tmp_path)
+        c.type_source = "djangoplicity"
+        c.classement = "galerie"
+        c.valider()
+        assert c.classement == "date"
+
+    def test_classement_conserve_si_supporte(self, tmp_path):
+        # WordPress supporte "galerie" : rien à changer
+        c = self._neuve(tmp_path)
+        c.type_source = "wordpress"
+        c.classement = "galerie"
+        c.valider()
+        assert c.classement == "galerie"
+
+    def test_v1038_config_charge_sans_champs_nouveaux(self, tmp_path):
+        # config écrite par 1.0.38 (sans type_source ni format_image) :
+        # elle doit se relire sans erreur, avec les valeurs par défaut,
+        # et le comportement WordPress est préservé.
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "site": "https://old.example",
+            "intervalle_heures": 6,
+            "classement": "galerie",
+        }))
+        c = Config.charger(chemin)
+        assert c.type_source == "wordpress"
+        assert c.format_image == "Large"
+        assert c.classement == "galerie"   # non snapée car WP la supporte
+
+
+class TestConstantesSource:
+    def test_types_source_contient_wordpress_et_djangoplicity(self):
+        # sanity check : les deux clés attendues par l'engine sont là.
+        valeurs = set(TYPES_SOURCE.values())
+        assert "wordpress" in valeurs
+        assert "djangoplicity" in valeurs
+
+    def test_formats_djangoplicity_contient_large(self):
+        assert "Large" in FORMATS_DJANGOPLICITY.values()
 
 
 # --------------------------------------------------------------------------- #

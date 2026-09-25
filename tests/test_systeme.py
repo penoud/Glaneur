@@ -11,8 +11,8 @@ import sys
 
 import pytest
 
-from WpImageDownloader import systeme
-from WpImageDownloader.systeme import (
+from Glaneur import systeme
+from Glaneur.systeme import (
     avancer_diaporama,
     commande_lancement,
     demarrage_automatique,
@@ -140,12 +140,9 @@ class TestContratsWallpaper:
 # Simulations : sys.platform = "win32" mais COM/ctypes non disponibles
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="Ces tests simulent l'absence de COM/ctypes.windll ; sur un vrai "
-    "Windows, ces dépendances sont présentes et le chemin dégradé n'est "
-    "pas atteignable.",
-)
+@pytest.mark.skipif(sys.platform == "win32",
+                    reason="simulation valable uniquement hors Windows "
+                           "(sous Windows, ctypes.windll et COM sont réels)")
 class TestSimulationsWin:
     """Vérifie que le code Windows dégénère proprement quand COM/winreg
     ne sont pas là (ce qui est le cas quand on tourne les tests sur Linux)."""
@@ -181,7 +178,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         cible = tmp_path / "pas-encore"
         monkeypatch.setattr(sys, "platform", "linux")
-        monkeypatch.setattr("WpImageDownloader.systeme.subprocess.Popen",
+        monkeypatch.setattr("Glaneur.systeme.subprocess.Popen",
                             MagicMock(return_value=None))
         systeme.ouvrir_dossier(cible)
         assert cible.is_dir()
@@ -200,7 +197,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "darwin")
         popen = MagicMock()
-        monkeypatch.setattr("WpImageDownloader.systeme.subprocess.Popen", popen)
+        monkeypatch.setattr("Glaneur.systeme.subprocess.Popen", popen)
         systeme.ouvrir_dossier(tmp_path)
         args = popen.call_args.args[0]
         assert args[0] == "open"
@@ -209,7 +206,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "linux")
         popen = MagicMock()
-        monkeypatch.setattr("WpImageDownloader.systeme.subprocess.Popen", popen)
+        monkeypatch.setattr("Glaneur.systeme.subprocess.Popen", popen)
         systeme.ouvrir_dossier(tmp_path)
         args = popen.call_args.args[0]
         assert args[0] == "xdg-open"

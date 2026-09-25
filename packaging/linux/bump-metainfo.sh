@@ -1,6 +1,6 @@
 #!/bin/sh
 # Réécrit la ligne <release ... /> du fichier metainfo AppStream avec la
-# version en cours (WpImageDownloader.__version__ par défaut) et la date
+# version en cours (Glaneur.__version__ par défaut) et la date
 # UTC du jour. Idempotent, à appeler avant flatpak-builder et dpkg-deb
 # pour éviter que la version affichée par les gestionnaires ne s'écarte
 # de celle réellement embarquée dans les paquets.
@@ -9,9 +9,9 @@
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
-FICHIER="$ROOT/packaging/linux/org.wpimagedownloader.WpImageDownloader.metainfo.xml"
+FICHIER="$ROOT/packaging/linux/org.glaneur.Glaneur.metainfo.xml"
 
-VERSION=${1:-$(python -c 'from WpImageDownloader import __version__; print(__version__)')}
+VERSION=${1:-$(python -c 'from Glaneur import __version__; print(__version__)')}
 DATE=$(date -u +%Y-%m-%d)
 
 # Un placeholder d'un seul <release> — le format doit rester exactement

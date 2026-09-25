@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from WpImageDownloader.logsetup import configure_logging
+from Glaneur.logsetup import configure_logging
 
 
 def _detacher_handlers_wpid():

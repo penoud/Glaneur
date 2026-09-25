@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from WpImageDownloader.config import Config
-from WpImageDownloader.scheduler import Planificateur
+from Glaneur.config import Config
+from Glaneur.scheduler import Planificateur
 
 
 def _cfg(tmp_path, **kw):

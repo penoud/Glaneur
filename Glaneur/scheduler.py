@@ -1,9 +1,10 @@
 """Logique d'échéance des mises à jour automatiques.
 
-Volontairement sans thread ni dépendance à Qt : la classe ne fait que répondre
-à « est-ce l'heure ? ». C'est l'interface qui l'interroge périodiquement via un
-QTimer, ce qui évite un thread de plus et garde tout le déclenchement sur le
-thread principal.
+Volontairement sans thread ni widget : la classe ne fait que répondre à
+« est-ce l'heure ? ». C'est l'interface qui l'interroge périodiquement via
+un QTimer. Seule dépendance Qt : `QCoreApplication.translate` pour les
+libellés visibles renvoyés par `texte_prochaine()` (aucun widget, aucun
+thread introduit).
 
 L'échéance est calculée à partir de `derniere_execution` stocké dans la
 configuration, donc elle survit à une fermeture de l'application : si
@@ -14,6 +15,11 @@ suivant.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+
+from PySide6.QtCore import QCoreApplication
+
+# lupdate n'extrait que les appels QCoreApplication.translate("Ctx", "src")
+# avec des littéraux : on inline plutôt que d'aliaser (voir bug_report.py).
 
 
 class Planificateur:
@@ -49,20 +55,25 @@ class Planificateur:
 
     def texte_prochaine(self) -> str:
         if not self.config.intervalle_heures:
-            return "Mise à jour automatique désactivée"
+            return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
         prochaine = self.prochaine()
         if prochaine is None:
-            return "Mise à jour automatique désactivée"
+            return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
         reste = prochaine - datetime.now()
         if reste.total_seconds() <= 0:
-            return "Prochaine mise à jour : imminente"
+            return QCoreApplication.translate("Planificateur", "Prochaine mise à jour : imminente")
         heures, secondes = divmod(int(reste.total_seconds()), 3600)
         minutes = secondes // 60
         if heures >= 24:
             jours, heures = divmod(heures, 24)
-            delai = f"{jours} j {heures} h"
+            delai = QCoreApplication.translate(
+                "Planificateur", "{jours} j {heures} h").format(jours=jours, heures=heures)
         elif heures:
-            delai = f"{heures} h {minutes:02d} min"
+            delai = QCoreApplication.translate(
+                "Planificateur", "{heures} h {minutes:02d} min").format(heures=heures, minutes=minutes)
         else:
-            delai = f"{minutes} min"
-        return f"Prochaine mise à jour dans {delai} ({prochaine:%d/%m à %H:%M})"
+            delai = QCoreApplication.translate(
+                "Planificateur", "{minutes} min").format(minutes=minutes)
+        return QCoreApplication.translate(
+            "Planificateur", "Prochaine mise à jour dans {delai} ({date})").format(
+            delai=delai, date=f"{prochaine:%d/%m à %H:%M}")

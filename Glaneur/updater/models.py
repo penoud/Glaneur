@@ -22,7 +22,7 @@ class Release:
     html_url: str = ""
 
     def windows_installer(self) -> ReleaseAsset | None:
-        expected = f"WpImagerDownloader-{self.version}-setup.exe"
+        expected = f"Glaneur-{self.version}-setup.exe"
         candidates = [asset for asset in self.assets if asset.name == expected]
         return candidates[0] if len(candidates) == 1 else None
 

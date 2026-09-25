@@ -1,0 +1,25 @@
+app-id: org.glaneur.Glaneur
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: Glaneur
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+modules:
+  - name: Glaneur
+    buildsystem: simple
+    build-commands:
+      - install -d /app/lib/Glaneur
+      - cp -a dist/Glaneur/. /app/lib/Glaneur/
+      - install -Dm755 packaging/linux/Glaneur-launcher /app/bin/Glaneur
+      - install -Dm644 packaging/linux/Glaneur.desktop /app/share/applications/org.glaneur.Glaneur.desktop
+      - install -Dm644 packaging/linux/org.glaneur.Glaneur.metainfo.xml /app/share/metainfo/org.glaneur.Glaneur.metainfo.xml
+      - install -Dm644 packaging/linux/org.glaneur.Glaneur.svg /app/share/icons/hicolor/scalable/apps/org.glaneur.Glaneur.svg
+    sources:
+      - type: dir
+        path: ../..
