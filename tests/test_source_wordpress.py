@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from WpImageDownloader.sources import Transport
-from WpImageDownloader.sources.wordpress import WordPress
+from Glaneur.sources import Transport
+from Glaneur.sources.wordpress import WordPress
 
 
 # --------------------------------------------------------------------------- #

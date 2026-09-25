@@ -25,7 +25,7 @@ from PySide6.QtCore import QCoreApplication
 # au texte de l'utilisateur avant que l'URL GitHub ne dépasse le plafond.
 # --------------------------------------------------------------------------- #
 
-_APP_LOGGER_PREFIX = "WpImageDownloader."
+_APP_LOGGER_PREFIX = "Glaneur."
 
 # Ancré sur le niveau de log pour ne pas rogner le préfixe s'il apparaît
 # dans un message (chemin, dépôt, etc.).

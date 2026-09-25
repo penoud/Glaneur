@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import requests
 
-from WpImageDownloader.engine import (
+from Glaneur.engine import (
     Interrompu,
     Moteur,
     Options,
@@ -31,7 +31,7 @@ from WpImageDownloader.engine import (
     restaurer,
     supprimer_image,
 )
-from WpImageDownloader.sources import Element
+from Glaneur.sources import Element
 
 
 # --------------------------------------------------------------------------- #

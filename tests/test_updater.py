@@ -7,10 +7,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from WpImageDownloader.updater.downloader import verify_sha256
-from WpImageDownloader.updater.github_release import GitHubReleaseProvider
-from WpImageDownloader.updater.models import Release, ReleaseAsset
-from WpImageDownloader.updater.version import Version
+from Glaneur.updater.downloader import verify_sha256
+from Glaneur.updater.github_release import GitHubReleaseProvider
+from Glaneur.updater.models import Release, ReleaseAsset
+from Glaneur.updater.version import Version
 
 
 def test_semver_comparison_and_v_prefix():
@@ -27,7 +27,7 @@ def test_invalid_version_rejected():
 
 
 def test_asset_selection_requires_exact_windows_pair():
-    installer = ReleaseAsset("WpImagerDownloader-1.0.5-setup.exe", "https://x/installer")
+    installer = ReleaseAsset("Glaneur-1.0.5-setup.exe", "https://x/installer")
     checksum = ReleaseAsset(f"{installer.name}.sha256", "https://x/checksum")
     release = Release(Version.parse("1.0.5"), "v1.0.5", (installer, checksum))
     assert release.windows_installer() == installer
@@ -36,8 +36,8 @@ def test_asset_selection_requires_exact_windows_pair():
 
 def test_asset_selection_rejects_ambiguous_installers():
     assets = tuple(ReleaseAsset(name, f"https://x/{name}") for name in (
-        "WpImagerDownloader-1.0.5-setup.exe",
-        "WpImagerDownloader-1.0.5-setup.exe",
+        "Glaneur-1.0.5-setup.exe",
+        "Glaneur-1.0.5-setup.exe",
     ))
     release = Release(Version.parse("1.0.5"), "v1.0.5", assets)
     assert release.windows_installer() is None

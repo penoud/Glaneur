@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import parse_qs, urlparse
 
-from WpImageDownloader.bug_report import (
+from Glaneur.bug_report import (
     MAX_URL_LENGTH,
     _compact_line,
     build_issue_url,
@@ -19,11 +19,11 @@ from WpImageDownloader.bug_report import (
 
 class TestBuildIssueUrl:
     def test_construit_url_de_base(self):
-        url = build_issue_url("penoud", "WpImageDownloader", "titre", "corps")
+        url = build_issue_url("penoud", "Glaneur", "titre", "corps")
         parsed = urlparse(url)
         assert parsed.scheme == "https"
         assert parsed.netloc == "github.com"
-        assert parsed.path == "/penoud/WpImageDownloader/issues/new"
+        assert parsed.path == "/penoud/Glaneur/issues/new"
         q = parse_qs(parsed.query)
         assert q["title"] == ["titre"]
         assert q["body"] == ["corps"]
@@ -107,13 +107,13 @@ class TestCollectContext:
         # tester la compaction ligne par ligne.
         chemin = tmp_path / "app.log"
         chemin.write_text(
-            "2026-09-21 15:03:04,949 INFO WpImageDownloader.app.update: "
+            "2026-09-21 15:03:04,949 INFO Glaneur.app.update: "
             r"installer=C:\Users\Denis\AppData\Local\Temp\x.exe"
             "\n"
-            "2026-09-22 16:00:00,000 INFO WpImageDownloader.foo: bar\n"
+            "2026-09-22 16:00:00,000 INFO Glaneur.foo: bar\n"
         )
         ctx = collect_context("1.2.3", chemin_log=chemin, nb_lignes=2)
-        assert "WpImageDownloader." not in ctx
+        assert "Glaneur." not in ctx
         assert "C:\\Users\\Denis" not in ctx
         assert "%TEMP%" in ctx
         assert ",949" not in ctx      # ms droppées
@@ -125,8 +125,8 @@ class TestCollectContext:
         # seulement dans les lignes.
         chemin = tmp_path / "app.log"
         chemin.write_text(
-            "2026-09-21 15:03:04,949 INFO WpImageDownloader.foo: a\n"
-            "2026-09-21 15:03:05,000 INFO WpImageDownloader.foo: b\n"
+            "2026-09-21 15:03:04,949 INFO Glaneur.foo: a\n"
+            "2026-09-21 15:03:05,000 INFO Glaneur.foo: b\n"
         )
         ctx = collect_context("1.2.3", chemin_log=chemin, nb_lignes=10)
         assert "date : 2026-09-21" in ctx
@@ -143,12 +143,12 @@ class TestCompactLine:
         # Le préfixe est enlevé après INFO/WARN/… mais PAS quand il apparaît
         # dans un message (ex: dépôt GitHub, chemin, etc.).
         line = (
-            "2026-09-21 15:03:04,949 INFO WpImageDownloader.updater.foo: "
-            "repo=penoud/WpImageDownloader.git"
+            "2026-09-21 15:03:04,949 INFO Glaneur.updater.foo: "
+            "repo=penoud/Glaneur.git"
         )
         out = _compact_line(line)
         assert "INFO updater.foo:" in out
-        assert "penoud/WpImageDownloader.git" in out  # non touché
+        assert "penoud/Glaneur.git" in out  # non touché
 
     def test_strip_millisecondes(self):
         out = _compact_line("2026-09-21 15:03:04,949 INFO foo: bar")

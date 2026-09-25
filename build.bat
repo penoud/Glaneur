@@ -21,13 +21,13 @@ python translations\build_translations.py release || goto :erreur
 
 echo [4/5] Compilation de l'executable...
 rmdir /s /q dist 2>nul
-pyinstaller build\WpImageDownloader.spec --noconfirm --clean || goto :erreur
+pyinstaller build\Glaneur.spec --noconfirm --clean || goto :erreur
 
 echo [5/5] Creation de l'installateur...
 where iscc >nul 2>nul
 if errorlevel 1 (
     echo    Inno Setup introuvable dans le PATH, etape ignoree.
-    echo    L'executable est disponible dans dist\WpImagerDownloader\
+    echo    L'executable est disponible dans dist\Glaneur\
     goto :fin
 )
 iscc build\installer.iss || goto :erreur

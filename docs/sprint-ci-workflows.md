@@ -99,7 +99,7 @@ préversions (couvert par `test_github_provider_ignores_prerelease_and_draft`).
             gh release create "$GITHUB_REF_NAME" \
               --repo "$GITHUB_REPOSITORY" \
               --verify-tag "${prerelease[@]}" \
-              --title "WpImageDownloader $GITHUB_REF_NAME" \
+              --title "Glaneur $GITHUB_REF_NAME" \
               --notes "Automated release $GITHUB_REF_NAME"
           fi
 ```
@@ -253,8 +253,8 @@ if "--controle-bundle" in sys.argv:
     # Importe ce que PyInstaller pourrait avoir oublié, sans ouvrir de fenêtre.
     # Le résultat passe par le code de sortie : en mode fenêtré,
     # sys.stdout peut valoir None et un print lèverait une exception.
-    import WpImageDownloader.engine  # noqa: F401
-    # Quand sources/ existera : import WpImageDownloader.sources
+    import Glaneur.engine  # noqa: F401
+    # Quand sources/ existera : import Glaneur.sources
     sys.exit(0)
 ```
 
@@ -270,7 +270,7 @@ name: build-check
 on:
   pull_request:
     paths:
-      - "WpImageDownloader/**"
+      - "Glaneur/**"
       - "app.py"
       - "cli.py"
       - "build/**"
@@ -290,11 +290,11 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
-      - run: pyinstaller build\WpImageDownloader.spec --noconfirm --clean
+      - run: pyinstaller build\Glaneur.spec --noconfirm --clean
       - name: Smoke test du bundle
         shell: pwsh
         run: |
-          $p = Start-Process "dist\WpImagerDownloader\WpImagerDownloader.exe" `
+          $p = Start-Process "dist\Glaneur\Glaneur.exe" `
                  -ArgumentList "--controle-bundle" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Bundle KO : code $($p.ExitCode)" }
 ```
@@ -311,7 +311,7 @@ attente indéfiniment.
 
 **Critères d'acceptation**
 
-- [ ] Une PR qui touche `WpImageDownloader/` lance `build-check`, qui passe.
+- [ ] Une PR qui touche `Glaneur/` lance `build-check`, qui passe.
 - [ ] Contre-épreuve sur une branche jetable : ajouter à `QT_INUTILES` un module
       Qt réellement importé par l'application. Le smoke test doit échouer.
 - [ ] Une PR qui ne touche que `docs/` ne lance pas `build-check`.

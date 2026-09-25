@@ -1,10 +1,17 @@
-# Téléchargeur d'images multi-sources
+# Glaneur — Téléchargeur d'images multi-sources
 
 > **Disclaimer**
 >
 > Ce projet est personnel et indépendant. Il ne constitue pas un produit,
 > service ou partenariat officiel d'un site ciblé. Les noms et marques
 > éventuellement mentionnés sont utilisés uniquement à titre descriptif.
+
+> **Ancien nom.** L'application s'appelait `WpImageDownloader`
+> (`WpImagerDownloader` côté installer) jusqu'à la version 1.0.42 —
+> vestige d'un scope initial WordPress-only. Le nouveau nom **Glaneur**
+> reflète le passage au multi-source. Les installations existantes
+> voient leur config (`%APPDATA%\WpImageDownloader\`) migrée
+> automatiquement vers `%APPDATA%\Glaneur\` au premier lancement.
 
 Application Windows qui synchronise en local les images publiées sur un site
 distant. Deux types de source sont supportés :
@@ -18,23 +25,23 @@ une image déjà présente.
 ## 1. Architecture
 
 Le découpage sépare strictement le moteur de l'interface :
-`WpImageDownloader/engine.py`
+`Glaneur/engine.py`
 n'importe rien de Tkinter et communique par callbacks. On peut donc le piloter
 depuis l'UI, depuis `cli.py`, ou depuis un futur service Windows sans rien
 réécrire.
 
 ```
-wp-image-downloader/
+glaneur/
 ├── app.py                  Interface graphique PySide6
 ├── cli.py                  Interface ligne de commande (mêmes fonctions)
 ├── requirements.txt
 ├── build.bat               Construction complète en une commande
-├── WpImageDownloader/
+├── Glaneur/
 │   ├── config.py           Préférences persistées (JSON dans %APPDATA%)
 │   ├── engine.py           Moteur : orchestration, manifeste, téléchargement, reprise
 │   ├── scheduler.py        Calcul d'échéance (logique pure, sans thread)
 │   ├── systeme.py          Registre Windows, ouverture de dossier
-│   ├── logsetup.py         Logger fichier rotatif (%APPDATA%\WpImageDownloader\app.log)
+│   ├── logsetup.py         Logger fichier rotatif (%APPDATA%\Glaneur\app.log)
 │   ├── bug_report.py       Compose l'URL GitHub issues/new du menu Aide → Signaler un bug
 │   ├── i18n.py             Charge QTranslator au démarrage (voir §4 Internationalisation)
 │   ├── sources/            Adaptateurs par type de site (contrat commun `Source`)
@@ -47,7 +54,7 @@ wp-image-downloader/
 │       ├── qt_threads.py      Threads Qt (check / download) et handoff
 │       ├── models.py, version.py
 └── build/
-    ├── WpImageDownloader.spec Recette PyInstaller
+    ├── Glaneur.spec Recette PyInstaller
     └── installer.iss       Script Inno Setup
 ```
 
@@ -99,7 +106,7 @@ autres tests (moteur, scheduler, config, updater unitaire) tournent sans lui.
 ## 3. Fonctionnement
 
 **Sources.** Le moteur délègue à un adaptateur `Source` (dans
-`WpImageDownloader/sources/`) qui expose deux méthodes : `inventaire()` liste
+`Glaneur/sources/`) qui expose deux méthodes : `inventaire()` liste
 les images disponibles, `titre_parent()` résout un ID de galerie en libellé
 lisible. Deux implémentations sont fournies :
 
@@ -166,8 +173,8 @@ interrompue ne met pas à jour l'horodatage.
 
 ## 4. Configuration
 
-Fichier : `%APPDATA%\WpImageDownloader\config.json`
-(`~/.config/wp-image-downloader/` ailleurs).
+Fichier : `%APPDATA%\Glaneur\config.json`
+(`~/.config/glaneur/` ailleurs).
 
 La fenêtre principale expose les actions (mise à jour, arrêter, supprimer le
 fond, images supprimées) et le journal ; les paramètres — type de site, URL,
@@ -206,8 +213,8 @@ marteler le serveur cible.
 Toutes les chaînes d'interface passent par `self.tr(...)` (widgets) ou
 `QCoreApplication.translate("BugReport", ...)` (module `bug_report.py`).
 Les sources sont en français ; les autres langues vivent dans
-`translations/wpimagedownloader_<code>.ts`, compilées en `.qm` que
-`WpImageDownloader/i18n.py` installe au démarrage selon la préférence
+`translations/glaneur_<code>.ts`, compilées en `.qm` que
+`Glaneur/i18n.py` installe au démarrage selon la préférence
 `langue` (ou la locale système si vide). Le changement de langue prend
 effet au **prochain lancement** — pas de retranslation à chaud.
 
@@ -218,7 +225,7 @@ Workflow traducteur :
 python translations/build_translations.py update
 
 # 2. Ouvrir et traduire dans Qt Linguist
-pyside6-linguist translations/wpimagedownloader_en.ts
+pyside6-linguist translations/glaneur_en.ts
 
 # 3. Compiler les .ts en .qm consommés par l'app
 python translations/build_translations.py release
@@ -254,12 +261,12 @@ si `iscc.exe` est dans le PATH.
 
 ```bat
 pip install pyinstaller
-pyinstaller build\WpImageDownloader.spec --noconfirm --clean
+pyinstaller build\Glaneur.spec --noconfirm --clean
 iscc build\installer.iss
 ```
 
-Résultats : `dist\WpImagerDownloader\` puis
-`build\Output\WpImagerDownloader-1.0.40-setup.exe`.
+Résultats : `dist\Glaneur\` puis
+`build\Output\Glaneur-1.1.0-setup.exe`.
 
 **Icône.** Aucun logo ou blason tiers n'est distribué dans le dépôt. Sans fichier
 ICO fourni séparément au moment du build, l'application dessine à la volée un
@@ -278,14 +285,14 @@ fiable.
 ### Mise à jour automatique Windows
 
 Au démarrage, Windows vérifie en arrière-plan la dernière GitHub Release stable.
-L'installateur `WpImagerDownloader-<version>-setup.exe` et son fichier
+L'installateur `Glaneur-<version>-setup.exe` et son fichier
 `.sha256` sont sélectionnés dans la Release officielle. Après vérification de
 l'intégrité, un petit updater séparé ferme l'application, lance Inno Setup puis
 relance l'application. Les erreurs réseau ou un choix « Plus tard » laissent
 l'application fonctionner normalement.
 
 L'installation est **user-scope** : `PrivilegesRequired=lowest` combiné à
-`DefaultDirName={autopf}` résout vers `%LOCALAPPDATA%\Programs\WpImagerDownloader`,
+`DefaultDirName={autopf}` résout vers `%LOCALAPPDATA%\Programs\Glaneur`,
 donc aucune élévation UAC n'est demandée à l'installation ni aux mises à jour.
 
 **Taille.** Qt est volumineux. La liste `QT_INUTILES` du fichier `.spec`
@@ -339,7 +346,7 @@ Le même workflow produit une application macOS (`.app`) distribuée en archive
 | L'antivirus met l'exe en quarantaine | faux positif classique sur PyInstaller ; vérifier que UPX reste désactivé |
 
 Pour diagnostiquer, `cli.py` affiche les mêmes messages sans passer par l'UI.
-Le fichier log complet vit dans `%APPDATA%\WpImageDownloader\app.log`
+Le fichier log complet vit dans `%APPDATA%\Glaneur\app.log`
 (rotation gérée par `logsetup.py`) ; **Aide → Signaler un bug…** en attache
 les 50 dernières lignes à une issue GitHub préremplie.
 

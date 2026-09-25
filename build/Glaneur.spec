@@ -1,9 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 """Recette PyInstaller pour l'application PySide6.
 
-    pyinstaller build/WpImageDownloader.spec --noconfirm --clean
+    pyinstaller build/Glaneur.spec --noconfirm --clean
 
-Produit dist/WpImagerDownloader/WpImagerDownloader.exe (mode dossier).
+Produit dist/Glaneur/Glaneur.exe (mode dossier).
 Le mode dossier est préféré au --onefile : démarrage plus rapide, et pas
 d'extraction dans %TEMP% à chaque lancement — ce qui compte d'autant plus
 avec Qt, dont le paquet est volumineux.
@@ -12,7 +12,7 @@ avec Qt, dont le paquet est volumineux.
 from pathlib import Path
 
 RACINE = Path(SPECPATH).parent
-ICONE = RACINE / "build" / "WpImageDownloader.ico"
+ICONE = RACINE / "build" / "Glaneur.ico"
 
 # Qt embarque beaucoup de modules dont une application comme celle-ci n'a que
 # faire. Les écarter fait passer la distribution d'environ 180 Mo à 60 Mo.
@@ -46,13 +46,13 @@ a = Analysis(
     pathex=[str(RACINE)],
     binaries=[],
     datas=datas,
-    hiddenimports=["WpImageDownloader.config", "WpImageDownloader.engine",
-                   "WpImageDownloader.scheduler", "WpImageDownloader.systeme",
-                   "WpImageDownloader.i18n",
-                   "WpImageDownloader.sources",
-                   "WpImageDownloader.sources.base",
-                   "WpImageDownloader.sources.wordpress",
-                   "WpImageDownloader.sources.djangoplicity"],
+    hiddenimports=["Glaneur.config", "Glaneur.engine",
+                   "Glaneur.scheduler", "Glaneur.systeme",
+                   "Glaneur.i18n",
+                   "Glaneur.sources",
+                   "Glaneur.sources.base",
+                   "Glaneur.sources.wordpress",
+                   "Glaneur.sources.djangoplicity"],
     hookspath=[],
     runtime_hooks=[],
     excludes=QT_INUTILES + [
@@ -69,7 +69,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="WpImagerDownloader",
+    name="Glaneur",
     debug=False,
     strip=False,
     upx=False,                 # UPX déclenche des faux positifs antivirus
@@ -85,5 +85,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="WpImagerDownloader",
+    name="Glaneur",
 )

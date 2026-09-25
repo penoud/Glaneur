@@ -1,7 +1,7 @@
 """Configuration persistante de l'application.
 
-Le fichier vit dans %APPDATA%\\WpImageDownloader\\config.json sous Windows,
-dans ~/.config/wp-image-downloader/ ailleurs. Il est écrit de façon atomique
+Le fichier vit dans %APPDATA%\\Glaneur\\config.json sous Windows,
+dans ~/.config/glaneur/ ailleurs. Il est écrit de façon atomique
 pour ne jamais se retrouver tronqué si l'application est tuée.
 """
 
@@ -13,9 +13,9 @@ import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-NOM_APP = "WpImageDownloader"
+NOM_APP = "Glaneur"
 GITHUB_OWNER = "penoud"
-GITHUB_REPOSITORY = "WpImageDownloader"
+GITHUB_REPOSITORY = "Glaneur"
 
 # intervalles proposés dans l'interface : libellé -> heures (0 = manuel)
 INTERVALLES: dict[str, int] = {
@@ -54,15 +54,61 @@ def dossier_config() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / NOM_APP
     base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "wp-image-downloader"
+    return base / "glaneur"
+
+
+# Anciens noms utilisés avant le rename WpImageDownloader → Glaneur.
+# `migrer_depuis_ancien_nom()` copie le contenu du premier de ces dossiers
+# qui existe encore vers `dossier_config()` au premier lancement de Glaneur.
+_ANCIENS_NOMS_APP: tuple[str, ...] = ("WpImageDownloader",)
+_ANCIENS_NOMS_XDG: tuple[str, ...] = ("wp-image-downloader",)
+
+
+def _anciens_dossiers_config() -> list[Path]:
+    """Emplacements possibles de la config héritée de l'ancien nom, dans
+    l'ordre de préférence (le plus récent d'abord)."""
+    dossiers: list[Path] = []
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
+        dossiers += [base / nom for nom in _ANCIENS_NOMS_APP]
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+        dossiers += [base / nom for nom in _ANCIENS_NOMS_APP]
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+        dossiers += [base / nom for nom in _ANCIENS_NOMS_XDG]
+    return dossiers
+
+
+def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
+    """Copie récursivement la config d'un ancien nom (WpImageDownloader) vers
+    le nouveau dossier Glaneur, uniquement si aucune config Glaneur n'existe
+    déjà. Renvoie le chemin source utilisé (ou None si rien à migrer).
+
+    Volontairement copié plutôt que déplacé : l'ancien install peut encore
+    tourner en parallèle pendant la transition, on ne casse pas sa config.
+    """
+    import logging
+    import shutil
+    cible = cible or dossier_config()
+    if cible.exists() and any(cible.iterdir()):
+        return None
+    for source in _anciens_dossiers_config():
+        if source.is_dir() and any(source.iterdir()):
+            logger = logging.getLogger(__name__)
+            logger.info("Migration config : %s -> %s", source, cible)
+            cible.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, cible, dirs_exist_ok=True)
+            return source
+    return None
 
 
 def dossier_images_defaut() -> Path:
     for nom in ("Pictures", "Images"):
         candidat = Path.home() / nom
         if candidat.is_dir():
-            return candidat / "WpImageDownloader"
-    return Path.home() / "WpImageDownloader"
+            return candidat / "Glaneur"
+    return Path.home() / "Glaneur"
 
 
 @dataclass

@@ -28,8 +28,8 @@ You are the maintainer of this Python application that downloads images from com
 
 ## Project Rules
 
-- Treat `WpImageDownloader/config.py` as the configuration source of truth for the target site.
-- Do not reintroduce global site/API constants in `WpImageDownloader/engine.py`.
+- Treat `Glaneur/config.py` as the configuration source of truth for the target site.
+- Do not reintroduce global site/API constants in `Glaneur/engine.py`.
 - Keep tests independent from any live website. Use a configurable local fake server or fixture instead.
 - Preserve public APIs and user-facing behavior unless the task requires a deliberate change.
 - Use ASCII by default and match the repository's existing French naming and style.
