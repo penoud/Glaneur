@@ -49,7 +49,12 @@ from PySide6.QtWidgets import (
 )
 
 from WpImageDownloader import __version__
-from WpImageDownloader.bug_report import build_issue_url, collect_context
+from WpImageDownloader.bug_report import (
+    MAX_URL_LENGTH,
+    build_issue_url,
+    collect_context,
+    is_url_too_long,
+)
 from WpImageDownloader.config import (
     CLASSEMENTS,
     FORMATS_DJANGOPLICITY,
@@ -487,9 +492,24 @@ class DialogueSignalerBug(QDialog):
                 "Merci d'ajouter une description avant d'ouvrir l'issue.")
             return
         corps = description
-        if self.case_contexte.isChecked():
+        contexte_joint = self.case_contexte.isChecked()
+        if contexte_joint:
             corps = f"{description}\n\n{collect_context(__version__, self._chemin_log)}"
         url = build_issue_url(GITHUB_OWNER, GITHUB_REPOSITORY, titre, corps)
+        if is_url_too_long(url):
+            piste = (
+                "Décoche « Joindre la version, la plateforme et les 50 dernières "
+                "lignes de log » (tu pourras coller le log dans un commentaire), "
+                "ou raccourcis la description."
+                if contexte_joint
+                else "Raccourcis la description avant de réessayer."
+            )
+            QMessageBox.warning(
+                self, "Signaler un bug",
+                f"Ton rapport est trop long pour être pré-rempli via l'URL "
+                f"GitHub ({len(url)} caractères, maximum {MAX_URL_LENGTH}).\n\n"
+                f"{piste}")
+            return
         QDesktopServices.openUrl(QUrl(url))
         self.accept()
 
