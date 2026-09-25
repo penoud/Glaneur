@@ -281,7 +281,7 @@ l'adaptateur WordPress : elle n'est plus imposée aux autres sources.
 ### 4.4 Arborescence
 
 ```
-WpImageDownloader/
+Glaneur/
   engine.py              Moteur générique, manifeste, cache, telecharger
   sources/
     __init__.py          SOURCES = {"wordpress": WordPress, "djangoplicity": Djangoplicity}
@@ -463,7 +463,7 @@ Spécifiques à Djangoplicity :
 À corriger d'un côté ou de l'autre, sinon je raisonnerai sur une mauvaise carte :
 
 - Les instructions parlent du paquet `servette/` ; le code importé est dans
-  `WpImageDownloader/` (et c'est ce que `app.py` et `cli.py` importent).
+  `Glaneur/` (et c'est ce que `app.py` et `cli.py` importent).
 - Les instructions disent « pas de framework de tests » ; le dépôt utilise
   `pytest` et `pytest-qt` (README et `tests/`).
 - La docstring d'`engine.py` mentionne encore l'UI Tkinter.
