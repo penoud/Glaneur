@@ -13,10 +13,11 @@ hors de son lot, ni signalé comme régression, sauf s'il s'aggrave.
   messages. La frontière 1 sera tenue quand le moteur émettra des événements
   structurés. Suivi par `xfail(strict=True)` dans `tests/test_boundaries.py`.
 - `Glaneur/scheduler.py` importe `PySide6.QtCore`. Même frontière 1 à tenir,
-  probablement par extraction de la partie « planification » hors Qt. Détecté
-  par `tests/test_boundaries.py::test_no_qt_outside_ui[Glaneur/scheduler.py]`,
-  qui est actuellement **rouge** (pas encore `xfail`) : à convertir en `xfail`
-  strict ou à corriger dans le prochain lot qui touche le scheduler.
+  probablement par extraction de la partie « planification » hors Qt. Suivi
+  par `xfail(strict=True)` dans `tests/test_boundaries.py` (entrée
+  `Glaneur/scheduler.py` dans `KNOWN_QT_IMPORTS`) ; à retirer dès que le
+  prochain lot qui touche le scheduler extrait la partie planification hors
+  Qt.
 - Identifiants, docstrings, logs et chaînes source de l'interface sont encore en
   français (`.ts` en `sourcelanguage="fr"`, libellés français en clés dans
   `config.py`) : lot 2. (Note : depuis le sprint « Documentation Sphinx », les
