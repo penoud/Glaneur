@@ -48,14 +48,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from WpImageDownloader import __version__
-from WpImageDownloader.bug_report import (
+from Glaneur import __version__
+from Glaneur.bug_report import (
     MAX_URL_LENGTH,
     build_issue_url,
     collect_context,
     is_url_too_long,
 )
-from WpImageDownloader.config import (
+from Glaneur.config import (
     CLASSEMENTS,
     FORMATS_DJANGOPLICITY,
     GITHUB_OWNER,
@@ -64,8 +64,8 @@ from WpImageDownloader.config import (
     TYPES_SOURCE,
     Config,
 )
-from WpImageDownloader.sources import classements_pour
-from WpImageDownloader.engine import (
+from Glaneur.sources import classements_pour
+from Glaneur.engine import (
     Moteur,
     Options,
     Resultat,
@@ -74,8 +74,8 @@ from WpImageDownloader.engine import (
     restaurer,
     supprimer_image,
 )
-from WpImageDownloader.scheduler import Planificateur
-from WpImageDownloader.systeme import (
+from Glaneur.scheduler import Planificateur
+from Glaneur.systeme import (
     avancer_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,
@@ -83,7 +83,7 @@ from WpImageDownloader.systeme import (
     fond_ecran_actuel,
     ouvrir_dossier,
 )
-from WpImageDownloader.updater.qt_threads import (
+from Glaneur.updater.qt_threads import (
     TelechargementMiseAJour,
     VerificationMiseAJour,
 )
@@ -92,7 +92,7 @@ GRENAT = "#471625"
 PERIODE_ECHEANCE = 30_000   # ms entre deux contrôles d'échéance
 PERIODE_AFFICHAGE = 1_000   # ms entre deux rafraîchissements du compte à rebours
 
-DEPOT_URL = "https://github.com/penoud/WpImageDownloader"
+DEPOT_URL = "https://github.com/penoud/Glaneur"
 
 
 # --------------------------------------------------------------------------- #
@@ -100,9 +100,9 @@ DEPOT_URL = "https://github.com/penoud/WpImageDownloader"
 # --------------------------------------------------------------------------- #
 
 def icone_application() -> QIcon:
-    """Charge build/WpImageDownloader.ico si présent, sinon dessine un repli grenat."""
+    """Charge build/Glaneur.ico si présent, sinon dessine un repli grenat."""
     for base in (Path(__file__).resolve().parent, Path(getattr(sys, "_MEIPASS", "."))):
-        fichier = base / "build" / "WpImageDownloader.ico"
+        fichier = base / "build" / "Glaneur.ico"
         if fichier.exists():
             return QIcon(str(fichier))
 
@@ -330,7 +330,7 @@ class DialoguePreferences(QDialog):
         form.addRow("", self.case_maj_demarrage)
 
         # --- langue --------------------------------------------------------
-        from WpImageDownloader.i18n import LANGUES_DISPONIBLES
+        from Glaneur.i18n import LANGUES_DISPONIBLES
         self.combo_langue = QComboBox()
         self.combo_langue.addItem(self.tr("Langue du système"), "")
         for code, libelle in LANGUES_DISPONIBLES.items():
@@ -537,7 +537,7 @@ class DialogueAPropos(QDialog):
 
     def __init__(self, parent) -> None:
         super().__init__(parent)
-        self.setWindowTitle(self.tr("À propos de WpImageDownloader"))
+        self.setWindowTitle(self.tr("À propos de Glaneur"))
         self.setFixedSize(440, 320)
 
         colonne = QVBoxLayout(self)
@@ -549,7 +549,7 @@ class DialogueAPropos(QDialog):
         icone.setAlignment(Qt.AlignCenter)
         colonne.addWidget(icone)
 
-        titre = QLabel("WpImageDownloader")
+        titre = QLabel("Glaneur")
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         titre.setAlignment(Qt.AlignCenter)
         colonne.addWidget(titre)
@@ -595,7 +595,7 @@ class DialogueAPropos(QDialog):
 class Fenetre(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(self.tr("WpImageDownloader — Téléchargeur d'images {version}").format(
+        self.setWindowTitle(self.tr("Glaneur — Téléchargeur d'images {version}").format(
             version=__version__))
         self.setWindowIcon(icone_application())
         self.resize(760, 520)
@@ -715,7 +715,7 @@ class Fenetre(QMainWindow):
         racine.setContentsMargins(14, 14, 14, 14)
         racine.setSpacing(10)
 
-        titre = QLabel(self.tr("WpImageDownloader — Téléchargeur d'images"))
+        titre = QLabel(self.tr("Glaneur — Téléchargeur d'images"))
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
@@ -805,7 +805,7 @@ class Fenetre(QMainWindow):
             return
 
         self.tray = QSystemTrayIcon(icone_application(), self)
-        self.tray.setToolTip(self.tr("WpImageDownloader — Téléchargeur d'images"))
+        self.tray.setToolTip(self.tr("Glaneur — Téléchargeur d'images"))
 
         menu = QMenu()
         menu.addAction(self.action_afficher)
@@ -859,7 +859,7 @@ class Fenetre(QMainWindow):
         DialogueAPropos(self).exec()
 
     def _ouvrir_signaler_bug(self) -> None:
-        from WpImageDownloader.config import dossier_config
+        from Glaneur.config import dossier_config
         chemin_log = dossier_config() / "logs" / "app.log"
         DialogueSignalerBug(self, chemin_log if chemin_log.is_file() else None).exec()
 
@@ -935,9 +935,9 @@ class Fenetre(QMainWindow):
     def _mise_a_jour_telechargee(self, installer: Path, dossier: str) -> None:
         import logging
         import subprocess
-        log = logging.getLogger("WpImageDownloader.app.update")
+        log = logging.getLogger("Glaneur.app.update")
         # Lancement direct d'Inno Setup en détaché, sans passer par un
-        # updater séparé : l'ancien intermédiaire (WpImageDownloaderUpdater.exe)
+        # updater séparé : l'ancien intermédiaire (GlaneurUpdater.exe)
         # tournait depuis le dossier d'install, RestartManager le détectait
         # comme process verrouillant des fichiers cibles, et Setup abandonnait
         # (« Some applications could not be shut down »). Ici, l'app elle-même
@@ -1143,7 +1143,7 @@ class Fenetre(QMainWindow):
         if (self.tray and self.auto_en_cours and self.cfg.notifications
                 and res.telechargees and not self.isVisible()):
             self.tray.showMessage(
-                "WpImageDownloader",
+                "Glaneur",
                 self.tr("{n} nouvelle(s) image(s) — {taille}").format(
                     n=res.telechargees, taille=format_octets(res.octets)),
                 icone_application(), 5000)
@@ -1160,7 +1160,7 @@ class Fenetre(QMainWindow):
         texte = self.planificateur.texte_prochaine()
         self.label_echeance.setText(texte)
         if self.tray:
-            self.tray.setToolTip(self.tr("WpImageDownloader — {texte}").format(texte=texte))
+            self.tray.setToolTip(self.tr("Glaneur — {texte}").format(texte=texte))
 
     def _ecrire(self, message: str) -> None:
         self.journal.appendPlainText(f"{datetime.now():%H:%M:%S}  {message}")
@@ -1174,7 +1174,7 @@ class Fenetre(QMainWindow):
             event.ignore()
             self.hide()
             self.tray.showMessage(
-                "WpImageDownloader",
+                "Glaneur",
                 self.tr("L'application continue en arrière-plan. Clic droit sur l'icône pour quitter."),
                 icone_application(), 4000)
             return
@@ -1188,7 +1188,7 @@ class Fenetre(QMainWindow):
                 and not self._avertissement_tray_montre):
             self._avertissement_tray_montre = True
             QMessageBox.information(
-                self, self.tr("Fermeture de WpImageDownloader"),
+                self, self.tr("Fermeture de Glaneur"),
                 self.tr(
                     "Aucun indicateur système n'est disponible sur cette session Linux, "
                     "l'application ne peut pas rester en arrière-plan et va se fermer.\n\n"
@@ -1223,13 +1223,13 @@ class Fenetre(QMainWindow):
 # --------------------------------------------------------------------------- #
 
 def main() -> int:
-    from WpImageDownloader.config import dossier_config
-    from WpImageDownloader.i18n import installer_traducteur
-    from WpImageDownloader.logsetup import configure_logging
+    from Glaneur.config import dossier_config
+    from Glaneur.i18n import installer_traducteur
+    from Glaneur.logsetup import configure_logging
     configure_logging(dossier_config())
 
     app = QApplication(sys.argv)
-    app.setApplicationName("WpImageDownloader")
+    app.setApplicationName("Glaneur")
     app.setWindowIcon(icone_application())
     # l'application survit à la fermeture de la fenêtre grâce à l'icône de barre
     app.setQuitOnLastWindowClosed(False)

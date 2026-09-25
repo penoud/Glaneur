@@ -15,7 +15,7 @@ from typing import Callable, ClassVar, Iterator, Mapping
 
 import requests
 
-UA = "Mozilla/5.0 (compatible; WpImageDownloader/1.0)"
+UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
 
 
 class Interrompu(Exception):

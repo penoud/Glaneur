@@ -5,7 +5,7 @@ Ce module ne connaît rien de l'interface : il communique par callbacks
 Il peut donc servir aussi bien à l'UI PySide6 qu'à un script en ligne de commande.
 
 Il ne connaît pas non plus WordPress ni Djangoplicity. Il consomme des
-`Element` produits par un adaptateur de `WpImageDownloader.sources`.
+`Element` produits par un adaptateur de `Glaneur.sources`.
 
 Seule dépendance Qt : `QCoreApplication.translate` pour localiser les
 messages remontés au journal et à `res.message` — pas de widget, pas de
@@ -39,7 +39,7 @@ from .sources import SOURCES, Element, Interrompu, Transport
 # Réexport de `Interrompu` pour les appelants qui l'importent via `engine`.
 Interrompu = Interrompu   # noqa: PLW0127 — alias explicite
 
-UA = "Mozilla/5.0 (compatible; WpImageDownloader/1.0)"
+UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
 
 
 @dataclass

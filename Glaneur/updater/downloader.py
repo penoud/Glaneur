@@ -63,4 +63,4 @@ def verify_sha256(path: Path, checksum_text: str) -> bool:
 
 
 def temporary_directory() -> Path:
-    return Path(tempfile.mkdtemp(prefix="WpImageDownloader-update-"))
+    return Path(tempfile.mkdtemp(prefix="Glaneur-update-"))

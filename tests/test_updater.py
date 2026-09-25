@@ -7,10 +7,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from WpImageDownloader.updater.downloader import verify_sha256
-from WpImageDownloader.updater.github_release import GitHubReleaseProvider
-from WpImageDownloader.updater.models import Release, ReleaseAsset
-from WpImageDownloader.updater.version import Version
+from Glaneur.updater.downloader import verify_sha256
+from Glaneur.updater.github_release import GitHubReleaseProvider
+from Glaneur.updater.models import Release, ReleaseAsset
+from Glaneur.updater.version import Version
 
 
 def test_semver_comparison_and_v_prefix():

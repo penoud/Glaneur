@@ -11,9 +11,9 @@ from __future__ import annotations
 import threading
 from unittest.mock import patch
 
-from WpImageDownloader.engine import Moteur, Options, lire_manifeste
-from WpImageDownloader.sources import Transport
-from WpImageDownloader.sources.djangoplicity import Djangoplicity
+from Glaneur.engine import Moteur, Options, lire_manifeste
+from Glaneur.sources import Transport
+from Glaneur.sources.djangoplicity import Djangoplicity
 
 
 # --------------------------------------------------------------------------- #
@@ -266,7 +266,7 @@ class TestAfterInclusif:
         # une deuxième copie en telechargees.
         fichier_a = tmp_path / "a.jpg"
         fichier_a.write_bytes(b"contenu-a-attendu")
-        from WpImageDownloader.engine import ecrire_manifeste
+        from Glaneur.engine import ecrire_manifeste
         ecrire_manifeste(tmp_path, {
             "a:Large": {"fichier": "a.jpg",
                         "taille": len(b"contenu-a-attendu")},

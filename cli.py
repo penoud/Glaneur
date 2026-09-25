@@ -11,8 +11,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from WpImageDownloader.config import Config
-from WpImageDownloader.engine import (
+from Glaneur.config import Config
+from Glaneur.engine import (
     Moteur,
     Options,
     format_octets,

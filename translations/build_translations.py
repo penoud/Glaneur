@@ -44,9 +44,9 @@ LANGUES = ["fr", "en"]
 # mais pas les tests ni le build.
 SOURCES = [
     RACINE / "app.py",
-    *(RACINE / "WpImageDownloader").glob("*.py"),
-    *(RACINE / "WpImageDownloader" / "sources").glob("*.py"),
-    *(RACINE / "WpImageDownloader" / "updater").glob("*.py"),
+    *(RACINE / "Glaneur").glob("*.py"),
+    *(RACINE / "Glaneur" / "sources").glob("*.py"),
+    *(RACINE / "Glaneur" / "updater").glob("*.py"),
 ]
 
 

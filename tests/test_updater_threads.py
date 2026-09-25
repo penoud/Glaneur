@@ -16,12 +16,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from WpImageDownloader.updater.models import Release, ReleaseAsset, UpdateInfo
-from WpImageDownloader.updater.qt_threads import (
+from Glaneur.updater.models import Release, ReleaseAsset, UpdateInfo
+from Glaneur.updater.qt_threads import (
     TelechargementMiseAJour,
     VerificationMiseAJour,
 )
-from WpImageDownloader.updater.version import Version
+from Glaneur.updater.version import Version
 
 
 def _attendre_fin_propre(thread) -> None:
@@ -89,15 +89,15 @@ class TestTelechargementMiseAJour:
         # download rend le fichier installateur puis le fichier checksum
         rendus = iter([installer_path, checksum_path])
         monkeypatch.setattr(
-            "WpImageDownloader.updater.qt_threads.download",
+            "Glaneur.updater.qt_threads.download",
             lambda asset, dossier: next(rendus),
         )
         monkeypatch.setattr(
-            "WpImageDownloader.updater.qt_threads.temporary_directory",
+            "Glaneur.updater.qt_threads.temporary_directory",
             lambda: tmp_path,
         )
         monkeypatch.setattr(
-            "WpImageDownloader.updater.qt_threads.verify_sha256",
+            "Glaneur.updater.qt_threads.verify_sha256",
             lambda fichier, texte: True,
         )
 
@@ -116,15 +116,15 @@ class TestTelechargementMiseAJour:
 
         rendus = iter([installer_path, checksum_path])
         monkeypatch.setattr(
-            "WpImageDownloader.updater.qt_threads.download",
+            "Glaneur.updater.qt_threads.download",
             lambda asset, dossier: next(rendus),
         )
         monkeypatch.setattr(
-            "WpImageDownloader.updater.qt_threads.temporary_directory",
+            "Glaneur.updater.qt_threads.temporary_directory",
             lambda: tmp_path,
         )
         monkeypatch.setattr(
-            "WpImageDownloader.updater.qt_threads.verify_sha256",
+            "Glaneur.updater.qt_threads.verify_sha256",
             lambda fichier, texte: False,
         )
 

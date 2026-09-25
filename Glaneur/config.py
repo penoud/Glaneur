@@ -1,7 +1,7 @@
 """Configuration persistante de l'application.
 
-Le fichier vit dans %APPDATA%\\WpImageDownloader\\config.json sous Windows,
-dans ~/.config/wp-image-downloader/ ailleurs. Il est écrit de façon atomique
+Le fichier vit dans %APPDATA%\\Glaneur\\config.json sous Windows,
+dans ~/.config/glaneur/ ailleurs. Il est écrit de façon atomique
 pour ne jamais se retrouver tronqué si l'application est tuée.
 """
 
@@ -13,9 +13,9 @@ import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-NOM_APP = "WpImageDownloader"
+NOM_APP = "Glaneur"
 GITHUB_OWNER = "penoud"
-GITHUB_REPOSITORY = "WpImageDownloader"
+GITHUB_REPOSITORY = "Glaneur"
 
 # intervalles proposés dans l'interface : libellé -> heures (0 = manuel)
 INTERVALLES: dict[str, int] = {
@@ -54,15 +54,15 @@ def dossier_config() -> Path:
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / NOM_APP
     base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "wp-image-downloader"
+    return base / "glaneur"
 
 
 def dossier_images_defaut() -> Path:
     for nom in ("Pictures", "Images"):
         candidat = Path.home() / nom
         if candidat.is_dir():
-            return candidat / "WpImageDownloader"
-    return Path.home() / "WpImageDownloader"
+            return candidat / "Glaneur"
+    return Path.home() / "Glaneur"
 
 
 @dataclass
