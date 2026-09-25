@@ -1,11 +1,11 @@
 ; Installateur Inno Setup pour Glaneur
 ; Compiler après PyInstaller :  iscc build\installer.iss
-; Produit : build\Output\Glaneur-1.0.42-setup.exe
+; Produit : build\Output\Glaneur-1.1.0-setup.exe
 
 #define MonNom "Glaneur"
 #define MonNomCourt "Glaneur"
 #ifndef MaVersion
-  #define MaVersion "1.0.42"
+  #define MaVersion "1.1.0"
 #endif
 #define MonEditeur "Projet personnel"
 #define MonExe "Glaneur.exe"
