@@ -937,9 +937,9 @@ class Fenetre(QMainWindow):
         import subprocess
         log = logging.getLogger("Glaneur.app.update")
         # Lancement direct d'Inno Setup en détaché, sans passer par un
-        # updater séparé : l'ancien intermédiaire (GlaneurUpdater.exe)
-        # tournait depuis le dossier d'install, RestartManager le détectait
-        # comme process verrouillant des fichiers cibles, et Setup abandonnait
+        # updater séparé : l'ancien intermédiaire tournait depuis le dossier
+        # d'install, RestartManager le détectait comme process verrouillant
+        # des fichiers cibles, et Setup abandonnait
         # (« Some applications could not be shut down »). Ici, l'app elle-même
         # est visée par /CLOSEAPPLICATIONS via RestartManager — ça marche bien
         # puisqu'elle n'est PAS le process qui lance Setup — puis Inno remplace

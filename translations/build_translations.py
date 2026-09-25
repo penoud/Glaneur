@@ -6,7 +6,7 @@ Usage :
     python translations/build_translations.py release   # .ts -> .qm
 
 Après un `update`, ouvrir chaque `.ts` dans Qt Linguist
-(`pyside6-linguist translations/wpimagedownloader_en.ts`) et remplir les
+(`pyside6-linguist translations/glaneur_en.ts`) et remplir les
 traductions, puis relancer `release` pour produire les `.qm` que l'appli
 charge à l'exécution.
 """
@@ -58,7 +58,7 @@ def _run(cmd: list[str]) -> None:
 def update() -> None:
     lupdate = _outil("pyside6-lupdate")
     for langue in LANGUES:
-        cible = DOSSIER_TS / f"wpimagedownloader_{langue}.ts"
+        cible = DOSSIER_TS / f"glaneur_{langue}.ts"
         _run([
             lupdate,
             *[str(s) for s in SOURCES if s.is_file()],
@@ -71,7 +71,7 @@ def update() -> None:
 def release() -> None:
     lrelease = _outil("pyside6-lrelease")
     for langue in LANGUES:
-        source = DOSSIER_TS / f"wpimagedownloader_{langue}.ts"
+        source = DOSSIER_TS / f"glaneur_{langue}.ts"
         if not source.exists():
             print(f"[skip] {source} absent — lance d'abord `update`.")
             continue

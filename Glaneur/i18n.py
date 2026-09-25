@@ -67,7 +67,7 @@ def installer_traducteur(app, langue_configuree: str = "") -> str:
     if langue == "fr":
         return "fr"
     _translator = QTranslator()
-    fichier = f"wpimagedownloader_{langue}"
+    fichier = f"glaneur_{langue}"
     if _translator.load(fichier, str(dossier)):
         app.installTranslator(_translator)
         logger.info("i18n : traduction %s chargée depuis %s", fichier, dossier)
