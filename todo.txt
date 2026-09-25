@@ -131,15 +131,17 @@ docs/
     └── sprint-ci-workflows.md                (à déplacer)
 ```
 
-- [ ] Créer `docs/design/`.
-- [ ] Déplacer `docs/evolution-multi-sources.md` → `docs/design/`
+- [x] Créer `docs/design/`.
+- [x] Déplacer `docs/evolution-multi-sources.md` → `docs/design/`
       (via `git mv`).
-- [ ] Déplacer `docs/sprint-ci-workflows.md` → `docs/sprints/`
+- [x] Déplacer `docs/sprint-ci-workflows.md` → `docs/sprints/`
       (via `git mv`).
-- [ ] Ajouter un en-tête d'archivage à `sprint-ci-workflows.md` si le sprint
-      est effectivement clos.
-- [ ] Mettre à jour les liens internes cassés par les déplacements
-      (`grep -rn "evolution-multi-sources\|sprint-ci-workflows"`).
+- [x] Ajouter un en-tête d'archivage à `sprint-ci-workflows.md`
+      (état d'avancement non vérifié au moment du déplacement).
+- [x] Mettre à jour les liens internes cassés par les déplacements :
+      seule référence trouvée à `evolution-multi-sources.md` était déjà
+      pointée sur `docs/design/` (Glaneur/sources/djangoplicity.py, US-03).
+      Aucune autre référence à `sprint-ci-workflows.md` dans le dépôt.
 
 Impact Map : `docs/**` uniquement. Validation : aucune, sauf si un workflow
 référence un chemin.
