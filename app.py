@@ -950,7 +950,7 @@ class Fenetre(QMainWindow):
             "/VERYSILENT",
             "/SUPPRESSMSGBOXES",
             "/CLOSEAPPLICATIONS",
-            "/CLOSEAPPLICATIONSFILTER=WpImagerDownloader.exe",
+            "/CLOSEAPPLICATIONSFILTER=Glaneur.exe",
             f"/LOG={log_inno}",
         ]
         log.info("Lancement de l'installateur (détaché) : %r", cmd)

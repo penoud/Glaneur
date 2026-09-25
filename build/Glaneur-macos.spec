@@ -6,7 +6,7 @@ import sys
 
 RACINE = Path(SPECPATH).parent
 sys.path.insert(0, str(RACINE))
-from WpImageDownloader import __version__  # noqa: E402
+from Glaneur import __version__  # noqa: E402
 
 QT_INUTILES = [
     "PySide6.Qt3DAnimation", "PySide6.Qt3DCore", "PySide6.Qt3DExtras",
@@ -30,12 +30,12 @@ a = Analysis(
     pathex=[str(RACINE)],
     binaries=[],
     datas=[],
-    hiddenimports=["WpImageDownloader.config", "WpImageDownloader.engine",
-                   "WpImageDownloader.scheduler", "WpImageDownloader.systeme",
-                   "WpImageDownloader.sources",
-                   "WpImageDownloader.sources.base",
-                   "WpImageDownloader.sources.wordpress",
-                   "WpImageDownloader.sources.djangoplicity"],
+    hiddenimports=["Glaneur.config", "Glaneur.engine",
+                   "Glaneur.scheduler", "Glaneur.systeme",
+                   "Glaneur.sources",
+                   "Glaneur.sources.base",
+                   "Glaneur.sources.wordpress",
+                   "Glaneur.sources.djangoplicity"],
     hookspath=[],
     runtime_hooks=[],
     excludes=QT_INUTILES + [
@@ -51,7 +51,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="WpImageDownloader",
+    name="Glaneur",
     debug=False,
     strip=False,
     upx=False,
@@ -62,12 +62,12 @@ app = BUNDLE(
     exe,
     a.binaries,
     a.datas,
-    name="WpImageDownloader.app",
+    name="Glaneur.app",
     icon=None,
-    bundle_identifier="org.wpimagedownloader.WpImageDownloader",
+    bundle_identifier="org.glaneur.Glaneur",
     info_plist={
         "CFBundleDisplayName": "WP Image Downloader",
-        "CFBundleName": "WpImageDownloader",
+        "CFBundleName": "Glaneur",
         "CFBundleShortVersionString": __version__,
         "CFBundleVersion": __version__,
         "LSMinimumSystemVersion": "11.0",

@@ -74,8 +74,8 @@ class TestVerificationMiseAJour:
 
 @pytest.fixture
 def fausse_release():
-    installer = ReleaseAsset("WpImagerDownloader-2.0.0-setup.exe", "https://x/i.exe", 42)
-    checksum = ReleaseAsset("WpImagerDownloader-2.0.0-setup.exe.sha256", "https://x/i.sha256", 64)
+    installer = ReleaseAsset("Glaneur-2.0.0-setup.exe", "https://x/i.exe", 42)
+    checksum = ReleaseAsset("Glaneur-2.0.0-setup.exe.sha256", "https://x/i.sha256", 64)
     return Release(Version.parse("2.0.0"), "v2.0.0", assets=(installer, checksum))
 
 

@@ -1,7 +1,7 @@
 """Installation du traducteur Qt au démarrage.
 
 Politique : la langue source dans le code est le français. Les traductions
-sont compilées depuis `translations/wpimagedownloader_<code>.ts` vers
+sont compilées depuis `translations/glaneur_<code>.ts` vers
 `.qm` par `pyside6-lrelease`. Le choix se fait au lancement, avant la
 construction de la fenêtre — pas de changement à chaud (voir la décision
 d'i18n dans le README §4).
