@@ -65,7 +65,11 @@ Un module = un commit, dans l'ordre :
       passées à des commentaires `#:` pour éviter le doublon d'index. Ruff
       signale 4 problèmes préexistants (F401 `time`, UP035 `typing.Callable`,
       DTZ005 x2) — hors périmètre de US-03.
-- [ ] `Glaneur/sources/` (contrats d'adaptateur)
+- [x] `Glaneur/sources/` (contrats d'adaptateur) — 8 nouveaux docstrings
+      + enrichissements sur base.py, wordpress.py, djangoplicity.py,
+      __init__.py. Element passe aussi aux commentaires `#:`. Refs
+      internes en double-backtick quand le symbole n'est pas documenté
+      par autodoc (SOURCES, PER_PAGE). 161 tests verts.
 - [ ] `Glaneur/config.py`
 - [ ] `Glaneur/scheduler.py`
 - [ ] `Glaneur/systeme.py`

@@ -49,13 +49,37 @@ def _sain(texte) -> str:
 
 
 class Djangoplicity(Source):
+    """Adaptateur pour un site Djangoplicity exposant ``/images/d2d/``.
+
+    Fonctionne aussi bien avec ESO, ESA/Hubble ou ESA/Webb. Ne supporte
+    pas le classement ``galerie`` (le CMS n'expose pas d'album cohérent
+    en ligne — voir la note historique dans
+    :file:`docs/design/evolution-multi-sources.md`).
+
+    L'adaptateur propose un format d'image via ``reglages["format_image"]``
+    (par défaut ``Large``) et retombe sur ``Small`` si le format demandé
+    manque. ``Original`` n'est jamais choisi automatiquement pour éviter
+    de rapatrier des TIFF de plusieurs centaines de Mo par surprise.
+    """
+
+    #: Clé utilisée dans ``Glaneur.sources.SOURCES``.
     type = "djangoplicity"
     # Pas de « galerie » : Djangoplicity n'expose pas d'album cohérent en
     # ligne. Le classement par `Subject.Category` (§9 Q5) est délibérément
     # différé.
+    #: Ensemble des classements supportés (pas de ``galerie``).
     classements = frozenset({"date", "plat"})
 
     def __init__(self, base, transport, reglages, journal=None, progression=None):
+        """Instancie l'adaptateur et calcule l'endpoint ``d2d``.
+
+        Le point d'entrée est ``<base>/images/d2d/``. Sur ``eso.org`` la
+        base inclut souvent déjà ``/public``, donc on ne rajoute que
+        ``/images/d2d/``. Le format d'image effectif est lu dans
+        ``reglages["format_image"]`` (défaut : ``Large``).
+
+        Arguments identiques à :meth:`Glaneur.sources.base.Source.__init__`.
+        """
         super().__init__(base, transport, reglages, journal, progression)
         # Point d'entrée du flux : `<base>/images/d2d/`. Sur eso.org la base
         # inclut souvent déjà `/public`, donc on ne rajoute que `/images/d2d/`.
@@ -65,11 +89,19 @@ class Djangoplicity(Source):
     # -- utilitaires ------------------------------------------------------ #
 
     def convertir_depuis(self, iso: str | None) -> str | None:
-        """AAAA-MM-JJThh:mm:ss → AAAAMMJJhhmmss.
+        """Convertit ``AAAA-MM-JJThh:mm:ss`` en ``AAAAMMJJhhmmss``.
 
-        Le champ `after` de Djangoplicity est **inclusif** (`>=`) : l'élément
-        frontière reviendra donc à chaque passage. Le manifeste s'en charge,
-        seuls les tests doivent en tenir compte.
+        Le champ ``after`` de Djangoplicity est **inclusif** (``>=``) :
+        l'élément frontière reviendra donc à chaque passage. Le manifeste
+        s'en charge, seuls les tests doivent en tenir compte.
+
+        Args:
+            iso: Date au format ISO 8601, éventuellement partielle.
+                Tolère ``AAAA-MM-JJ`` seul.
+
+        Returns:
+            La date compactée sur 14 caractères, ou ``None`` si ``iso``
+            est vide.
         """
         if not iso:
             return None
@@ -155,6 +187,22 @@ class Djangoplicity(Source):
     def inventaire(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
+        """Parcourt le flux ``d2d`` en suivant les URL ``Next`` renvoyées.
+
+        La pagination Djangoplicity donne son curseur dans le champ
+        ``Next`` de la réponse : on l'utilise tel quel plutôt que de
+        recalculer un numéro de page. La déduplication par ``ID`` protège
+        contre d'éventuels doublons entre pages.
+
+        Args:
+            depuis: Date basse au format ``AAAAMMJJhhmmss`` (converti par
+                :meth:`convertir_depuis`), inclusive.
+            jusqua: Date haute au même format, exclusive.
+
+        Yields:
+            Les :class:`Glaneur.sources.base.Element` construits à partir
+            des entrées ``Collections``.
+        """
         params: dict = {"count": PER_PAGE}
         if depuis:
             params["after"] = depuis
