@@ -3,7 +3,7 @@ name: build-check
 on:
   pull_request:
     paths:
-      - "WpImageDownloader/**"
+      - "Glaneur/**"
       - "app.py"
       - "cli.py"
       - "build/**"
@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
-      - run: pyinstaller build\WpImageDownloader.spec --noconfirm --clean
+      - run: pyinstaller build\Glaneur.spec --noconfirm --clean
       - name: Smoke test du bundle
         # L'exe est fenêtré (`console=False`) : lancé directement il rend la
         # main immédiatement et son code de sortie serait perdu.
@@ -32,6 +32,6 @@ jobs:
         # imports critiques passent.
         shell: pwsh
         run: |
-          $p = Start-Process "dist\WpImagerDownloader\WpImagerDownloader.exe" `
+          $p = Start-Process "dist\Glaneur\Glaneur.exe" `
                  -ArgumentList "--controle-bundle" -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "Bundle KO : code $($p.ExitCode)" }

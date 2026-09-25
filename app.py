@@ -1223,6 +1223,15 @@ class Fenetre(QMainWindow):
 # --------------------------------------------------------------------------- #
 
 def main() -> int:
+    if "--controle-bundle" in sys.argv:
+        # Contrôle du bundle PyInstaller : on importe ce que le .spec pourrait
+        # oublier, sans ouvrir de fenêtre. L'exe est fenêtré (`console=False`),
+        # donc `sys.stdout` peut valoir None et un `print` lèverait — on
+        # signale le résultat par le seul code de sortie.
+        import Glaneur.engine  # noqa: F401
+        import Glaneur.sources  # noqa: F401
+        sys.exit(0)
+
     from Glaneur.config import dossier_config, migrer_depuis_ancien_nom
     from Glaneur.i18n import installer_traducteur
     from Glaneur.logsetup import configure_logging
