@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QCoreApplication, QThread, Signal
 
 from .. import __version__
 from .downloader import download, temporary_directory, verify_sha256
@@ -38,7 +38,8 @@ class VerificationMiseAJour(QThread):
                 self.aucune_maj.emit(info)
         except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
             logger.exception("Update check failed")
-            self.erreur.emit(f"Vérification de mise à jour impossible : {error}")
+            self.erreur.emit(QCoreApplication.translate(
+                "Updater", "Vérification de mise à jour impossible : {erreur}").format(erreur=error))
 
 
 class TelechargementMiseAJour(QThread):
@@ -56,14 +57,17 @@ class TelechargementMiseAJour(QThread):
             installer = self.release.windows_installer()
             checksum = self.release.checksum_for(installer) if installer else None
             if installer is None or checksum is None:
-                raise RuntimeError("Installateur Windows ou checksum absent de la release")
+                raise RuntimeError(QCoreApplication.translate(
+                    "Updater", "Installateur Windows ou checksum absent de la release"))
             dossier = temporary_directory()
             fichier = download(installer, dossier)
             checksum_path = download(checksum, dossier)
             if not verify_sha256(fichier, checksum_path.read_text(encoding="utf-8")):
                 fichier.unlink(missing_ok=True)
-                raise RuntimeError("Vérification SHA-256 échouée")
+                raise RuntimeError(QCoreApplication.translate(
+                    "Updater", "Vérification SHA-256 échouée"))
             self.termine.emit(fichier, str(dossier))
         except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
             logger.exception("Update download failed")
-            self.erreur.emit(f"Téléchargement de la mise à jour impossible : {error}")
+            self.erreur.emit(QCoreApplication.translate(
+                "Updater", "Téléchargement de la mise à jour impossible : {erreur}").format(erreur=error))

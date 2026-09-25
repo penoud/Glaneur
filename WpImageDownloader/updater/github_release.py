@@ -6,6 +6,7 @@ import logging
 from typing import Any
 
 import requests
+from PySide6.QtCore import QCoreApplication
 
 from ..config import GITHUB_OWNER, GITHUB_REPOSITORY
 from .models import Release, ReleaseAsset, UpdateInfo
@@ -40,7 +41,8 @@ class GitHubReleaseProvider:
         response.raise_for_status()
         payload = response.json()
         if not isinstance(payload, list):
-            raise ValueError("Réponse GitHub Releases invalide")
+            raise ValueError(
+                QCoreApplication.translate("Updater", "Réponse GitHub Releases invalide"))
         releases = [self._parse(item) for item in payload if self._is_stable(item)]
         releases = [release for release in releases if release is not None]
         latest = max((release for release in releases), default=None,

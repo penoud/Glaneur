@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 import requests
+from PySide6.QtCore import QCoreApplication
 
 from .models import ReleaseAsset
 
@@ -34,11 +35,12 @@ def download(asset: ReleaseAsset, directory: Path, session: requests.Session | N
     except (OSError, requests.RequestException) as error:
         destination.unlink(missing_ok=True)
         logger.exception("Download failed: %s", asset.name)
-        raise DownloadError(f"Téléchargement impossible : {error}") from error
+        raise DownloadError(QCoreApplication.translate(
+            "Updater", "Téléchargement impossible : {erreur}").format(erreur=error)) from error
     if not destination.exists() or destination.stat().st_size == 0:
         destination.unlink(missing_ok=True)
         logger.error("Empty download: %s", asset.name)
-        raise DownloadError("Téléchargement vide")
+        raise DownloadError(QCoreApplication.translate("Updater", "Téléchargement vide"))
     logger.info("Download completed: %s (%d bytes)", asset.name, destination.stat().st_size)
     return destination
 

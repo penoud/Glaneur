@@ -2,6 +2,19 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="fr" sourcelanguage="fr">
 <context>
+    <name>BugReport</name>
+    <message>
+        <location filename="../WpImageDownloader/bug_report.py" line="101"/>
+        <source>Dernières lignes de log ({n} max)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/bug_report.py" line="123"/>
+        <source>date : {date}</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>DialogueAPropos</name>
     <message>
         <location filename="../app.py" line="540"/>
@@ -649,6 +662,156 @@ Pour qu&apos;elle continue à tourner icône dans la barre système, installer l
         <location filename="../app.py" line="1203"/>
         <source>Une mise à jour est en cours. Elle reprendra au prochain lancement.
 Quitter maintenant ?</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Moteur</name>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="288"/>
+        <source>Manifeste illisible, reconstruction complète.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="405"/>
+        <source>erreur : {erreur}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="415"/>
+        <source>{n} image(s) déjà connues.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="423"/>
+        <source>Cache : ne redemande à l&apos;API que les médias postérieurs à {date}.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="442"/>
+        <source>{n} vignette(s) ou logo(s) écarté(s) (moins de {min} px).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="448"/>
+        <source>Aucune image ne correspond aux critères.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="479"/>
+        <source>{connues} déjà à jour, {a_faire} à traiter.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="482"/>
+        <source>{n} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="487"/>
+        <source>Tout est déjà à jour.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="499"/>
+        <source>Identification des galeries…</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="538"/>
+        <source>introuvable</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="545"/>
+        <source>{n} nouvelle(s) image(s), {taille} téléchargés.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="563"/>
+        <source>Interrompu — la reprise repartira d&apos;ici.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="566"/>
+        <source>Erreur : {erreur}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/engine.py" line="568"/>
+        <source>Problème d&apos;écriture : {erreur}</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Planificateur</name>
+    <message>
+        <location filename="../WpImageDownloader/scheduler.py" line="58"/>
+        <location filename="../WpImageDownloader/scheduler.py" line="61"/>
+        <source>Mise à jour automatique désactivée</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/scheduler.py" line="64"/>
+        <source>Prochaine mise à jour : imminente</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/scheduler.py" line="69"/>
+        <source>{jours} j {heures} h</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/scheduler.py" line="72"/>
+        <source>{heures} h {minutes:02d} min</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/scheduler.py" line="75"/>
+        <source>{minutes} min</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/scheduler.py" line="77"/>
+        <source>Prochaine mise à jour dans {delai} ({date})</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
+    <name>Updater</name>
+    <message>
+        <location filename="../WpImageDownloader/updater/github_release.py" line="45"/>
+        <source>Réponse GitHub Releases invalide</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/updater/qt_threads.py" line="41"/>
+        <source>Vérification de mise à jour impossible : {erreur}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/updater/qt_threads.py" line="60"/>
+        <source>Installateur Windows ou checksum absent de la release</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/updater/qt_threads.py" line="67"/>
+        <source>Vérification SHA-256 échouée</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/updater/qt_threads.py" line="72"/>
+        <source>Téléchargement de la mise à jour impossible : {erreur}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/updater/downloader.py" line="38"/>
+        <source>Téléchargement impossible : {erreur}</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../WpImageDownloader/updater/downloader.py" line="43"/>
+        <source>Téléchargement vide</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
