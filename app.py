@@ -1053,6 +1053,14 @@ class Fenetre(QMainWindow):
 # --------------------------------------------------------------------------- #
 
 def main() -> int:
+    if "--controle-bundle" in sys.argv:
+        # Contrôle du bundle PyInstaller : on importe ce que le .spec pourrait
+        # oublier, sans ouvrir de fenêtre. L'exe est fenêtré (`console=False`),
+        # donc `sys.stdout` peut valoir None et un `print` lèverait — on
+        # signale le résultat par le seul code de sortie.
+        import WpImageDownloader.engine  # noqa: F401
+        sys.exit(0)
+
     from WpImageDownloader.config import dossier_config
     from WpImageDownloader.logsetup import configure_logging
     configure_logging(dossier_config())
