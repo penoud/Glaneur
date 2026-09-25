@@ -11,8 +11,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
@@ -68,7 +68,7 @@ jobs:
           if ($null -eq $installer) { throw "The Windows installer was not found." }
           $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $($installer.Name)" | Set-Content "$($installer.FullName).sha256" -NoNewline
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: Glaneur-setup
           path: build/Output/*
@@ -78,8 +78,8 @@ jobs:
   # linux:
   #   runs-on: ubuntu-22.04
   #   steps:
-  #     - uses: actions/checkout@v5
-  #     - uses: actions/setup-python@v6
+  #     - uses: actions/checkout@v7
+  #     - uses: actions/setup-python@v7
   #       with:
   #         python-version: "3.11"
   #     - name: Install Python dependencies
@@ -121,7 +121,7 @@ jobs:
   #           org.glaneur.Glaneur
   #     - name: Generate Linux checksums
   #       run: sha256sum dist/*.deb dist/*.flatpak > dist/SHA256SUMS-linux
-  #     - uses: actions/upload-artifact@v5
+  #     - uses: actions/upload-artifact@v7
   #       with:
   #         name: Glaneur-linux
   #         path: |
@@ -134,8 +134,8 @@ jobs:
   # macos:
   #   runs-on: macos-13
   #   steps:
-  #     - uses: actions/checkout@v5
-  #     - uses: actions/setup-python@v6
+  #     - uses: actions/checkout@v7
+  #     - uses: actions/setup-python@v7
   #       with:
   #         python-version: "3.11"
   #     - name: Install Python dependencies
@@ -155,7 +155,7 @@ jobs:
   #     - name: Generate macOS checksums
   #       run: shasum -a 256 dist/*.zip dist/*.dmg > dist/SHA256SUMS-macos
   #
-  #     - uses: actions/upload-artifact@v5
+  #     - uses: actions/upload-artifact@v7
   #       with:
   #         name: Glaneur-macos
   #         path: |
@@ -170,7 +170,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           pattern: "*"
           path: release-assets
