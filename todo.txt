@@ -148,11 +148,14 @@ référence un chemin.
 
 ## US-06 — Ancrage dans `CLAUDE.md`
 
-- [ ] Préciser le chemin `docs/sphinx/` dans la matrice de validation.
-- [ ] Ajouter la mention explicite de Napoleon dans les conventions de
-      docstring (nouveau paragraphe court, ou renvoi à
-      `docs/sphinx/README.md`).
-- [ ] Marquer comme résorbé tout écart connu qui devient obsolète.
+- [x] Préciser le chemin `docs/sphinx/` dans la matrice de validation
+      (ligne « Documentation Sphinx » remaniée + nouvelle ligne pour les
+      docstrings d'un module Python qui doivent aussi passer `sphinx-build -W`).
+- [x] Ajouter la mention explicite de Napoleon (nouvelle section
+      « Docstrings et documentation API », renvoi à `docs/sphinx/README.md`).
+- [x] Écarts connus : aucun résorbé par ce sprint. Note ajoutée sur
+      l'écart #3 pour préciser que les docstrings sont désormais en
+      Napoleon (mais restent en français, l'écart persiste).
 
 Impact Map : `CLAUDE.md`. Validation : aucune.
 
