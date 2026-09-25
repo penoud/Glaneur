@@ -19,27 +19,48 @@ UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
 
 
 class Interrompu(Exception):
-    """Levée quand l'utilisateur demande l'arrêt."""
+    """Levée quand l'utilisateur demande l'arrêt coopératif.
+
+    Portée par le transport et propagée jusqu'au moteur, qui la traite
+    comme une fin normale (voir :attr:`Glaneur.engine.Resultat.interrompu`).
+    """
 
 
 @dataclass(frozen=True)
 class Element:
     """Une image à synchroniser, telle que le moteur la comprend.
 
-    - `ident` est unique au sein de la source et sert de clé au manifeste ;
-      c'est une chaîne pour accepter aussi bien les entiers WordPress que
-      les identifiants alphanumériques de Djangoplicity.
-    - `url` peut être `None` si la source n'a pas trouvé de ressource pour
-      le format demandé ; le moteur comptera alors l'élément en `ignoree`.
+    Champs documentés inline par commentaires ``#:`` — voir
+    :class:`Glaneur.engine.Options` pour la raison (éviter le doublon
+    d'index entre autodoc et Napoleon).
     """
+
+    #: Identifiant unique au sein de la source, clé du manifeste. Chaîne
+    #: pour accepter aussi bien les entiers WordPress que les identifiants
+    #: alphanumériques de Djangoplicity.
     ident: str
+    #: URL de la ressource à télécharger. ``None`` si la source n'a pas
+    #: trouvé de ressource pour le format demandé : le moteur comptera
+    #: l'élément en :attr:`Glaneur.engine.Resultat.ignorees`.
     url: str | None
+    #: Nom de fichier à donner à la ressource sur le disque, sans dossier.
     nom_fichier: str
+    #: Date de publication au format ISO, si connue.
     date: str | None = None
+    #: Mois ``AAAA-MM`` extrait de la date, utilisé pour le classement
+    #: par date.
     mois: str | None = None
+    #: Largeur en pixels, quand la source la fournit — utilisée par le
+    #: filtre :attr:`Glaneur.engine.Options.largeur_min`.
     largeur: int | None = None
+    #: Taille du fichier en octets, si annoncée par la source (permet à
+    #: :meth:`Glaneur.engine.Moteur.fichier_complet` de valider).
     taille: int | None = None
+    #: Identifiant du parent (galerie WordPress, collection Djangoplicity)
+    #: pour le classement ``galerie``.
     groupe: str | None = None
+    #: Métadonnées libres transmises tel quel au manifeste (crédit,
+    #: checksum…). Le moteur ne les interprète pas.
     extra: dict = field(default_factory=dict)
 
 
@@ -52,17 +73,37 @@ class Transport:
     """
 
     def __init__(self, delai: float, arret: threading.Event | None = None) -> None:
+        """Construit le transport avec sa session et son plancher de délai.
+
+        Args:
+            delai: Plancher de pause entre deux requêtes, en secondes.
+            arret: Event partagé qui coupe les requêtes en cours. Créé à
+                la demande si non fourni.
+        """
         self.delai = delai
         self.arret = arret or threading.Event()
         self.session = requests.Session()
         self.session.headers["User-Agent"] = UA
 
     def verifier_arret(self) -> None:
+        """Lève :class:`Interrompu` si ``self.arret`` a été positionné.
+
+        Raises:
+            Interrompu: Si l'arrêt coopératif est demandé.
+        """
         if self.arret.is_set():
             raise Interrompu()
 
     def pause(self, secondes: float | None = None) -> None:
-        """Attente fractionnée, pour réagir vite à une demande d'arrêt."""
+        """Attente fractionnée réagissant vite à une demande d'arrêt.
+
+        Args:
+            secondes: Durée à attendre. Utilise ``self.delai`` si ``None``.
+
+        Raises:
+            Interrompu: Si l'arrêt coopératif est demandé pendant
+                l'attente.
+        """
         fin = time.monotonic() + (self.delai if secondes is None else secondes)
         while time.monotonic() < fin:
             self.verifier_arret()
@@ -75,11 +116,27 @@ class Transport:
         essais: int = 3,
         fin_si: frozenset[int] = frozenset(),
     ) -> tuple[object | None, Mapping]:
-        """GET JSON avec rejeux ; renvoie (données, en-têtes).
+        """GET JSON avec rejeux.
 
-        Un code de `fin_si` est traité comme une fin normale : le résultat
-        est `(None, en-têtes)` sans lever d'exception. WordPress passe
-        `fin_si={400}` pour dire « page au-delà de la dernière ».
+        Un code de ``fin_si`` est traité comme une fin normale : le
+        résultat est ``(None, en-têtes)`` sans lever d'exception.
+        WordPress passe ``fin_si={400}`` pour dire « page au-delà de la
+        dernière ».
+
+        Args:
+            url: URL absolue à requêter.
+            params: Paramètres de la requête, passés à ``requests``.
+            essais: Nombre maximum de tentatives (backoff linéaire :
+                2s, 4s, 6s…).
+            fin_si: Codes HTTP à interpréter comme fin normale.
+
+        Returns:
+            Tuple ``(données, en-têtes)``. ``données`` vaut ``None``
+            quand le code de réponse est dans ``fin_si``.
+
+        Raises:
+            RuntimeError: Après épuisement des ``essais`` sans succès.
+            Interrompu: Si l'arrêt coopératif est demandé.
         """
         derniere: Exception | None = None
         for tentative in range(essais):
@@ -116,6 +173,18 @@ class Source(ABC):
         journal: Callable[[str], None] | None = None,
         progression: Callable[[int, int, str], None] | None = None,
     ) -> None:
+        """Instancie l'adaptateur avec son transport partagé.
+
+        Args:
+            base: URL du site source, sans slash final.
+            transport: :class:`Transport` fourni par le moteur.
+            reglages: Dictionnaire libre (par exemple
+                ``{"format_image": "Large"}`` pour Djangoplicity).
+            journal: Callback texte pour messages destinés à
+                l'utilisateur. ``None`` = muet.
+            progression: Callback ``(fait, total, etiquette)`` pour les
+                phases longues d'inventaire. ``None`` = muet.
+        """
         self.base = base.rstrip("/")
         self.transport = transport
         self.reglages = reglages or {}
@@ -126,18 +195,48 @@ class Source(ABC):
     def inventaire(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
-        """Parcourt le catalogue dans l'ordre chronologique si possible."""
+        """Parcourt le catalogue dans l'ordre chronologique si possible.
+
+        Args:
+            depuis: Borne basse au format propre à la source
+                (voir :meth:`convertir_depuis`). ``None`` = pas de borne.
+            jusqua: Borne haute. ``None`` = pas de borne.
+
+        Yields:
+            Les :class:`Element` inventoriés, dans l'ordre chronologique
+            quand la source le permet.
+        """
 
     def resoudre_groupes(
         self, cles: set[str], connus: dict[str, str] | None = None,
     ) -> dict[str, str]:
-        """Clé de groupe → nom de dossier. Par défaut : aucun regroupement."""
+        """Résout les identifiants de groupe en noms de dossier.
+
+        Implémentation par défaut : renvoie ``connus`` tel quel — aucun
+        regroupement supplémentaire. Les sources qui exposent un
+        classement ``galerie`` (voir :attr:`classements`) surchargent
+        pour requêter les titres manquants.
+
+        Args:
+            cles: Identifiants de groupe à résoudre.
+            connus: Table déjà résolue (par exemple par le cache).
+
+        Returns:
+            Table ``{clé -> titre nettoyé}``, prête à être passée à
+            :meth:`Glaneur.engine.Moteur.dossier_pour`.
+        """
         return dict(connus or {})
 
     def convertir_depuis(self, iso: str | None) -> str | None:
         """Traduit une date ISO du cache vers le format attendu par la source.
 
         Par défaut, on laisse tel quel : les sources qui, comme
-        Djangoplicity, veulent `AAAAMMJJhhmmss` la surchargent.
+        Djangoplicity, veulent ``AAAAMMJJhhmmss`` la surchargent.
+
+        Args:
+            iso: Date au format ISO 8601, ou ``None``.
+
+        Returns:
+            La date convertie ou ``None``.
         """
         return iso

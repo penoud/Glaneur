@@ -1,4 +1,4 @@
-"""Telechargement et verification d'artefacts de release."""
+"""Téléchargement et vérification d'artefacts de release."""
 
 from __future__ import annotations
 
@@ -17,10 +17,29 @@ logger = logging.getLogger(__name__)
 
 
 class DownloadError(RuntimeError):
-    pass
+    """Levée quand le téléchargement d'un asset échoue ou renvoie un fichier vide."""
 
 
 def download(asset: ReleaseAsset, directory: Path, session: requests.Session | None = None) -> Path:
+    """Télécharge ``asset`` vers ``directory/asset.name`` en streaming.
+
+    Le fichier partiellement téléchargé est supprimé en cas d'échec
+    (réseau ou disque), pour ne jamais laisser un artefact tronqué qui
+    serait ensuite pris pour un fichier valide.
+
+    Args:
+        asset: Asset à récupérer.
+        directory: Répertoire de destination, créé si nécessaire.
+        session: Session ``requests`` à réutiliser (une nouvelle est
+            créée si ``None``).
+
+    Returns:
+        Le chemin du fichier téléchargé.
+
+    Raises:
+        DownloadError: En cas d'erreur réseau, d'erreur disque ou de
+            réponse vide.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / asset.name
     client = session or requests.Session()
@@ -46,6 +65,21 @@ def download(asset: ReleaseAsset, directory: Path, session: requests.Session | N
 
 
 def verify_sha256(path: Path, checksum_text: str) -> bool:
+    """Vérifie que le SHA-256 de ``path`` correspond à ``checksum_text``.
+
+    Un ``.sha256`` GitHub contient typiquement ``<hex>  <nom_de_fichier>``
+    ; l'extraction regex accepte n'importe quel format tant qu'un digest
+    hex de 64 caractères y figure.
+
+    Args:
+        path: Fichier à vérifier.
+        checksum_text: Contenu du fichier ``.sha256`` (ou n'importe
+            quel texte contenant le digest hex).
+
+    Returns:
+        ``True`` si le digest correspond, ``False`` sinon (fichier
+        absent, digest introuvable, ou mismatch).
+    """
     match = re.search(r"\b([0-9a-fA-F]{64})\b", checksum_text)
     if not match or not path.is_file():
         logger.error("Checksum verification failed: no digest or missing file (%s)", path.name)
@@ -63,4 +97,13 @@ def verify_sha256(path: Path, checksum_text: str) -> bool:
 
 
 def temporary_directory() -> Path:
+    """Crée un dossier temporaire dédié au téléchargement d'une mise à jour.
+
+    Le préfixe ``Glaneur-update-`` facilite le nettoyage manuel a
+    posteriori. Le dossier n'est pas supprimé automatiquement : l'UI
+    le fait après l'installation.
+
+    Returns:
+        Le chemin absolu du dossier créé.
+    """
     return Path(tempfile.mkdtemp(prefix="Glaneur-update-"))

@@ -29,10 +29,24 @@ def _nettoyer(titre: str, defaut: str = "divers") -> str:
 
 
 class WordPress(Source):
+    """Adaptateur pour un site WordPress exposant ``/wp-json/wp/v2/``.
+
+    Supporte les trois classements (``galerie``, ``date``, ``plat``).
+    Le classement ``galerie`` requête ``/wp-json/wp/v2/types`` pour lister
+    les post types disponibles puis résout les identifiants parents en
+    titres via l'endpoint correspondant.
+    """
+
+    #: Clé utilisée dans ``Glaneur.sources.SOURCES``.
     type = "wordpress"
+    #: Ensemble des classements supportés.
     classements = frozenset({"galerie", "date", "plat"})
 
     def __init__(self, base, transport, reglages, journal=None, progression=None):
+        """Instancie l'adaptateur et calcule l'URL de l'API v2.
+
+        Arguments identiques à :meth:`Glaneur.sources.base.Source.__init__`.
+        """
         super().__init__(base, transport, reglages, journal, progression)
         self.api = f"{self.base}/wp-json/wp/v2"
 
@@ -47,6 +61,21 @@ class WordPress(Source):
     def inventaire(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
+        """Parcourt ``/wp/v2/media`` page par page dans l'ordre chronologique.
+
+        Deux mécanismes d'arrêt : l'en-tête ``X-WP-TotalPages`` quand il
+        est présent (WordPress standard), et le code ``400`` quand la
+        page demandée dépasse la dernière (comportement observé sur
+        certains hébergeurs mutualisés).
+
+        Args:
+            depuis: Date basse (``AAAA-MM-JJ`` ou ISO complet).
+            jusqua: Date haute (``AAAA-MM-JJ``, borne ``T23:59:59``).
+
+        Yields:
+            Les :class:`Glaneur.sources.base.Element` construits à partir
+            des entrées ``media``.
+        """
         params = {
             "per_page": PER_PAGE,
             "media_type": "image",
@@ -129,8 +158,23 @@ class WordPress(Source):
     def resoudre_groupes(
         self, cles: set[str], connus: dict[str, str] | None = None,
     ) -> dict[str, str]:
-        """{clé → titre}. Les entrées `connus` sont conservées telles quelles ;
-        seules les clés manquantes déclenchent des appels API."""
+        """Résout les identifiants de galerie en titres nettoyés.
+
+        Les entrées de ``connus`` sont conservées telles quelles ; seules
+        les clés manquantes déclenchent des appels API. Les post types
+        sont interrogés dans l'ordre : ceux dont le slug contient
+        ``galer`` d'abord, les autres ensuite, en groupant par
+        ``PER_PAGE`` identifiants.
+
+        Args:
+            cles: Identifiants de galerie à résoudre.
+            connus: Table déjà résolue (typiquement issue du cache).
+
+        Returns:
+            Table ``{clé -> titre}``. Les clés non résolues sont
+            journalisées et absentes du résultat : elles retombent sur
+            le classement par date côté moteur.
+        """
         titres: dict[str, str] = dict(connus or {})
         restants = {c for c in cles if c and c not in titres}
         if not restants:

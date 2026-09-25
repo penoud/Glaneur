@@ -1,6 +1,12 @@
+> **Archivé le 2026-09-25.** Sprint déplacé dans `docs/sprints/` par
+> US-05 du sprint « Documentation Sphinx et nettoyage `docs/` ». L'état
+> d'avancement des stories US-CI-01 à US-CI-06 n'a pas été vérifié à
+> ce déplacement ; consulter l'historique `.github/workflows/` pour
+> savoir ce qui a réellement été livré.
+
 # Sprint CI — Fiabiliser la chaîne GitHub Actions
 
-Emplacement proposé dans le dépôt : `docs/sprint-ci-workflows.md`.
+Emplacement historique dans le dépôt : `docs/sprint-ci-workflows.md`.
 
 ## Objectif
 

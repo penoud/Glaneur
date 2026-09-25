@@ -23,19 +23,49 @@ from PySide6.QtCore import QCoreApplication
 
 
 class Planificateur:
+    """Calcule et affiche l'échéance des mises à jour automatiques.
+
+    L'objet est passif : il ne démarre pas de timer, il répond à la
+    question « est-ce l'heure ? ». C'est à l'UI de l'interroger
+    périodiquement (typiquement via un ``QTimer``).
+    """
+
     def __init__(self, config) -> None:
+        """Attache le planificateur à un objet :class:`Glaneur.config.Config`.
+
+        Args:
+            config: Instance de configuration dont
+                ``Config.derniere_execution`` et
+                ``Config.intervalle_heures`` sont lus, et dont
+                ``Config.sauver`` est appelé par :meth:`marquer_execution`.
+        """
         self.config = config
 
     # -- état ---------------------------------------------------------------- #
 
     def derniere(self) -> datetime | None:
+        """Date du dernier run, désérialisée depuis la configuration.
+
+        Returns:
+            La datetime lue dans ``Config.derniere_execution``, ou
+            ``None`` si le champ est vide ou mal formé.
+        """
         try:
             return datetime.fromisoformat(self.config.derniere_execution)
         except (ValueError, TypeError):
             return None
 
     def prochaine(self) -> datetime | None:
-        """Date de la prochaine mise à jour, ou None en mode manuel."""
+        """Calcule la date de la prochaine mise à jour automatique.
+
+        Si aucun run n'a jamais été enregistré, la « prochaine » est
+        l'instant présent : le premier lancement déclenche
+        immédiatement.
+
+        Returns:
+            La date planifiée, ou ``None`` en mode manuel
+            (``Config.intervalle_heures`` = 0).
+        """
         if not self.config.intervalle_heures:
             return None
         derniere = self.derniere()
@@ -44,16 +74,39 @@ class Planificateur:
         return derniere + timedelta(hours=self.config.intervalle_heures)
 
     def echeance_atteinte(self) -> bool:
+        """Indique si un run automatique devrait démarrer maintenant.
+
+        Returns:
+            ``True`` si :meth:`prochaine` est passée, ``False`` sinon
+            (mode manuel inclus).
+        """
         prochaine = self.prochaine()
         return prochaine is not None and datetime.now() >= prochaine
 
     def marquer_execution(self) -> None:
+        """Enregistre l'instant courant comme dernier run et persiste la config.
+
+        Appelée par le moteur en fin de run réussi. Écrit dans
+        ``Config.derniere_execution`` au format ISO 8601 seconde.
+        """
         self.config.derniere_execution = datetime.now().isoformat(timespec="seconds")
         self.config.sauver()
 
     # -- affichage ----------------------------------------------------------- #
 
     def texte_prochaine(self) -> str:
+        """Libellé localisé pour l'utilisateur : « Prochaine mise à jour dans… ».
+
+        Format adapté au reste avant l'échéance : jours + heures au-delà
+        de 24 h, heures + minutes au-delà d'une heure, minutes en
+        dessous. Renvoie un message dédié en mode manuel ou quand
+        l'échéance est déjà passée.
+
+        Returns:
+            Un texte prêt à afficher, traduit via
+            ``QCoreApplication.translate`` (contexte
+            ``"Planificateur"``).
+        """
         if not self.config.intervalle_heures:
             return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
         prochaine = self.prochaine()

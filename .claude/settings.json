@@ -1,0 +1,57 @@
+{
+  "env": {
+    "QT_QPA_PLATFORM": "offscreen"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python3 -m pytest *)",
+      "Bash(python3 -m ruff *)",
+      "Bash(ruff *)",
+      "Bash(sphinx-build *)",
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git switch -c *)"
+    ],
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Edit(.github/**)",
+      "Edit(build/**)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(git tag *)",
+      "Bash(gh release *)",
+      "Bash(gh pr merge *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_version.py\"" }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_shell.py\"" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/lint_python.py\"" }
+        ]
+      }
+    ]
+  }
+}

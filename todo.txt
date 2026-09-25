@@ -1,120 +1,199 @@
-# Sprint - Preparation du projet a la publication
+# Sprint — Documentation Sphinx et nettoyage `docs/`
 
-Version cible : **1.0.2**
+Version cible : patch (ex. `1.1.1`). Aucun changement runtime.
 
 ## Objectif
 
-Preparer le projet pour une publication publique en supprimant les assets
-tiers, en clarifiant la licence, et en decouplant le moteur du site WordPress
-actuellement utilise.
+Doter Glaneur d'une documentation API générée par Sphinx à partir du code,
+uniformiser le format des docstrings, et réorganiser `docs/` en séparant la
+doc API (Sphinx), les notes d'architecture vivantes et les sprints archivés.
 
-## US-01 - Supprimer l'identite graphique distribuee
+Décisions actées au moment de la planification :
 
-- [x] Identifier et verifier `build/Glaneur.ico`.
-- [x] Supprimer l'asset du depot.
-- [x] Ajouter l'asset a `.gitignore`.
-- [x] Verifier qu'aucune autre image tierce n'est presente dans le depot.
-- [x] Conserver le fallback graphique genere dynamiquement par
-  `icone_application()`.
+- Docstrings en **Napoleon (Google-style)**, extension `sphinx.ext.napoleon`.
+- Doc Sphinx isolée dans `docs/sphinx/`.
+- `sprint-ci-workflows.md` archivé dans `docs/sprints/`.
+- L'ancien `todo.txt` (sprint 1.0.2) est archivé dans
+  `docs/sprints/2026-09-preparation-publication.md`.
 
-## US-02 - Clarifier l'absence d'affiliation
+## US-01 — Inventaire des docstrings et choix confirmé du style
 
-- [x] Ajouter le disclaimer au debut de `README.md`.
-- [x] Mentionner le caractere personnel et independant du projet.
-- [x] Mentionner l'absence d'affiliation, d'approbation et de sponsoring.
-- [x] Preciser l'utilisation descriptive des marques citees.
+- [x] Lister les modules et symboles publics de `Glaneur/`, `app.py`,
+      `cli.py`, `servette/`.
+- [x] Classer chaque docstring : absent / prose libre / rST partiel.
+- [x] Confirmer Napoleon (Google-style) et documenter le choix dans
+      `docs/sphinx/README.md`.
+- [x] Établir l'ordre de conversion pour US-03 en fonction du volume mesuré.
 
-## US-03 - Ajouter une licence explicite
+Résultat : 137 symboles publics, 65 avec docstring (47 %), 100 % en prose
+libre. Aucune conversion rST à faire, uniquement de l'enrichissement
+Napoleon. Détails et ordre de conversion dans `docs/sphinx/README.md`.
 
-- [x] Choisir GNU GPL version 3 ou ulterieure pour le code.
-- [x] Ajouter le fichier `LICENSE`.
-- [x] Referencer la licence dans `README.md`.
-- [x] Distinguer la licence du code des droits applicables aux contenus
-  telecharges.
+`servette/` sort du périmètre : ne contient que du `.pyc` (résidu du
+rename), à traiter par un lot de nettoyage séparé.
 
-## US-04 - Externaliser le site cible
+Impact Map : lecture seule. Validation : aucune.
 
-- [x] Ajouter `site` a `Config`, avec `https://example.com` comme valeur par
-  defaut historique.
-- [x] Ajouter `site` a `Options`.
-- [x] Construire `self.base` avec `options.site.rstrip("/")`.
-- [x] Construire `self.api` avec `self.base`.
-- [x] Utiliser `self.api` dans `_api()` au lieu d'une constante globale.
-- [x] Supprimer les constantes globales `BASE` et `API` du moteur.
+## US-02 — Configuration Sphinx minimale
 
-## US-05 - Propager la configuration
+- [x] Créer `docs/sphinx/conf.py` (extensions `autodoc`, `napoleon`,
+      `viewcode`, `intersphinx` ; thème `furo` ; `language = "fr"` ;
+      insertion de la racine du dépôt dans `sys.path` ; mock PySide6 ;
+      `nitpick_ignore` pour PySide6.QtCore.QThread).
+- [x] Créer `docs/sphinx/index.rst` + toctree.
+- [x] Générer les stubs `docs/sphinx/api/` via
+      `sphinx-apidoc -f -e -o docs/sphinx/api Glaneur` (`-e` : un fichier
+      par module ; post-traitement dans le Makefile pour retirer les blocs
+      « Module contents » de niveau paquet, qui causent des doublons
+      d'index avec les re-exports d'`__init__.py`).
+- [x] Ajouter `docs/sphinx/Makefile` (cibles `html`, `clean`, `apidoc`) et
+      `docs/sphinx/make.bat`.
+- [x] Créer `requirements-doc.txt` séparé du runtime (`-r requirements.txt`
+      puis `sphinx>=8`, `furo>=2024.8`).
+- [x] Ajouter `docs/sphinx/_build/` à `.gitignore`.
+- [x] `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
+      est vert (0 warning en clean build).
 
-- [x] Transmettre `Config.site` depuis `app.py` vers `Options.site`.
-- [x] Transmettre `Config.site` depuis `cli.py` vers `Options.site`.
-- [x] Conserver une seule source de verite pour le site cible.
-- [x] Ne pas modifier la logique de telechargement hors de cette configuration.
+Impact Map : nouveau répertoire `docs/sphinx/`, `.gitignore`,
+`requirements-doc.txt`. Validation : subsystem (nouvel outillage).
 
-Flux attendu :
+## US-03 — Conversion progressive des docstrings (Napoleon)
 
-```text
-Config.site
-  -> app.py / cli.py
-  -> Options.site
-  -> Moteur
-  -> self.base
-  -> self.api
+Un module = un commit, dans l'ordre :
+
+- [x] `Glaneur/engine.py` — 17 nouveaux docstrings + 7 enrichis, dataclasses
+      passées à des commentaires `#:` pour éviter le doublon d'index. Ruff
+      signale 4 problèmes préexistants (F401 `time`, UP035 `typing.Callable`,
+      DTZ005 x2) — hors périmètre de US-03.
+- [x] `Glaneur/sources/` (contrats d'adaptateur) — 8 nouveaux docstrings
+      + enrichissements sur base.py, wordpress.py, djangoplicity.py,
+      __init__.py. Element passe aussi aux commentaires `#:`. Refs
+      internes en double-backtick quand le symbole n'est pas documenté
+      par autodoc (SOURCES, PER_PAGE). 161 tests verts.
+- [x] `Glaneur/config.py` — 7 nouveaux docstrings + enrichissement, Config
+      passe aux commentaires `#:`. Refs internes en double-backtick.
+      40 tests test_config verts.
+- [x] `Glaneur/scheduler.py` — 6 nouveaux docstrings, enrichissement
+      Napoleon. Refs vers Config en double-backtick (Sphinx nitpicky
+      ne résout pas les xrefs vers un autre module sans FQN).
+- [x] `Glaneur/systeme.py` — 1 nouveau docstring (demarrage_automatique_actif),
+      enrichissement des 8 autres.
+- [x] `Glaneur/i18n.py` — enrichissement Napoleon des 3 fonctions.
+- [x] `Glaneur/logsetup.py` — enrichissement Napoleon de configure_logging.
+- [x] `Glaneur/bug_report.py` — enrichissement Napoleon des 3 fonctions.
+- [x] `Glaneur/updater/` — 6 fichiers, 20 docstrings ajoutés/enrichis
+      (module + Version, ReleaseAsset, Release, UpdateInfo,
+      GitHubReleaseProvider, DownloadError, download, verify_sha256,
+      temporary_directory, VerificationMiseAJour, TelechargementMiseAJour).
+      13 tests test_updater* verts.
+- [x] `app.py` — 11 docstrings ajoutés (Fenetre + dialogs + main +
+      Travailleur), enrichissement des classes déjà documentées.
+- [x] `cli.py` — 2 docstrings (main, progression callback).
+
+Résultat US-03 : **137 / 137 symboles publics documentés** (0 nu),
+`sphinx-build -W -n` vert en clean build sur l'intégralité du paquet.
+La suite complète passe (294 passed, 2 skipped, 1 xfailed) hors le
+test `test_no_qt_outside_ui[Glaneur/scheduler.py]` qui reste rouge —
+écart déjà consigné dans CLAUDE.md, non introduit par ce sprint.
+
+Règles appliquées :
+
+- Aucun changement de comportement, docstrings et commentaires uniquement.
+- Après chaque module, `sphinx-build -W` reste vert.
+- Ruff ciblé sur le fichier touché.
+- Découper en deux PRs si le diff dépasse ~500 lignes.
+- `invariant-reviewer` en fin de série pour confirmer la neutralité sémantique.
+
+Impact Map par module : validation `local`.
+
+## US-04 — Nettoyage de `todo.txt`
+
+- [x] Archiver `todo.txt` en
+      `docs/sprints/2026-09-preparation-publication.md`.
+- [x] Remettre `todo.txt` à zéro pour le sprint courant (ce fichier).
+- [x] `grep -rn "todo.txt"` : deux références subsistent dans
+      `.github/agents/wordpress-image-downloader-maintainer.agent.md`,
+      les deux pointent vers le fichier existant et sont donc valides.
+      Aucune référence cassée à corriger.
+
+Impact Map : `todo.txt`, `docs/sprints/`, éventuellement `README.md`.
+Validation : aucune (documentaire).
+
+**À signaler hors sprint** : le fichier `.github/agents/...maintainer.agent.md`
+est un legacy pré-rename (nom « WordPress Image Downloader », mention
+`apply_patch`, aucune référence à Djangoplicity). À moderniser ou supprimer
+dans un lot séparé.
+
+## US-05 — Restructuration de `docs/`
+
+Cible :
+
+```
+docs/
+├── sphinx/            # doc API (US-02)
+├── design/            # notes vivantes
+│   └── evolution-multi-sources.md
+└── sprints/           # sprints archivés
+    ├── 2026-09-preparation-publication.md    (US-04, déjà en place)
+    └── sprint-ci-workflows.md                (à déplacer)
 ```
 
-## US-06 - Rendre les tests independants du site reel
+- [x] Créer `docs/design/`.
+- [x] Déplacer `docs/evolution-multi-sources.md` → `docs/design/`
+      (via `git mv`).
+- [x] Déplacer `docs/sprint-ci-workflows.md` → `docs/sprints/`
+      (via `git mv`).
+- [x] Ajouter un en-tête d'archivage à `sprint-ci-workflows.md`
+      (état d'avancement non vérifié au moment du déplacement).
+- [x] Mettre à jour les liens internes cassés par les déplacements :
+      seule référence trouvée à `evolution-multi-sources.md` était déjà
+      pointée sur `docs/design/` (Glaneur/sources/djangoplicity.py, US-03).
+      Aucune autre référence à `sprint-ci-workflows.md` dans le dépôt.
 
-- [x] Remplacer les URLs du catalogue de test par une origine fictive.
-- [x] Fournir une URL `site` specifique au test.
-- [x] Verifier les endpoints WordPress simules utilises par le moteur.
-- [x] Verifier que les tests ne telechargent aucun contenu reel.
-- [x] Ne pas ajouter d'image reelle dans les fixtures.
-- [x] Couvrir le slash final de l'URL avec `https://fake-wordpress.test/`.
+Impact Map : `docs/**` uniquement. Validation : aucune, sauf si un workflow
+référence un chemin.
 
-## US-07 - Verification fonctionnelle
+## US-06 — Ancrage dans `CLAUDE.md`
 
-- [x] Verifier la valeur par defaut de `Config.site`.
-- [x] Verifier qu'une autre origine peut etre fournie a `Options`.
-- [x] Verifier la normalisation du slash final.
-- [x] Verifier le fonctionnement de l'API mockee.
-- [x] Ajouter dans l'interface un champ URL persistant pour le site WordPress.
-- [x] Executer `python tests/test_moteur.py`.
-- [x] Compiler les modules Python avec `python -m compileall`.
-- [x] Verifier que `python cli.py --help` demarre.
-- [ ] Demarrer l'interface graphique complete dans un environnement Qt.
+- [x] Préciser le chemin `docs/sphinx/` dans la matrice de validation
+      (ligne « Documentation Sphinx » remaniée + nouvelle ligne pour les
+      docstrings d'un module Python qui doivent aussi passer `sphinx-build -W`).
+- [x] Ajouter la mention explicite de Napoleon (nouvelle section
+      « Docstrings et documentation API », renvoi à `docs/sphinx/README.md`).
+- [x] Écarts connus : aucun résorbé par ce sprint. Note ajoutée sur
+      l'écart #3 pour préciser que les docstrings sont désormais en
+      Napoleon (mais restent en français, l'écart persiste).
 
-## US-08 - Documentation et audit avant publication
+Impact Map : `CLAUDE.md`. Validation : aucune.
 
-- [x] Documenter la configuration du site dans `README.md`.
-- [x] Decrire le projet comme un telechargeur WordPress configurable.
-- [x] Documenter la distinction entre code et contenus telecharges.
-- [x] Verifier l'absence de fichiers image dans le depot.
-- [x] Verifier l'absence de constante de site dans `Glaneur/engine.py`.
-- [x] Verifier les espaces et fins de ligne avec `git diff --check`.
-- [ ] Revoir les fichiers et URLs historiques avant publication finale.
-- [ ] Commit de publication a effectuer par le mainteneur.
+## Ordre et parallélisation
 
-## US-09 - Packaging Linux
+1. **US-01** — bloque US-02 et US-03.
+2. **US-02** ∥ **US-05** — indépendants, deux worktrees possibles.
+3. **US-03** — séquentiel après US-02, module par module.
+4. **US-06** — dernier, une fois la doc en place.
 
-- [x] Ajouter le paquet Debian (`.deb`).
-- [x] Ajouter le manifeste Flatpak et son lanceur.
-- [x] Ajouter les métadonnées desktop et l'icône Linux.
-- [x] Construire les paquets Linux dans GitHub Actions sur les tags.
-- [x] Ajouter une application macOS (`.app`, `.zip` et `.dmg`).
-
-## US-10 - Auto-update Windows
-
-- [x] Comparer les versions SemVer avec les GitHub Releases stables.
-- [x] Sélectionner l'installateur Windows et vérifier son SHA-256.
-- [x] Préparer un updater Windows séparé.
-- [x] Publier les installateurs et checksums dans une GitHub Release.
+US-04 est en cours d'exécution : deux cases sont déjà cochées, il reste la
+vérification `grep`.
 
 ## Definition of Done
 
-Le sprint est pret lorsque :
+Le sprint est prêt lorsque :
 
-- le moteur utilise exclusivement `Options.site` pour construire l'API ;
-- les appelants transmettent `Config.site` ;
-- les tests fonctionnent sans acces au site reel ;
-- aucun asset tiers n'est distribue ;
-- `LICENSE` et le disclaimer sont presents ;
-- les tests et controles de publication passent ;
-- les verifications manuelles restantes sont validees par le mainteneur.
+- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` produit
+  un HTML sans warning ;
+- toutes les fonctions et classes publiques de `Glaneur/` portent un
+  docstring Napoleon exploitable par autodoc ;
+- `todo.txt` reflète le prochain sprint (ou est vide) ;
+- `docs/` est structuré en `sphinx/` + `design/` + `sprints/` ;
+- aucun test n'a été modifié, aucun changement runtime ;
+- `CLAUDE.md` référence le chemin Sphinx concret et le style Napoleon.
+
+## Hors périmètre
+
+- Refonte des invariants ou frontières documentés dans `CLAUDE.md`.
+- Extraction de `sources/wordpress.py` (couvert par
+  `docs/design/evolution-multi-sources.md`).
+- Traduction anglaise des docstrings (écart connu #3 de `CLAUDE.md`).
+- Publication de la doc sur ReadTheDocs ou GitHub Pages.
+- Intégration de `sphinx-build` à la CI (à évaluer après US-02).

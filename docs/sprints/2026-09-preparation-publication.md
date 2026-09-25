@@ -1,0 +1,124 @@
+> **Archivé le 2026-09-25.** Sprint terminé, hors deux cases mainteneur
+> laissées volontairement non cochées (US-07 « démarrage GUI Qt complet »,
+> US-08 « revue finale + commit de publication »).
+
+# Sprint - Preparation du projet a la publication
+
+Version cible : **1.0.2**
+
+## Objectif
+
+Preparer le projet pour une publication publique en supprimant les assets
+tiers, en clarifiant la licence, et en decouplant le moteur du site WordPress
+actuellement utilise.
+
+## US-01 - Supprimer l'identite graphique distribuee
+
+- [x] Identifier et verifier `build/Glaneur.ico`.
+- [x] Supprimer l'asset du depot.
+- [x] Ajouter l'asset a `.gitignore`.
+- [x] Verifier qu'aucune autre image tierce n'est presente dans le depot.
+- [x] Conserver le fallback graphique genere dynamiquement par
+  `icone_application()`.
+
+## US-02 - Clarifier l'absence d'affiliation
+
+- [x] Ajouter le disclaimer au debut de `README.md`.
+- [x] Mentionner le caractere personnel et independant du projet.
+- [x] Mentionner l'absence d'affiliation, d'approbation et de sponsoring.
+- [x] Preciser l'utilisation descriptive des marques citees.
+
+## US-03 - Ajouter une licence explicite
+
+- [x] Choisir GNU GPL version 3 ou ulterieure pour le code.
+- [x] Ajouter le fichier `LICENSE`.
+- [x] Referencer la licence dans `README.md`.
+- [x] Distinguer la licence du code des droits applicables aux contenus
+  telecharges.
+
+## US-04 - Externaliser le site cible
+
+- [x] Ajouter `site` a `Config`, avec `https://example.com` comme valeur par
+  defaut historique.
+- [x] Ajouter `site` a `Options`.
+- [x] Construire `self.base` avec `options.site.rstrip("/")`.
+- [x] Construire `self.api` avec `self.base`.
+- [x] Utiliser `self.api` dans `_api()` au lieu d'une constante globale.
+- [x] Supprimer les constantes globales `BASE` et `API` du moteur.
+
+## US-05 - Propager la configuration
+
+- [x] Transmettre `Config.site` depuis `app.py` vers `Options.site`.
+- [x] Transmettre `Config.site` depuis `cli.py` vers `Options.site`.
+- [x] Conserver une seule source de verite pour le site cible.
+- [x] Ne pas modifier la logique de telechargement hors de cette configuration.
+
+Flux attendu :
+
+```text
+Config.site
+  -> app.py / cli.py
+  -> Options.site
+  -> Moteur
+  -> self.base
+  -> self.api
+```
+
+## US-06 - Rendre les tests independants du site reel
+
+- [x] Remplacer les URLs du catalogue de test par une origine fictive.
+- [x] Fournir une URL `site` specifique au test.
+- [x] Verifier les endpoints WordPress simules utilises par le moteur.
+- [x] Verifier que les tests ne telechargent aucun contenu reel.
+- [x] Ne pas ajouter d'image reelle dans les fixtures.
+- [x] Couvrir le slash final de l'URL avec `https://fake-wordpress.test/`.
+
+## US-07 - Verification fonctionnelle
+
+- [x] Verifier la valeur par defaut de `Config.site`.
+- [x] Verifier qu'une autre origine peut etre fournie a `Options`.
+- [x] Verifier la normalisation du slash final.
+- [x] Verifier le fonctionnement de l'API mockee.
+- [x] Ajouter dans l'interface un champ URL persistant pour le site WordPress.
+- [x] Executer `python tests/test_moteur.py`.
+- [x] Compiler les modules Python avec `python -m compileall`.
+- [x] Verifier que `python cli.py --help` demarre.
+- [ ] Demarrer l'interface graphique complete dans un environnement Qt.
+
+## US-08 - Documentation et audit avant publication
+
+- [x] Documenter la configuration du site dans `README.md`.
+- [x] Decrire le projet comme un telechargeur WordPress configurable.
+- [x] Documenter la distinction entre code et contenus telecharges.
+- [x] Verifier l'absence de fichiers image dans le depot.
+- [x] Verifier l'absence de constante de site dans `Glaneur/engine.py`.
+- [x] Verifier les espaces et fins de ligne avec `git diff --check`.
+- [ ] Revoir les fichiers et URLs historiques avant publication finale.
+- [ ] Commit de publication a effectuer par le mainteneur.
+
+## US-09 - Packaging Linux
+
+- [x] Ajouter le paquet Debian (`.deb`).
+- [x] Ajouter le manifeste Flatpak et son lanceur.
+- [x] Ajouter les métadonnées desktop et l'icône Linux.
+- [x] Construire les paquets Linux dans GitHub Actions sur les tags.
+- [x] Ajouter une application macOS (`.app`, `.zip` et `.dmg`).
+
+## US-10 - Auto-update Windows
+
+- [x] Comparer les versions SemVer avec les GitHub Releases stables.
+- [x] Sélectionner l'installateur Windows et vérifier son SHA-256.
+- [x] Préparer un updater Windows séparé.
+- [x] Publier les installateurs et checksums dans une GitHub Release.
+
+## Definition of Done
+
+Le sprint est pret lorsque :
+
+- le moteur utilise exclusivement `Options.site` pour construire l'API ;
+- les appelants transmettent `Config.site` ;
+- les tests fonctionnent sans acces au site reel ;
+- aucun asset tiers n'est distribue ;
+- `LICENSE` et le disclaimer sont presents ;
+- les tests et controles de publication passent ;
+- les verifications manuelles restantes sont validees par le mainteneur.

@@ -44,32 +44,69 @@ UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
 
 @dataclass
 class Options:
+    """Paramètres d'un run du moteur.
+
+    Chaque champ est documenté par un commentaire ``#:`` inline pour
+    éviter la duplication d'index entre autodoc et Napoleon.
+    """
+
+    #: Répertoire cible où déposer manifeste, cache et fichiers.
     dossier: Path
+    #: Origine du site source (par exemple ``https://example.com``).
     site: str = "https://example.com"
-    classement: str = "galerie"       # "galerie", "date" ou "plat"
+    #: ``galerie`` (par titre parent), ``date`` (par mois) ou ``plat``
+    #: (tout au même niveau).
+    classement: str = "galerie"
+    #: Écarte les ressources plus étroites, en pixels.
     largeur_min: int = 800
+    #: Plancher de pause entre deux requêtes réseau, en secondes.
     delai: float = 0.5
-    verifier: bool = False            # revalider les fichiers déjà présents
-    force: bool = False               # ignorer le manifeste
-    depuis: str | None = None         # AAAA-MM-JJ
+    #: Revalide les fichiers déjà présents via ``If-None-Match`` et
+    #: ``If-Modified-Since``.
+    verifier: bool = False
+    #: Ignore complètement le manifeste existant.
+    force: bool = False
+    #: Borne basse au format ``AAAA-MM-JJ``.
+    depuis: str | None = None
+    #: Borne haute au format ``AAAA-MM-JJ``.
     jusqua: str | None = None
-    utiliser_cache: bool = True       # cache disque : date max et titres galeries
-    type_source: str = "wordpress"    # clé de `sources.SOURCES`
-    format_image: str = "Large"       # utilisé par Djangoplicity
+    #: Autorise le cache disque (date max vue, titres de galeries).
+    utiliser_cache: bool = True
+    #: Clé de ``Glaneur.sources.SOURCES`` (par exemple ``wordpress`` ou
+    #: ``djangoplicity``).
+    type_source: str = "wordpress"
+    #: Variante d'image demandée aux sources qui exposent plusieurs
+    #: formats (utilisé par Djangoplicity).
+    format_image: str = "Large"
 
 
 @dataclass
 class Resultat:
+    """Compteurs et message renvoyés par un run du moteur."""
+
+    #: Nouveaux fichiers effectivement téléchargés.
     telechargees: int = 0
+    #: Fichiers repris depuis un ``.part`` partiel.
     reprises: int = 0
+    #: Réponses 304 (ETag/Last-Modified inchangés).
     inchangees: int = 0
+    #: Fichiers déjà à jour dans le manifeste et sur le disque.
     deja_presentes: int = 0
-    supprimees: int = 0      # constatées disparues du disque à ce passage
-    ignorees: int = 0        # connues comme supprimées, plus retéléchargées
+    #: Fichiers manquants du disque à ce passage — marqués comme
+    #: supprimés dans le manifeste.
+    supprimees: int = 0
+    #: Fichiers connus comme supprimés ou sans URL utilisable, non
+    #: retéléchargés.
+    ignorees: int = 0
+    #: Fichiers dont le téléchargement a échoué.
     echecs: int = 0
+    #: Volume total téléchargé, en octets.
     octets: int = 0
+    #: Vrai si l'utilisateur a demandé l'arrêt en cours de run.
     interrompu: bool = False
+    #: Résumé prêt à afficher à l'utilisateur (localisé).
     message: str = ""
+    #: Bac libre pour informations additionnelles.
     details: dict = field(default_factory=dict)
 
 
@@ -81,7 +118,20 @@ SIZE_SUFFIX = re.compile(r"-\d{2,5}x\d{2,5}(?=\.[A-Za-z]{3,4}$)")
 
 
 def nettoyer(titre: str, defaut: str = "divers") -> str:
-    """Transforme un titre HTML en nom de dossier sûr sur tous les systèmes."""
+    """Transforme un titre HTML en nom de dossier sûr sur tous les systèmes.
+
+    Décode les entités HTML, translittère en ASCII, remplace les espaces
+    par des tirets, borne à 80 caractères et retire les caractères refusés
+    par Windows.
+
+    Args:
+        titre: Titre source, éventuellement avec entités HTML ou accents.
+        defaut: Valeur renvoyée si le titre nettoyé est vide.
+
+    Returns:
+        Une chaîne utilisable comme nom de dossier sur Windows, macOS et
+        Linux.
+    """
     texte = html.unescape(titre or "").strip()
     texte = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode("ascii")
     texte = re.sub(r"[^\w\s-]", "", texte).strip()
@@ -91,6 +141,15 @@ def nettoyer(titre: str, defaut: str = "divers") -> str:
 
 
 def format_octets(n: int) -> str:
+    """Formate un nombre d'octets en unité lisible.
+
+    Args:
+        n: Nombre d'octets.
+
+    Returns:
+        Une chaîne du type ``"1024 o"``, ``"1.5 Mo"`` ou ``"2.3 Go"``,
+        arrondie à un chiffre après la virgule au-delà de l'octet.
+    """
     for unite in ("o", "Ko", "Mo", "Go"):
         if n < 1024 or unite == "Go":
             return f"{n:.0f} {unite}" if unite == "o" else f"{n:.1f} {unite}"
@@ -103,10 +162,30 @@ def format_octets(n: int) -> str:
 # --------------------------------------------------------------------------- #
 
 def chemin_manifeste(dossier: Path) -> Path:
+    """Chemin du fichier manifeste (``.etat.json``) à l'intérieur de ``dossier``.
+
+    Args:
+        dossier: Répertoire cible du run.
+
+    Returns:
+        Le chemin absolu du manifeste. Le fichier peut ne pas exister.
+    """
     return dossier / ".etat.json"
 
 
 def lire_manifeste(dossier: Path) -> dict:
+    """Charge le manifeste JSON s'il existe, dictionnaire vide sinon.
+
+    Un manifeste corrompu ou illisible est traité comme absent : le
+    prochain run repartira d'un état vide plutôt que de planter.
+
+    Args:
+        dossier: Répertoire cible du run.
+
+    Returns:
+        Le contenu désérialisé, ou ``{}`` si le fichier est absent ou
+        illisible.
+    """
     chemin = chemin_manifeste(dossier)
     if not chemin.exists():
         return {}
@@ -118,6 +197,16 @@ def lire_manifeste(dossier: Path) -> dict:
 
 
 def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
+    """Écrit le manifeste de façon atomique (fichier temporaire + rename).
+
+    Le manifeste est sauvegardé toutes les 25 images pendant un run :
+    l'écriture atomique évite qu'une interruption ne laisse un fichier
+    tronqué en place.
+
+    Args:
+        dossier: Répertoire cible du run. Créé s'il n'existe pas.
+        manifeste: Dictionnaire sérialisable en JSON à persister.
+    """
     chemin = chemin_manifeste(dossier)
     chemin.parent.mkdir(parents=True, exist_ok=True)
     tmp = chemin.with_suffix(".json.tmp")
@@ -133,10 +222,29 @@ def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
 # --------------------------------------------------------------------------- #
 
 def chemin_cache(dossier: Path) -> Path:
+    """Chemin du fichier cache (``.cache.json``) à l'intérieur de ``dossier``.
+
+    Args:
+        dossier: Répertoire cible du run.
+
+    Returns:
+        Le chemin absolu du cache. Le fichier peut ne pas exister.
+    """
     return dossier / ".cache.json"
 
 
 def lire_cache(dossier: Path) -> dict:
+    """Charge le cache JSON s'il existe, dictionnaire vide sinon.
+
+    Comme :func:`lire_manifeste`, tolère un cache absent ou corrompu.
+
+    Args:
+        dossier: Répertoire cible du run.
+
+    Returns:
+        Le contenu désérialisé, ou ``{}`` si le fichier est absent ou
+        illisible.
+    """
     chemin = chemin_cache(dossier)
     if not chemin.exists():
         return {}
@@ -148,6 +256,12 @@ def lire_cache(dossier: Path) -> dict:
 
 
 def ecrire_cache(dossier: Path, cache: dict) -> None:
+    """Écrit le cache de façon atomique (fichier temporaire + rename).
+
+    Args:
+        dossier: Répertoire cible du run. Créé s'il n'existe pas.
+        cache: Dictionnaire sérialisable en JSON à persister.
+    """
     chemin = chemin_cache(dossier)
     chemin.parent.mkdir(parents=True, exist_ok=True)
     tmp = chemin.with_suffix(".json.tmp")
@@ -157,7 +271,15 @@ def ecrire_cache(dossier: Path, cache: dict) -> None:
 
 
 def lister_supprimees(dossier: Path) -> list[dict]:
-    """Images téléchargées puis effacées du disque par l'utilisateur."""
+    """Images téléchargées puis effacées du disque par l'utilisateur.
+
+    Args:
+        dossier: Répertoire cible du run.
+
+    Returns:
+        Les entrées du manifeste portant la marque ``supprime``, triées
+        par date de suppression puis par nom de fichier.
+    """
     manifeste = lire_manifeste(dossier)
     entrees = [{"id": ident, **etat} for ident, etat in manifeste.items()
                if etat.get("supprime")]
@@ -166,7 +288,19 @@ def lister_supprimees(dossier: Path) -> list[dict]:
 
 
 def restaurer(dossier: Path, ids: Iterable) -> int:
-    """Lève la marque de suppression : ces images repasseront dans la file."""
+    """Lève la marque de suppression : ces images repasseront dans la file.
+
+    La marque ``restaure`` reste posée jusqu'au prochain téléchargement
+    réussi, pour qu'un échec réseau ne reclasse pas immédiatement l'image
+    en « supprimée ».
+
+    Args:
+        dossier: Répertoire cible du run.
+        ids: Identifiants (au sens de la source) à restaurer.
+
+    Returns:
+        Le nombre d'entrées effectivement rétablies.
+    """
     manifeste = lire_manifeste(dossier)
     retablies = 0
     for ident in ids:
@@ -182,15 +316,25 @@ def restaurer(dossier: Path, ids: Iterable) -> int:
 
 
 def supprimer_image(dossier: Path, fichier: Path) -> bool:
-    """Efface `fichier` du disque et pose la marque `supprime` dans le manifeste.
+    """Efface ``fichier`` du disque et pose la marque ``supprime`` dans le manifeste.
 
-    Sans cette marque, la mise à jour suivante verrait l'image manquante et la
-    retéléchargerait : la suppression disque seule ne suffit pas.
+    Sans cette marque, la mise à jour suivante verrait l'image manquante
+    et la retéléchargerait : la suppression disque seule ne suffit pas.
 
-    Refuse (`False`) si `fichier` n'est pas à l'intérieur de `dossier` — une
-    fonction qui efface ne fait pas confiance à son appelant. La comparaison
-    passe par `realpath` + `normcase` puis `commonpath`, jamais par
-    `startswith` qui matcherait un dossier voisin de préfixe identique.
+    Refuse si ``fichier`` n'est pas à l'intérieur de ``dossier`` — une
+    fonction qui efface ne fait pas confiance à son appelant. La
+    comparaison passe par ``realpath`` + ``normcase`` puis ``commonpath``,
+    jamais par ``startswith`` qui matcherait un dossier voisin de préfixe
+    identique.
+
+    Args:
+        dossier: Répertoire cible du run (racine du run).
+        fichier: Chemin absolu du fichier à effacer.
+
+    Returns:
+        ``True`` si le fichier a été effacé (ou déjà absent) et le
+        manifeste éventuellement marqué, ``False`` si le fichier est hors
+        de ``dossier`` ou si l'unlink a échoué.
     """
     try:
         base = os.path.normcase(os.path.realpath(str(dossier)))
@@ -243,6 +387,18 @@ def supprimer_image(dossier: Path, fichier: Path) -> bool:
 # --------------------------------------------------------------------------- #
 
 class Moteur:
+    """Orchestre un run : inventaire, tri, téléchargement, manifeste, cache.
+
+    Le moteur ne connaît rien de l'UI. Il expose deux callbacks
+    (``journal`` et ``progression``) et un :class:`threading.Event` pour
+    l'interruption coopérative, si bien qu'il tourne aussi bien depuis un
+    thread Qt que depuis la CLI ou un test unitaire.
+
+    Il ne connaît rien non plus de WordPress ou Djangoplicity : le choix
+    de la source est fait par :attr:`Options.type_source`, résolu via
+    ``Glaneur.sources.SOURCES``.
+    """
+
     def __init__(
         self,
         options: Options,
@@ -250,6 +406,19 @@ class Moteur:
         progression: Callable[[int, int, str], None] | None = None,
         arret: threading.Event | None = None,
     ) -> None:
+        """Instancie le moteur avec ses callbacks.
+
+        Args:
+            options: Paramètres du run (dossier, site, filtres, etc.).
+            journal: Callback appelé pour chaque message texte destiné à
+                l'utilisateur. Reçoit une chaîne déjà localisée. Peut être
+                ``None`` (aucun affichage).
+            progression: Callback appelé à chaque avancement du run.
+                Reçoit ``(fait, total, etiquette)``. Peut être ``None``.
+            arret: Event partagé qui coupe le run quand il est positionné.
+                Créé à la demande si non fourni ; l'appelant peut le
+                réutiliser pour synchroniser plusieurs moteurs.
+        """
         self.o = options
         self.base = options.site.rstrip("/")
         self._journal = journal or (lambda msg: None)
@@ -281,6 +450,15 @@ class Moteur:
     # -- manifeste ---------------------------------------------------------- #
 
     def charger_manifeste(self) -> dict:
+        """Charge le manifeste du run précédent, ou ``{}`` en mode force.
+
+        Journalise un avertissement si le fichier existe mais est
+        illisible : le run repartira alors d'un état vide et refera un
+        inventaire complet.
+
+        Returns:
+            Le manifeste courant, éventuellement vide.
+        """
         if self.o.force or not chemin_manifeste(self.o.dossier).exists():
             return {}
         manifeste = lire_manifeste(self.o.dossier)
@@ -289,10 +467,28 @@ class Moteur:
         return manifeste
 
     def sauver_manifeste(self, manifeste: dict) -> None:
+        """Persiste ``manifeste`` sur disque de façon atomique.
+
+        Args:
+            manifeste: État à sérialiser.
+        """
         ecrire_manifeste(self.o.dossier, manifeste)
 
     @staticmethod
     def fichier_complet(dest: Path, etat: dict | None, taille_api: int | None) -> bool:
+        """Indique si ``dest`` est un téléchargement complet, à la taille près.
+
+        Args:
+            dest: Chemin du fichier à vérifier.
+            etat: Entrée manifeste correspondante, ou ``None`` si aucune.
+            taille_api: Taille annoncée par la source, ou ``None`` si
+                elle n'est pas connue à cette étape.
+
+        Returns:
+            ``True`` si le fichier existe, n'est pas vide, et sa taille
+            correspond à celle attendue (manifeste ou API). ``False`` si
+            l'une de ces conditions manque.
+        """
         if not dest.exists():
             return False
         taille = dest.stat().st_size
@@ -304,15 +500,20 @@ class Moteur:
     # -- cache API ---------------------------------------------------------- #
 
     def charger_cache(self) -> dict:
-        """Lit le cache disque, ignoré en mode force ou si l'utilisation en est
-        désactivée. Si le site enregistré diffère du site courant, ou si le
-        type de source change (ex. WordPress → Djangoplicity), on repart de
-        zéro pour ne pas mélanger deux espaces d'identifiants.
+        """Lit le cache disque, en le vidant si le contexte a changé.
+
+        Le cache est ignoré en mode force ou si l'utilisation en est
+        désactivée. Si le site enregistré diffère du site courant, ou si
+        le type de source change (ex. WordPress → Djangoplicity), on
+        repart de zéro pour ne pas mélanger deux espaces d'identifiants.
 
         Migration silencieuse : un cache écrit avant l'introduction de
-        `type_source` (donc sans ce champ) est lu comme s'il correspondait
-        au type courant, pour ne pas invalider les caches WordPress
-        existants.
+        :attr:`Options.type_source` (donc sans ce champ) est lu comme
+        s'il correspondait au type courant, pour ne pas invalider les
+        caches WordPress existants.
+
+        Returns:
+            Le cache utilisable pour ce run, éventuellement vide.
         """
         if self.o.force or not self.o.utiliser_cache:
             return {}
@@ -325,6 +526,16 @@ class Moteur:
         return cache
 
     def sauver_cache(self, cache: dict) -> None:
+        """Persiste ``cache`` sur disque, sauf en mode force/cache désactivé.
+
+        L'origine et le type de source du run courant sont réinjectés
+        dans ``cache`` avant écriture pour que :meth:`charger_cache`
+        puisse invalider automatiquement au run suivant si l'un ou
+        l'autre change.
+
+        Args:
+            cache: État à sérialiser (peut être partiellement rempli).
+        """
         if self.o.force or not self.o.utiliser_cache:
             return
         ecrire_cache(self.o.dossier, {
@@ -334,7 +545,17 @@ class Moteur:
     # -- chemins ------------------------------------------------------------ #
 
     def dossier_pour(self, element: Element, titres: dict[str, str]) -> str:
-        """Sous-dossier relatif ; chaîne vide en classement plat."""
+        """Sous-dossier relatif où ranger ``element`` selon le classement retenu.
+
+        Args:
+            element: Élément à ranger.
+            titres: Table {id_parent -> titre nettoyé} résolue en amont
+                par la source, utilisée pour ``classement="galerie"``.
+
+        Returns:
+            Un nom de sous-dossier relatif, ou une chaîne vide en
+            classement ``plat`` (tout au niveau racine).
+        """
         if self.o.classement == "plat":
             return ""
         if self.o.classement == "date" or not element.groupe:
@@ -342,10 +563,25 @@ class Moteur:
         return titres.get(element.groupe) or f"contenu-{element.groupe}"
 
     def chemin_libre(self, dest: Path, ident: str, pris: set[str]) -> Path:
-        """Un même nom de fichier peut apparaître dans deux mois différents
-        (WordPress ne dédoublonne que par dossier d'upload) ou dans deux entrées
-        Djangoplicity (variantes de langue) : on suffixe par l'ident pour ne
-        pas écraser."""
+        """Choisit un chemin de destination qui n'écrase aucun autre élément.
+
+        Un même nom de fichier peut apparaître dans deux mois différents
+        (WordPress ne dédoublonne que par dossier d'upload) ou dans deux
+        entrées Djangoplicity (variantes de langue) : on suffixe par
+        ``ident`` pour ne pas écraser.
+
+        Args:
+            dest: Chemin candidat, tel que déduit du sous-dossier et du
+                nom de fichier de la source.
+            ident: Identifiant de l'élément, utilisé comme suffixe si
+                ``dest`` est déjà pris.
+            pris: Ensemble des chemins relatifs déjà attribués pendant
+                ce run. La méthode y ajoute le chemin choisi avant de
+                le renvoyer.
+
+        Returns:
+            Un chemin absolu unique dans ``pris``.
+        """
         relatif = str(dest.relative_to(self.o.dossier))
         if relatif in pris:
             dest = dest.with_name(f"{dest.stem}-{ident}{dest.suffix}")
@@ -356,6 +592,33 @@ class Moteur:
     # -- téléchargement ----------------------------------------------------- #
 
     def telecharger(self, url: str, dest: Path, etat: dict | None) -> tuple[str, dict | None]:
+        """Télécharge ``url`` vers ``dest`` avec reprise et revalidation.
+
+        Gère :
+
+        - ``If-None-Match`` / ``If-Modified-Since`` en mode ``verifier`` ;
+        - reprise via ``Range: bytes=...-`` sur un ``.part`` partiel ;
+        - repli sur téléchargement complet en cas de ``416`` ;
+        - interruption coopérative en cours de flux (préserve le ``.part``
+          pour la reprise suivante).
+
+        Args:
+            url: URL à télécharger.
+            dest: Chemin absolu du fichier final. Le dossier parent est
+                créé si nécessaire.
+            etat: Entrée manifeste précédente (ETag, Last-Modified,
+                taille…) ou ``None``.
+
+        Returns:
+            Un tuple ``(statut, infos)`` où ``statut`` est ``"ok"``,
+            ``"repris"``, ``"inchangé"``, ``"introuvable"`` ou un
+            message d'erreur localisé, et ``infos`` est le nouvel état
+            à écrire au manifeste (ou ``None`` si aucun contenu).
+
+        Raises:
+            Interrompu: Propagé si ``self.arret`` est positionné pendant
+                l'écriture du flux.
+        """
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".part")
         entetes: dict[str, str] = {}
@@ -407,6 +670,26 @@ class Moteur:
     # -- orchestration ------------------------------------------------------ #
 
     def executer(self) -> Resultat:
+        """Exécute le run complet et renvoie le :class:`Resultat` agrégé.
+
+        L'ordre est :
+
+        1. lecture du manifeste et du cache ;
+        2. inventaire via la source (filtre par date, largeur minimale) ;
+        3. tri en trois listes (déjà à jour, à télécharger, supprimées) ;
+        4. résolution des titres de galeries si nécessaire ;
+        5. téléchargement séquentiel avec sauvegarde périodique du
+           manifeste (toutes les 25 images) ;
+        6. mise à jour du cache (date maximale, titres) en sortie normale.
+
+        Une interruption coopérative renvoie un ``Resultat`` avec
+        :attr:`Resultat.interrompu` vrai. Les erreurs réseau ou disque
+        sont capturées et rapportées via ``res.message`` sans propager
+        l'exception.
+
+        Returns:
+            Le résumé chiffré du run.
+        """
         res = Resultat()
         self.o.dossier.mkdir(parents=True, exist_ok=True)
         manifeste = self.charger_manifeste()

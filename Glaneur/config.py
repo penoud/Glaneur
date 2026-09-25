@@ -48,6 +48,15 @@ FORMATS_DJANGOPLICITY: dict[str, str] = {
 
 
 def dossier_config() -> Path:
+    """Renvoie le dossier où vit la config, selon la plateforme.
+
+    - Windows : ``%APPDATA%\\Glaneur``.
+    - macOS : ``~/Library/Application Support/Glaneur``.
+    - Ailleurs : ``$XDG_CONFIG_HOME/glaneur`` (défaut : ``~/.config/glaneur``).
+
+    Returns:
+        Le chemin absolu du dossier. Le dossier n'est pas créé.
+    """
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
         return base / NOM_APP
@@ -81,12 +90,19 @@ def _anciens_dossiers_config() -> list[Path]:
 
 
 def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
-    """Copie récursivement la config d'un ancien nom (WpImageDownloader) vers
-    le nouveau dossier Glaneur, uniquement si aucune config Glaneur n'existe
-    déjà. Renvoie le chemin source utilisé (ou None si rien à migrer).
+    """Copie la config d'un ancien nom (``WpImageDownloader``) vers Glaneur.
 
-    Volontairement copié plutôt que déplacé : l'ancien install peut encore
-    tourner en parallèle pendant la transition, on ne casse pas sa config.
+    Ne fait rien si un dossier Glaneur non vide existe déjà. Volontairement
+    copié plutôt que déplacé : l'ancien install peut encore tourner en
+    parallèle pendant la transition, on ne casse pas sa config.
+
+    Args:
+        cible: Dossier de destination. Utilise :func:`dossier_config` si
+            ``None``.
+
+    Returns:
+        Le chemin source effectivement utilisé, ou ``None`` si rien à
+        migrer (cible non vide ou aucun dossier legacy trouvé).
     """
     import logging
     import shutil
@@ -104,6 +120,15 @@ def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
 
 
 def dossier_images_defaut() -> Path:
+    """Sous-dossier ``Glaneur`` d'un répertoire d'images de l'utilisateur.
+
+    Tente ``~/Pictures/Glaneur`` puis ``~/Images/Glaneur`` (nom localisé
+    Windows/GNOME), sinon ``~/Glaneur``.
+
+    Returns:
+        Le chemin proposé par défaut à l'utilisateur au premier lancement.
+        Le dossier n'est pas créé.
+    """
     for nom in ("Pictures", "Images"):
         candidat = Path.home() / nom
         if candidat.is_dir():
@@ -113,22 +138,47 @@ def dossier_images_defaut() -> Path:
 
 @dataclass
 class Config:
+    """Configuration persistante sérialisée en JSON.
+
+    Champs documentés inline par ``#:`` pour éviter le doublon d'index
+    entre autodoc et Napoleon (même motif que
+    :class:`Glaneur.engine.Options`).
+    """
+
+    #: Origine du site source, propagée à :attr:`Glaneur.engine.Options.site`.
     site: str = "https://example.com"
+    #: Dossier cible de synchronisation ; vide = valeur de
+    #: :func:`dossier_images_defaut`.
     dossier: str = ""
+    #: Intervalle entre deux runs automatiques, en heures. Doit appartenir
+    #: aux valeurs de ``INTERVALLES`` (``0`` = manuel uniquement).
     intervalle_heures: int = 24
+    #: Écarte les images plus étroites (en pixels).
     largeur_min: int = 800
-    classement: str = "galerie"          # "galerie", "date" ou "plat"
-    type_source: str = "wordpress"       # clé de `sources.SOURCES`
-    format_image: str = "Large"          # utilisé par Djangoplicity (voir FORMATS_DJANGOPLICITY)
+    #: ``galerie``, ``date`` ou ``plat``.
+    classement: str = "galerie"
+    #: Clé du registre ``Glaneur.sources.SOURCES``.
+    type_source: str = "wordpress"
+    #: Utilisé par Djangoplicity ; valeurs dans ``FORMATS_DJANGOPLICITY``.
+    format_image: str = "Large"
+    #: Revalidation ETag/Last-Modified des fichiers déjà présents.
     verifier_integrite: bool = False
+    #: Configure le dossier comme diaporama de fond d'écran Windows.
     diaporama_dossier: bool = False
+    #: Plancher de pause entre deux requêtes, en secondes.
     delai_requetes: float = 0.5
-    derniere_execution: str = ""          # ISO 8601, alimenté par le planificateur
+    #: Date ISO 8601 du dernier run, alimentée par le planificateur.
+    derniere_execution: str = ""
+    #: Ajoute l'application au démarrage de la session utilisateur.
     lancer_au_demarrage: bool = False
-    fermer_dans_barre: bool = True        # la croix réduit dans la zone de notification
-    notifications: bool = True            # bulle après une mise à jour automatique
-    verifier_maj_demarrage: bool = True   # interroge GitHub Releases au lancement
-    langue: str = ""                      # "fr", "en"… ; vide = locale système
+    #: La croix réduit dans la zone de notification au lieu de fermer.
+    fermer_dans_barre: bool = True
+    #: Bulle système après une mise à jour automatique.
+    notifications: bool = True
+    #: Interroge GitHub Releases au lancement pour proposer une mise à jour.
+    verifier_maj_demarrage: bool = True
+    #: Code de langue (``fr``, ``en``…). Vide = locale système.
+    langue: str = ""
 
     _chemin: Path | None = field(default=None, repr=False, compare=False)
 
@@ -136,6 +186,21 @@ class Config:
 
     @classmethod
     def charger(cls, chemin: Path | None = None) -> "Config":
+        """Charge la config depuis ``chemin`` ou la retombe sur les valeurs par défaut.
+
+        Les clés absentes ou inconnues sont ignorées, et un fichier illisible
+        (JSON invalide, erreur OS) est traité comme une config absente : on
+        repart des valeurs par défaut plutôt que de planter.
+        :meth:`valider` est toujours appelée avant de rendre l'objet.
+
+        Args:
+            chemin: Chemin du fichier ``config.json``. Utilise
+                :func:`dossier_config` si ``None``.
+
+        Returns:
+            Une :class:`Config` prête à l'emploi, avec son chemin
+            mémorisé pour :meth:`sauver`.
+        """
         chemin = chemin or (dossier_config() / "config.json")
         cfg = cls()
         cfg._chemin = chemin
@@ -155,6 +220,12 @@ class Config:
         return cfg
 
     def sauver(self) -> None:
+        """Écrit la config sur disque de façon atomique.
+
+        Utilise le chemin mémorisé par :meth:`charger` s'il existe,
+        sinon ``<dossier_config()>/config.json``. Les champs privés
+        (préfixés ``_``) ne sont pas sérialisés.
+        """
         chemin = self._chemin or (dossier_config() / "config.json")
         chemin.parent.mkdir(parents=True, exist_ok=True)
         donnees = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
@@ -167,7 +238,16 @@ class Config:
     # -- garde-fous --------------------------------------------------------- #
 
     def valider(self) -> None:
-        """Ramène les valeurs aberrantes dans des bornes raisonnables."""
+        """Ramène les valeurs aberrantes dans des bornes raisonnables.
+
+        Force un intervalle connu, borne la largeur minimale entre 0 et
+        10 000 px, retombe sur les valeurs par défaut si le classement,
+        le type de source ou le format d'image sont inconnus, et
+        s'assure que le classement est supporté par le type de source
+        (import différé pour éviter le cycle
+        ``config → sources → engine → config``). Le délai est borné
+        entre 0.2 et 10 secondes.
+        """
         if self.intervalle_heures not in INTERVALLES.values():
             self.intervalle_heures = 24
         self.largeur_min = max(0, min(int(self.largeur_min), 10000))
@@ -188,6 +268,12 @@ class Config:
 
     @property
     def libelle_intervalle(self) -> str:
+        """Libellé UI de :attr:`intervalle_heures` (clé de ``INTERVALLES``).
+
+        Returns:
+            Le libellé associé à la valeur numérique, ou le libellé par
+            défaut ``"Une fois par jour"`` si la valeur n'est pas listée.
+        """
         for libelle, heures in INTERVALLES.items():
             if heures == self.intervalle_heures:
                 return libelle
@@ -195,6 +281,12 @@ class Config:
 
     @property
     def libelle_classement(self) -> str:
+        """Libellé UI de :attr:`classement` (clé de ``CLASSEMENTS``).
+
+        Returns:
+            Le libellé associé à la valeur stockée, ou ``"Par galerie"``
+            par défaut.
+        """
         for libelle, valeur in CLASSEMENTS.items():
             if valeur == self.classement:
                 return libelle
