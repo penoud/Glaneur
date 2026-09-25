@@ -70,7 +70,9 @@ Un module = un commit, dans l'ordre :
       __init__.py. Element passe aussi aux commentaires `#:`. Refs
       internes en double-backtick quand le symbole n'est pas documenté
       par autodoc (SOURCES, PER_PAGE). 161 tests verts.
-- [ ] `Glaneur/config.py`
+- [x] `Glaneur/config.py` — 7 nouveaux docstrings + enrichissement, Config
+      passe aux commentaires `#:`. Refs internes en double-backtick.
+      40 tests test_config verts.
 - [ ] `Glaneur/scheduler.py`
 - [ ] `Glaneur/systeme.py`
 - [ ] `Glaneur/i18n.py`
