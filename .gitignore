@@ -12,3 +12,6 @@ dist/
 # Traductions compilées : générées par `python translations/build_translations.py release`
 # (les .ts, sources de traduction, sont bien versionnés).
 translations/*.qm
+
+# Sphinx : rendu HTML régénéré à chaque build (voir `docs/sphinx/Makefile`).
+docs/sphinx/_build/

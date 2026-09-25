@@ -1,0 +1,4 @@
+-r requirements.txt
+
+sphinx>=8
+furo>=2024.8

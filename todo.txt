@@ -36,17 +36,23 @@ Impact Map : lecture seule. Validation : aucune.
 
 ## US-02 — Configuration Sphinx minimale
 
-- [ ] Créer `docs/sphinx/conf.py` (extensions `autodoc`, `napoleon`,
+- [x] Créer `docs/sphinx/conf.py` (extensions `autodoc`, `napoleon`,
       `viewcode`, `intersphinx` ; thème `furo` ; `language = "fr"` ;
-      insertion de la racine du dépôt dans `sys.path`).
-- [ ] Créer `docs/sphinx/index.rst` + toctree.
-- [ ] Générer les stubs `docs/sphinx/api/` via
-      `sphinx-apidoc -f -o docs/sphinx/api Glaneur`.
-- [ ] Ajouter `docs/sphinx/Makefile` et `docs/sphinx/make.bat`.
-- [ ] Créer `requirements-doc.txt` séparé du runtime (`sphinx`, `furo`).
-- [ ] Ajouter `docs/sphinx/_build/` à `.gitignore`.
-- [ ] `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
-      doit être vert.
+      insertion de la racine du dépôt dans `sys.path` ; mock PySide6 ;
+      `nitpick_ignore` pour PySide6.QtCore.QThread).
+- [x] Créer `docs/sphinx/index.rst` + toctree.
+- [x] Générer les stubs `docs/sphinx/api/` via
+      `sphinx-apidoc -f -e -o docs/sphinx/api Glaneur` (`-e` : un fichier
+      par module ; post-traitement dans le Makefile pour retirer les blocs
+      « Module contents » de niveau paquet, qui causent des doublons
+      d'index avec les re-exports d'`__init__.py`).
+- [x] Ajouter `docs/sphinx/Makefile` (cibles `html`, `clean`, `apidoc`) et
+      `docs/sphinx/make.bat`.
+- [x] Créer `requirements-doc.txt` séparé du runtime (`-r requirements.txt`
+      puis `sphinx>=8`, `furo>=2024.8`).
+- [x] Ajouter `docs/sphinx/_build/` à `.gitignore`.
+- [x] `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
+      est vert (0 warning en clean build).
 
 Impact Map : nouveau répertoire `docs/sphinx/`, `.gitignore`,
 `requirements-doc.txt`. Validation : subsystem (nouvel outillage).
