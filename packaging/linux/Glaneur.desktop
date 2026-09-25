@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=WP Image Downloader
+Name=Glaneur
 Comment=Synchronise les images d'un site WordPress
-Exec=WpImageDownloader
-Icon=org.wpimagedownloader.WpImageDownloader
+Exec=Glaneur
+Icon=org.glaneur.Glaneur
 Terminal=false
 Categories=Network;Utility;
 Keywords=WordPress;images;download;
