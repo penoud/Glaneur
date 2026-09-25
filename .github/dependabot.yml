@@ -8,9 +8,6 @@ updates:
       interval: "weekly"
       day: "sunday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "python"
     commit-message:
       prefix: "deps"
       include: "scope"
@@ -26,9 +23,6 @@ updates:
       interval: "weekly"
       day: "sunday"
     open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "github-actions"
     commit-message:
       prefix: "ci"
       include: "scope"
