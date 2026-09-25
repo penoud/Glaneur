@@ -140,6 +140,12 @@ class TestContratsWallpaper:
 # Simulations : sys.platform = "win32" mais COM/ctypes non disponibles
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Ces tests simulent l'absence de COM/ctypes.windll ; sur un vrai "
+    "Windows, ces dépendances sont présentes et le chemin dégradé n'est "
+    "pas atteignable.",
+)
 class TestSimulationsWin:
     """Vérifie que le code Windows dégénère proprement quand COM/winreg
     ne sont pas là (ce qui est le cas quand on tourne les tests sur Linux)."""
