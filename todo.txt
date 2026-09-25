@@ -104,11 +104,18 @@ Impact Map par module : validation `local`.
 - [x] Archiver `todo.txt` en
       `docs/sprints/2026-09-preparation-publication.md`.
 - [x] Remettre `todo.txt` à zéro pour le sprint courant (ce fichier).
-- [ ] `grep -rn "todo.txt"` pour repérer et corriger d'éventuelles références
-      (README, workflows, docs).
+- [x] `grep -rn "todo.txt"` : deux références subsistent dans
+      `.github/agents/wordpress-image-downloader-maintainer.agent.md`,
+      les deux pointent vers le fichier existant et sont donc valides.
+      Aucune référence cassée à corriger.
 
 Impact Map : `todo.txt`, `docs/sprints/`, éventuellement `README.md`.
 Validation : aucune (documentaire).
+
+**À signaler hors sprint** : le fichier `.github/agents/...maintainer.agent.md`
+est un legacy pré-rename (nom « WordPress Image Downloader », mention
+`apply_patch`, aucune référence à Djangoplicity). À moderniser ou supprimer
+dans un lot séparé.
 
 ## US-05 — Restructuration de `docs/`
 
