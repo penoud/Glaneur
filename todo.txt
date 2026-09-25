@@ -61,7 +61,10 @@ Impact Map : nouveau répertoire `docs/sphinx/`, `.gitignore`,
 
 Un module = un commit, dans l'ordre :
 
-- [ ] `Glaneur/engine.py`
+- [x] `Glaneur/engine.py` — 17 nouveaux docstrings + 7 enrichis, dataclasses
+      passées à des commentaires `#:` pour éviter le doublon d'index. Ruff
+      signale 4 problèmes préexistants (F401 `time`, UP035 `typing.Callable`,
+      DTZ005 x2) — hors périmètre de US-03.
 - [ ] `Glaneur/sources/` (contrats d'adaptateur)
 - [ ] `Glaneur/config.py`
 - [ ] `Glaneur/scheduler.py`
