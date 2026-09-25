@@ -1,0 +1,37 @@
+name: build-check
+
+on:
+  pull_request:
+    paths:
+      - "Glaneur/**"
+      - "app.py"
+      - "cli.py"
+      - "build/**"
+      - "requirements.txt"
+      - ".github/workflows/build-check.yml"
+
+concurrency:
+  group: build-check-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pyinstaller
+      - run: pyinstaller build\Glaneur.spec --noconfirm --clean
+      - name: Smoke test du bundle
+        # L'exe est fenêtré (`console=False`) : lancé directement il rend la
+        # main immédiatement et son code de sortie serait perdu.
+        # `Start-Process -Wait -PassThru` attend qu'il quitte et expose
+        # `ExitCode`, que `--controle-bundle` positionne à 0 si tous les
+        # imports critiques passent.
+        shell: pwsh
+        run: |
+          $p = Start-Process "dist\Glaneur\Glaneur.exe" `
+                 -ArgumentList "--controle-bundle" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Bundle KO : code $($p.ExitCode)" }
