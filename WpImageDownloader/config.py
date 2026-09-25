@@ -33,6 +33,19 @@ CLASSEMENTS: dict[str, str] = {
     "Tout dans un dossier": "plat",
 }
 
+# types de sites supportés : libellé -> clé du registre `sources.SOURCES`
+TYPES_SOURCE: dict[str, str] = {
+    "WordPress (API REST)": "wordpress",
+    "Djangoplicity (ESO, ESA/Hubble…)": "djangoplicity",
+}
+
+# formats d'image Djangoplicity : libellé -> `ResourceType` du flux d2d
+FORMATS_DJANGOPLICITY: dict[str, str] = {
+    "Grand JPEG": "Large",
+    "Original (TIFF, très lourd)": "Original",
+    "Écran (1280 px)": "Small",
+}
+
 
 def dossier_config() -> Path:
     if sys.platform == "win32":
@@ -59,6 +72,8 @@ class Config:
     intervalle_heures: int = 24
     largeur_min: int = 800
     classement: str = "galerie"          # "galerie", "date" ou "plat"
+    type_source: str = "wordpress"       # clé de `sources.SOURCES`
+    format_image: str = "Large"          # utilisé par Djangoplicity (voir FORMATS_DJANGOPLICITY)
     verifier_integrite: bool = False
     diaporama_dossier: bool = False
     delai_requetes: float = 0.5
@@ -111,6 +126,16 @@ class Config:
         self.largeur_min = max(0, min(int(self.largeur_min), 10000))
         if self.classement not in CLASSEMENTS.values():
             self.classement = "galerie"
+        if self.type_source not in TYPES_SOURCE.values():
+            self.type_source = "wordpress"
+        if self.format_image not in FORMATS_DJANGOPLICITY.values():
+            self.format_image = "Large"
+        # Le classement doit être supporté par la source. Import différé pour
+        # éviter le cycle `config → sources → engine → config`.
+        from .sources import classements_pour
+        classements_ok = classements_pour(self.type_source)
+        if classements_ok and self.classement not in classements_ok:
+            self.classement = "date"
         # un délai trop court martèlerait le serveur du club
         self.delai_requetes = max(0.2, min(float(self.delai_requetes), 10.0))
 

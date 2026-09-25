@@ -1,8 +1,11 @@
-"""Moteur de téléchargement des images d'un site WordPress.
+"""Moteur de téléchargement générique.
 
 Ce module ne connaît rien de l'interface : il communique par callbacks
 (`journal`, `progression`) et s'interrompt proprement via un threading.Event.
-Il peut donc servir aussi bien à l'UI Tkinter qu'à un script en ligne de commande.
+Il peut donc servir aussi bien à l'UI PySide6 qu'à un script en ligne de commande.
+
+Il ne connaît pas non plus WordPress ni Djangoplicity. Il consomme des
+`Element` produits par un adaptateur de `WpImageDownloader.sources`.
 """
 
 from __future__ import annotations
@@ -22,12 +25,12 @@ from urllib.parse import urlparse
 
 import requests
 
-PER_PAGE = 100
+from .sources import SOURCES, Element, Interrompu, Transport
+
+# Réexport de `Interrompu` pour les appelants qui l'importent via `engine`.
+Interrompu = Interrompu   # noqa: PLW0127 — alias explicite
+
 UA = "Mozilla/5.0 (compatible; WpImageDownloader/1.0)"
-
-
-class Interrompu(Exception):
-    """Levée quand l'utilisateur demande l'arrêt."""
 
 
 @dataclass
@@ -42,6 +45,8 @@ class Options:
     depuis: str | None = None         # AAAA-MM-JJ
     jusqua: str | None = None
     utiliser_cache: bool = True       # cache disque : date max et titres galeries
+    type_source: str = "wordpress"    # clé de `sources.SOURCES`
+    format_image: str = "Large"       # utilisé par Djangoplicity
 
 
 @dataclass
@@ -238,12 +243,21 @@ class Moteur:
     ) -> None:
         self.o = options
         self.base = options.site.rstrip("/")
-        self.api = f"{self.base}/wp-json/wp/v2"
         self._journal = journal or (lambda msg: None)
         self._progression = progression or (lambda fait, total, etiquette: None)
         self.arret = arret or threading.Event()
-        self.session = requests.Session()
-        self.session.headers["User-Agent"] = UA
+        self.transport = Transport(delai=options.delai, arret=self.arret)
+        # La session de téléchargement passe par le transport partagé : un
+        # seul user-agent, un seul plancher de pause.
+        self.session = self.transport.session
+        classe = SOURCES.get(options.type_source) or SOURCES["wordpress"]
+        self.source = classe(
+            base=self.base,
+            transport=self.transport,
+            reglages={"format_image": options.format_image},
+            journal=self._journal,
+            progression=self._progression,
+        )
 
     # -- plomberie ---------------------------------------------------------- #
 
@@ -253,26 +267,7 @@ class Moteur:
 
     def _pause(self, secondes: float) -> None:
         """Attente fractionnée, pour réagir vite à une demande d'arrêt."""
-        fin = time.monotonic() + secondes
-        while time.monotonic() < fin:
-            self._verifier_arret()
-            time.sleep(min(0.1, max(0.0, fin - time.monotonic())))
-
-    def _api(self, chemin: str, params: dict | None = None, essais: int = 3):
-        url = f"{self.api}/{chemin.lstrip('/')}"
-        derniere = None
-        for tentative in range(essais):
-            self._verifier_arret()
-            try:
-                r = self.session.get(url, params=params, timeout=30)
-                if r.status_code == 400:
-                    return None, r.headers   # page au-delà du dernier résultat
-                r.raise_for_status()
-                return r.json(), r.headers
-            except requests.RequestException as e:
-                derniere = e
-                self._pause(2 * (tentative + 1))
-        raise RuntimeError(f"L'API ne répond pas ({derniere})")
+        self.transport.pause(secondes)
 
     # -- manifeste ---------------------------------------------------------- #
 
@@ -301,134 +296,50 @@ class Moteur:
 
     def charger_cache(self) -> dict:
         """Lit le cache disque, ignoré en mode force ou si l'utilisation en est
-        désactivée. Si le site enregistré diffère du site courant, on repart de
-        zéro pour ne pas mélanger deux WordPress différents."""
+        désactivée. Si le site enregistré diffère du site courant, ou si le
+        type de source change (ex. WordPress → Djangoplicity), on repart de
+        zéro pour ne pas mélanger deux espaces d'identifiants.
+
+        Migration silencieuse : un cache écrit avant l'introduction de
+        `type_source` (donc sans ce champ) est lu comme s'il correspondait
+        au type courant, pour ne pas invalider les caches WordPress
+        existants.
+        """
         if self.o.force or not self.o.utiliser_cache:
             return {}
         cache = lire_cache(self.o.dossier)
         if cache.get("site") and cache["site"] != self.base:
+            return {}
+        type_cache = cache.get("type_source")
+        if type_cache and type_cache != self.o.type_source:
             return {}
         return cache
 
     def sauver_cache(self, cache: dict) -> None:
         if self.o.force or not self.o.utiliser_cache:
             return
-        ecrire_cache(self.o.dossier, {**cache, "site": self.base})
+        ecrire_cache(self.o.dossier, {
+            **cache, "site": self.base, "type_source": self.o.type_source,
+        })
 
-    # -- inventaire --------------------------------------------------------- #
+    # -- chemins ------------------------------------------------------------ #
 
-    def lister_medias(self, depuis_override: str | None = None) -> list[dict]:
-        """Inventaire des médias. `depuis_override` (ISO complet ou AAAA-MM-JJ)
-        prend le pas sur `Options.depuis`, ce qui permet à `executer` d'injecter
-        la date maximale connue du cache et de ne demander à l'API que le
-        delta."""
-        params = {
-            "per_page": PER_PAGE,
-            "media_type": "image",
-            "orderby": "date",
-            "order": "asc",
-            "_fields": "id,date,source_url,mime_type,title,alt_text,post,media_details",
-        }
-        depuis = depuis_override or self.o.depuis
-        if depuis:
-            params["after"] = depuis if "T" in depuis else f"{depuis}T00:00:00"
-        if self.o.jusqua:
-            params["before"] = f"{self.o.jusqua}T23:59:59"
-
-        medias: list[dict] = []
-        vus: set[int] = set()
-        page, pages_totales, vides = 1, None, 0
-
-        while True:
-            lot, headers = self._api("media", {**params, "page": page})
-            if pages_totales is None:
-                total = headers.get("X-WP-Total", "?")
-                pages_totales = int(headers.get("X-WP-TotalPages") or 0)
-                self._journal(f"Catalogue : {total} image(s) sur {pages_totales or '?'} page(s)")
-            if lot is None:
-                break
-
-            nouvelles = [m for m in lot if m["id"] not in vus]
-            vus.update(m["id"] for m in nouvelles)
-            medias.extend(nouvelles)
-            self._progression(page, pages_totales or page,
-                              f"Inventaire… {len(medias)} image(s)")
-
-            vides = vides + 1 if not lot else 0
-            if vides >= 2:
-                break
-            if pages_totales and page >= pages_totales:
-                break
-            if not pages_totales and not lot:
-                break
-            page += 1
-            self._pause(self.o.delai)
-
-        return medias
-
-    def _bases_rest(self) -> list[str]:
-        try:
-            types, _ = self._api("types")
-        except RuntimeError:
-            return ["posts", "pages"]
-        bases = [
-            info.get("rest_base")
-            for slug, info in (types or {}).items()
-            if info.get("rest_base") and slug not in ("attachment", "wp_block", "nav_menu_item")
-        ]
-        bases.sort(key=lambda b: (0 if "galer" in b else 1, b))
-        return bases or ["posts"]
-
-    def resoudre_parents(self, ids: set[int],
-                         cache_titres: dict[int, str] | None = None) -> dict[int, str]:
-        """Renvoie {id: titre}. Les entrées de `cache_titres` sont conservées
-        telles quelles ; seuls les IDs manquants déclenchent des appels API."""
-        restants = {i for i in ids if i}
-        titres: dict[int, str] = dict(cache_titres or {})
-        restants -= set(titres.keys())
-        if not restants:
-            return titres
-
-        for base in self._bases_rest():
-            if not restants:
-                break
-            lot_ids = sorted(restants)
-            for i in range(0, len(lot_ids), PER_PAGE):
-                tranche = lot_ids[i: i + PER_PAGE]
-                try:
-                    items, _ = self._api(base, {
-                        "include": ",".join(map(str, tranche)),
-                        "per_page": PER_PAGE,
-                        "_fields": "id,title,slug",
-                    })
-                except RuntimeError:
-                    continue
-                for item in items or []:
-                    titres[item["id"]] = item.get("slug") or nettoyer(
-                        item.get("title", {}).get("rendered", ""))
-                    restants.discard(item["id"])
-                self._pause(self.o.delai)
-
-        if restants:
-            self._journal(f"{len(restants)} galerie(s) non identifiée(s), classées par date.")
-        return titres
-
-    def dossier_pour(self, media: dict, titres: dict[int, str]) -> str:
+    def dossier_pour(self, element: Element, titres: dict[str, str]) -> str:
         """Sous-dossier relatif ; chaîne vide en classement plat."""
         if self.o.classement == "plat":
             return ""
-        if self.o.classement == "date" or not media.get("post"):
-            m = re.search(r"/uploads/(\d{4})/(\d{2})/", urlparse(media["source_url"]).path)
-            return f"{m.group(1)}-{m.group(2)}" if m else "divers"
-        return titres.get(media["post"]) or f"contenu-{media['post']}"
+        if self.o.classement == "date" or not element.groupe:
+            return element.mois or "divers"
+        return titres.get(element.groupe) or f"contenu-{element.groupe}"
 
-    def chemin_libre(self, dest: Path, media_id: int, pris: set[str]) -> Path:
-        """WordPress ne dédoublonne les noms que dans un même dossier d'upload :
-        deux mois différents peuvent livrer un `match.jpg`, qui s'écraseraient
-        l'un l'autre une fois réunis à plat."""
+    def chemin_libre(self, dest: Path, ident: str, pris: set[str]) -> Path:
+        """Un même nom de fichier peut apparaître dans deux mois différents
+        (WordPress ne dédoublonne que par dossier d'upload) ou dans deux entrées
+        Djangoplicity (variantes de langue) : on suffixe par l'ident pour ne
+        pas écraser."""
         relatif = str(dest.relative_to(self.o.dossier))
         if relatif in pris:
-            dest = dest.with_name(f"{dest.stem}-{media_id}{dest.suffix}")
+            dest = dest.with_name(f"{dest.stem}-{ident}{dest.suffix}")
             relatif = str(dest.relative_to(self.o.dossier))
         pris.add(relatif)
         return dest
@@ -505,18 +416,23 @@ class Moteur:
                     f"{depuis_cache[:19]}.")
 
         try:
-            medias = self.lister_medias(depuis_override=depuis_cache)
+            depuis = self.source.convertir_depuis(depuis_cache) or self.o.depuis
+            elements = list(self.source.inventaire(depuis, self.o.jusqua))
 
             if self.o.largeur_min:
-                avant = len(medias)
-                medias = [m for m in medias
-                          if (m.get("media_details") or {}).get("width", 0) >= self.o.largeur_min]
-                ecartees = avant - len(medias)
+                avant = len(elements)
+                elements = [
+                    e for e in elements
+                    if e.largeur is None or e.largeur >= self.o.largeur_min
+                ]
+                # Un `Element` sans URL (source qui n'a pas trouvé la ressource
+                # demandée) ne peut plus être téléchargé : il file en `ignorees`.
+                ecartees = avant - len(elements)
                 if ecartees:
                     self._journal(f"{ecartees} vignette(s) ou logo(s) écarté(s) "
                                   f"(moins de {self.o.largeur_min} px).")
 
-            if not medias:
+            if not elements:
                 res.message = "Aucune image ne correspond aux critères."
                 return res
 
@@ -524,13 +440,16 @@ class Moteur:
             pris = {e["fichier"] for e in manifeste.values() if e.get("fichier")}
 
             # tri : déjà sur le disque vs à traiter
-            a_faire: list[tuple[dict, Path | None]] = []
-            for m in medias:
-                etat = manifeste.get(str(m["id"]))
-                taille_api = (m.get("media_details") or {}).get("filesize")
+            a_faire: list[tuple[Element, Path | None]] = []
+            for e in elements:
+                etat = manifeste.get(e.ident)
                 connu = self.o.dossier / etat["fichier"] if etat and etat.get("fichier") else None
 
                 if etat and etat.get("supprime"):
+                    res.ignorees += 1
+                    continue
+                if e.url is None:
+                    # La source n'a pas trouvé de ressource utilisable.
                     res.ignorees += 1
                     continue
                 if (connu is not None and etat.get("taille") and not connu.exists()
@@ -539,11 +458,11 @@ class Moteur:
                     etat["supprime"] = datetime.now().isoformat(timespec="seconds")
                     res.supprimees += 1
                     continue
-                if connu and self.fichier_complet(connu, etat, taille_api) and not self.o.verifier:
+                if connu and self.fichier_complet(connu, etat, e.taille) and not self.o.verifier:
                     etat.pop("restaure", None)
                     res.deja_presentes += 1
                     continue
-                a_faire.append((m, connu))
+                a_faire.append((e, connu))
 
             self._journal(f"{res.deja_presentes} déjà à jour, {len(a_faire)} à traiter.")
             if res.supprimees:
@@ -554,33 +473,41 @@ class Moteur:
                 self._progression(1, 1, res.message)
                 return res
 
-            titres: dict[int, str] = {}
-            titres_caches = {int(k): v
-                             for k, v in (cache.get("titres_parents") or {}).items()
-                             if str(k).isdigit()}
-            inconnus = {m.get("post") for m, connu in a_faire if connu is None}
-            if self.o.classement == "galerie" and inconnus:
+            titres: dict[str, str] = {}
+            titres_caches = {str(k): v
+                             for k, v in (cache.get("titres_parents") or {}).items()}
+            inconnus = {e.groupe for e, connu in a_faire
+                        if e.groupe and connu is None}
+            if (self.o.classement == "galerie"
+                    and "galerie" in self.source.classements
+                    and inconnus):
                 self._progression(0, len(a_faire), "Identification des galeries…")
-                titres = self.resoudre_parents(inconnus, cache_titres=titres_caches)
+                titres = self.source.resoudre_groupes(
+                    inconnus, connus=titres_caches)
 
-            for i, (m, connu) in enumerate(a_faire, 1):
+            for i, (e, connu) in enumerate(a_faire, 1):
                 self._verifier_arret()
-                url = m["source_url"]
-                etat = manifeste.get(str(m["id"]))
+                url = e.url
+                etat = manifeste.get(e.ident)
                 if connu is not None:
                     fichier = connu
                 else:
-                    sous = self.dossier_pour(m, titres)
+                    sous = self.dossier_pour(e, titres)
                     # nettoyer("") renverrait "divers" et créerait un dossier fantôme
                     dossier = (self.o.dossier / nettoyer(sous)) if sous else self.o.dossier
-                    fichier = self.chemin_libre(
-                        dossier / Path(urlparse(url).path).name, m["id"], pris)
+                    nom = e.nom_fichier or Path(urlparse(url).path).name
+                    fichier = self.chemin_libre(dossier / nom, e.ident, pris)
 
                 statut, infos = self.telecharger(url, fichier, etat)
 
                 if infos:
                     infos["fichier"] = str(fichier.relative_to(self.o.dossier))
-                    manifeste[str(m["id"])] = infos
+                    # Métadonnées de la source (crédit, checksum…) : on les
+                    # copie dans le manifeste pour l'export catalogue à venir,
+                    # sans que le moteur les interprète.
+                    if e.extra:
+                        infos.setdefault("extra", {}).update(e.extra)
+                    manifeste[e.ident] = infos
                 if statut == "ok":
                     res.telechargees += 1
                     res.octets += infos["taille"]
@@ -603,7 +530,7 @@ class Moteur:
             # Mise à jour du cache : date maximale et titres nouvellement résolus.
             # On ne l'écrit qu'en sortie normale, jamais après une interruption
             # ou une erreur, pour ne pas mémoriser un état incomplet.
-            dates = [m["date"] for m in medias if m.get("date")]
+            dates = [e.date for e in elements if e.date]
             if dates:
                 ancienne = cache.get("derniere_date_media") or ""
                 cache["derniere_date_media"] = max(ancienne, max(dates))

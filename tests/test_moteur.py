@@ -1,13 +1,12 @@
 """Tests du moteur : utilitaires, manifeste, Moteur.executer et supprimer_image.
 
-Aucun accès réseau : `Moteur.telecharger` et `_api` sont mockés via
-`unittest.mock`. Les tests créent leur propre dossier temporaire avec
+Aucun accès réseau : `Moteur.telecharger` et l'adaptateur de source sont mockés
+via `unittest.mock`. Les tests créent leur propre dossier temporaire avec
 `tmp_path` et n'ont pas besoin des interfaces COM Windows.
 """
 
 from __future__ import annotations
 
-import io
 import json
 import threading
 from pathlib import Path
@@ -32,6 +31,7 @@ from WpImageDownloader.engine import (
     restaurer,
     supprimer_image,
 )
+from WpImageDownloader.sources import Element
 
 
 # --------------------------------------------------------------------------- #
@@ -328,9 +328,36 @@ class TestSupprimerImage:
 # --------------------------------------------------------------------------- #
 
 def _moteur(tmp_path, **kw):
-    """Construit un Moteur avec un Options par défaut, surchargable."""
+    """Construit un Moteur avec un Options par défaut, surchargable.
+
+    Le moteur construit un adaptateur `wordpress` par défaut ; les tests le
+    remplacent au besoin par un fake, ou patchent `moteur.source.inventaire`
+    / `moteur.source.resoudre_groupes`.
+    """
     options = Options(dossier=tmp_path, delai=0, **kw)
     return Moteur(options)
+
+
+def _element(ident, url="https://x/img.jpg", *, largeur=1600,
+             groupe=None, mois="2026-01", date="2026-01-01T00:00:00",
+             taille=None, nom_fichier=None, extra=None):
+    """Fabrique un Element pour les tests d'orchestration.
+
+    Défauts pensés pour représenter le cas WordPress moyen ; les tests de
+    Djangoplicity ont leur propre helper.
+    """
+    return Element(
+        ident=str(ident),
+        url=url,
+        nom_fichier=nom_fichier if nom_fichier is not None
+        else (url.rsplit("/", 1)[-1] if url else ""),
+        date=date,
+        mois=mois,
+        largeur=largeur,
+        taille=taille,
+        groupe=str(groupe) if groupe is not None else None,
+        extra=extra or {},
+    )
 
 
 class TestFichierComplet:
@@ -367,35 +394,35 @@ class TestFichierComplet:
 
 
 class TestDossierPour:
-    def _media(self, url="https://x/wp-content/uploads/2025/03/img.jpg", post=None):
-        return {"source_url": url, "post": post}
+    """`dossier_pour` est générique : il ne parle plus d'URL WP, il lit
+    `element.mois` et `element.groupe`."""
 
     def test_plat(self, tmp_path):
         m = _moteur(tmp_path, classement="plat")
-        assert m.dossier_pour(self._media(), {}) == ""
+        assert m.dossier_pour(_element(1), {}) == ""
 
     def test_date(self, tmp_path):
         m = _moteur(tmp_path, classement="date")
-        assert m.dossier_pour(self._media(), {}) == "2025-03"
+        assert m.dossier_pour(_element(1, mois="2025-03"), {}) == "2025-03"
 
-    def test_date_sans_match(self, tmp_path):
+    def test_date_sans_mois(self, tmp_path):
         m = _moteur(tmp_path, classement="date")
-        assert m.dossier_pour(self._media("https://x/autre-chemin.jpg"), {}) == "divers"
+        assert m.dossier_pour(_element(1, mois=None), {}) == "divers"
 
     def test_galerie_avec_titre(self, tmp_path):
         m = _moteur(tmp_path, classement="galerie")
-        media = self._media(post=17)
-        assert m.dossier_pour(media, {17: "match-du-siecle"}) == "match-du-siecle"
+        element = _element(1, groupe=17)
+        assert m.dossier_pour(element, {"17": "match-du-siecle"}) == "match-du-siecle"
 
     def test_galerie_sans_titre(self, tmp_path):
         m = _moteur(tmp_path, classement="galerie")
-        media = self._media(post=17)
-        assert m.dossier_pour(media, {}) == "contenu-17"
+        element = _element(1, groupe=17)
+        assert m.dossier_pour(element, {}) == "contenu-17"
 
-    def test_galerie_sans_post_bascule_date(self, tmp_path):
+    def test_galerie_sans_groupe_bascule_date(self, tmp_path):
         m = _moteur(tmp_path, classement="galerie")
-        media = self._media(post=None)
-        assert m.dossier_pour(media, {}) == "2025-03"
+        element = _element(1, groupe=None, mois="2025-03")
+        assert m.dossier_pour(element, {}) == "2025-03"
 
 
 class TestCheminLibre:
@@ -403,15 +430,15 @@ class TestCheminLibre:
         m = _moteur(tmp_path)
         dest = tmp_path / "sous" / "match.jpg"
         pris = set()
-        r = m.chemin_libre(dest, 42, pris)
+        r = m.chemin_libre(dest, "42", pris)
         assert r == dest
         assert "sous/match.jpg" in {p.replace("\\", "/") for p in pris}
 
-    def test_conflit_suffixe_id(self, tmp_path):
+    def test_conflit_suffixe_ident(self, tmp_path):
         m = _moteur(tmp_path)
         pris = {"sous/match.jpg", "sous\\match.jpg"}
         dest = tmp_path / "sous" / "match.jpg"
-        r = m.chemin_libre(dest, 42, pris)
+        r = m.chemin_libre(dest, "42", pris)
         assert r.name == "match-42.jpg"
 
 
@@ -546,14 +573,15 @@ class TestTelecharger:
 # Moteur.executer — orchestration
 # --------------------------------------------------------------------------- #
 
-def _media(id_, url="https://x/img.jpg", width=1600, post=None):
-    return {
-        "id": id_,
-        "source_url": url,
-        "media_details": {"width": width},
-        "post": post,
-        "date": "2026-01-01T00:00:00",
-    }
+def _patch_inventaire(moteur, elements):
+    """Raccourci : patch `moteur.source.inventaire` pour renvoyer `elements`.
+
+    L'adaptateur d'inventaire est ce que le moteur consomme désormais ; les
+    tests d'orchestration ne testent plus l'appel API brut, mais bien
+    l'orchestration en aval du contrat `Element`.
+    """
+    return patch.object(moteur.source, "inventaire",
+                        return_value=iter(elements))
 
 
 class TestExecuter:
@@ -563,12 +591,23 @@ class TestExecuter:
                    "supprime": "2026-01-01T00:00:00"},
         })
         moteur = _moteur(tmp_path)
-        with patch.object(moteur, "lister_medias", return_value=[_media(42)]), \
+        with _patch_inventaire(moteur, [_element(42)]), \
              patch.object(moteur, "telecharger") as tel:
             res = moteur.executer()
         assert res.ignorees == 1
         assert tel.call_count == 0
         assert "supprime" in lire_manifeste(tmp_path)["42"]
+
+    def test_ignore_les_elements_sans_url(self, tmp_path):
+        # Une source qui n'a pas trouvé de ressource au format demandé : le
+        # moteur doit compter ignoree, sans planter.
+        moteur = _moteur(tmp_path, classement="date")
+        sans_url = _element(1, url=None, nom_fichier="", mois="2026-01")
+        with _patch_inventaire(moteur, [sans_url]), \
+             patch.object(moteur, "telecharger") as tel:
+            res = moteur.executer()
+        assert res.ignorees == 1
+        assert tel.call_count == 0
 
     def test_detecte_effacement_disque(self, tmp_path):
         # état complet mais fichier disparu → marquée supprime, pas de download
@@ -576,7 +615,7 @@ class TestExecuter:
             "8": {"fichier": "manquant.jpg", "taille": 10},
         })
         moteur = _moteur(tmp_path)
-        with patch.object(moteur, "lister_medias", return_value=[_media(8)]), \
+        with _patch_inventaire(moteur, [_element(8, taille=10)]), \
              patch.object(moteur, "telecharger") as tel:
             res = moteur.executer()
         assert res.supprimees == 1
@@ -590,7 +629,7 @@ class TestExecuter:
             "1": {"fichier": "ok.jpg", "taille": 10},
         })
         moteur = _moteur(tmp_path)
-        with patch.object(moteur, "lister_medias", return_value=[_media(1)]), \
+        with _patch_inventaire(moteur, [_element(1, taille=10)]), \
              patch.object(moteur, "telecharger") as tel:
             res = moteur.executer()
         assert res.deja_presentes == 1
@@ -598,9 +637,9 @@ class TestExecuter:
 
     def test_telechargement(self, tmp_path):
         moteur = _moteur(tmp_path, classement="date")
-        with patch.object(moteur, "lister_medias",
-                          return_value=[_media(5,
-                                               url="https://x/wp-content/uploads/2026/03/f.jpg")]), \
+        el = _element(5, url="https://x/wp-content/uploads/2026/03/f.jpg",
+                      mois="2026-03")
+        with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 12, "etag": "e",
                                                "modifie": "m", "url": "u"})):
@@ -613,9 +652,9 @@ class TestExecuter:
 
     def test_reprise_incrementale(self, tmp_path):
         moteur = _moteur(tmp_path, classement="date")
-        with patch.object(moteur, "lister_medias",
-                          return_value=[_media(5,
-                                               url="https://x/wp-content/uploads/2026/03/f.jpg")]), \
+        el = _element(5, url="https://x/wp-content/uploads/2026/03/f.jpg",
+                      mois="2026-03")
+        with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("repris", {"taille": 3, "etag": "",
                                                    "modifie": "", "url": "u"})):
@@ -625,9 +664,9 @@ class TestExecuter:
 
     def test_echec_reseau(self, tmp_path):
         moteur = _moteur(tmp_path, classement="date")
-        with patch.object(moteur, "lister_medias",
-                          return_value=[_media(5,
-                                               url="https://x/wp-content/uploads/2026/03/f.jpg")]), \
+        el = _element(5, url="https://x/wp-content/uploads/2026/03/f.jpg",
+                      mois="2026-03")
+        with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("erreur : boum", None)):
             res = moteur.executer()
@@ -635,17 +674,16 @@ class TestExecuter:
 
     def test_aucune_image(self, tmp_path):
         moteur = _moteur(tmp_path)
-        with patch.object(moteur, "lister_medias", return_value=[]):
+        with _patch_inventaire(moteur, []):
             res = moteur.executer()
         assert "Aucune image" in res.message
 
     def test_filtre_largeur_min(self, tmp_path):
         moteur = _moteur(tmp_path, classement="date", largeur_min=1000)
-        petits = _media(1, width=200)
-        grand = _media(2, url="https://x/wp-content/uploads/2026/04/big.jpg",
-                       width=2000)
-        with patch.object(moteur, "lister_medias",
-                          return_value=[petits, grand]), \
+        petit = _element(1, largeur=200, mois="2026-04")
+        grand = _element(2, url="https://x/wp-content/uploads/2026/04/big.jpg",
+                         largeur=2000, mois="2026-04")
+        with _patch_inventaire(moteur, [petit, grand]), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})):
@@ -659,14 +697,14 @@ class TestExecuter:
         def leve(*_a, **_kw):
             raise Interrompu()
 
-        with patch.object(moteur, "lister_medias", side_effect=leve):
+        with patch.object(moteur.source, "inventaire", side_effect=leve):
             res = moteur.executer()
         assert res.interrompu is True
         assert "Interrompu" in res.message
 
     def test_erreur_api_capturee(self, tmp_path):
         moteur = _moteur(tmp_path)
-        with patch.object(moteur, "lister_medias",
+        with patch.object(moteur.source, "inventaire",
                           side_effect=RuntimeError("API HS")):
             res = moteur.executer()
         assert "API HS" in res.message
@@ -679,217 +717,15 @@ class TestExecuter:
                   "supprime": "2026-01-01T00:00:00"},
         })
         moteur = _moteur(tmp_path, classement="date", force=True)
-        with patch.object(moteur, "lister_medias",
-                          return_value=[_media(1,
-                                               url="https://x/wp-content/uploads/2026/03/a.jpg")]), \
+        el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
+                      mois="2026-03")
+        with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})) as tel:
             res = moteur.executer()
         assert res.telechargees == 1
         assert tel.call_count == 1
-
-
-# --------------------------------------------------------------------------- #
-# lister_medias / _bases_rest / resoudre_parents : boucle sur _api mocké
-# --------------------------------------------------------------------------- #
-
-class TestListerMedias:
-    def test_pagination(self, tmp_path):
-        moteur = _moteur(tmp_path)
-        page1 = [_media(1), _media(2)]
-        page2 = [_media(3)]
-        appels = []
-
-        def faux_api(chemin, params=None):
-            appels.append(params.get("page"))
-            headers = {"X-WP-Total": "3", "X-WP-TotalPages": "2"}
-            if params["page"] == 1:
-                return page1, headers
-            return page2, headers
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            r = moteur.lister_medias()
-        assert [m["id"] for m in r] == [1, 2, 3]
-        assert appels == [1, 2]
-
-    def test_deduplication(self, tmp_path):
-        moteur = _moteur(tmp_path)
-
-        def faux_api(chemin, params=None):
-            headers = {"X-WP-Total": "3", "X-WP-TotalPages": "2"}
-            if params["page"] == 1:
-                return [_media(1), _media(2)], headers
-            # page 2 renvoie l'id 2 en double + 3 nouveau
-            return [_media(2), _media(3)], headers
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            r = moteur.lister_medias()
-        assert sorted(m["id"] for m in r) == [1, 2, 3]
-
-    def test_arret_immediat_si_pas_de_pages_totales(self, tmp_path):
-        # sans pages_totales et un lot vide, la boucle sort dès la 1ʳᵉ page
-        moteur = _moteur(tmp_path)
-        appels = []
-
-        def faux_api(chemin, params=None):
-            appels.append(params.get("page"))
-            return [], {"X-WP-TotalPages": "0"}
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            r = moteur.lister_medias()
-        assert r == []
-        assert len(appels) == 1
-
-    def test_stop_sur_deux_pages_vides_apres_contenu(self, tmp_path):
-        # une fois pages_totales connu, il faut deux vides consécutives
-        moteur = _moteur(tmp_path)
-        appels = []
-
-        def faux_api(chemin, params=None):
-            appels.append(params.get("page"))
-            headers = {"X-WP-Total": "1", "X-WP-TotalPages": "9"}
-            if params["page"] == 1:
-                return [_media(1)], headers
-            return [], headers   # pages 2 et 3 vides
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            r = moteur.lister_medias()
-        assert [m["id"] for m in r] == [1]
-        assert appels == [1, 2, 3]
-
-    def test_stop_sur_400_via_lot_none_page1(self, tmp_path):
-        # première page = None (400) : sortie immédiate
-        moteur = _moteur(tmp_path)
-        with patch.object(moteur, "_api",
-                          return_value=(None, {"X-WP-TotalPages": "0"})):
-            r = moteur.lister_medias()
-        assert r == []
-
-    def test_borne_par_pages_totales(self, tmp_path):
-        moteur = _moteur(tmp_path)
-        appels = []
-
-        def faux_api(chemin, params=None):
-            appels.append(params.get("page"))
-            return [_media(params["page"])], {"X-WP-TotalPages": "3"}
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            moteur.lister_medias()
-        assert appels == [1, 2, 3]   # ne va pas au-delà de la 3e page
-
-    def test_filtre_depuis_et_jusqua(self, tmp_path):
-        moteur = _moteur(tmp_path, depuis="2026-01-01", jusqua="2026-12-31")
-        capture = {}
-
-        def faux_api(chemin, params=None):
-            capture.update(params)
-            return [], {"X-WP-TotalPages": "0"}
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            moteur.lister_medias()
-        assert capture["after"].startswith("2026-01-01T")
-        assert capture["before"].startswith("2026-12-31T")
-
-
-class TestBasesRest:
-    def test_replie_sur_defaut_si_api_ko(self, tmp_path):
-        moteur = _moteur(tmp_path)
-        with patch.object(moteur, "_api", side_effect=RuntimeError("HS")):
-            assert moteur._bases_rest() == ["posts", "pages"]
-
-    def test_ecarte_types_techniques(self, tmp_path):
-        moteur = _moteur(tmp_path)
-        types = {
-            "post": {"rest_base": "posts"},
-            "page": {"rest_base": "pages"},
-            "galerie": {"rest_base": "galeries"},
-            "attachment": {"rest_base": "media"},
-            "wp_block": {"rest_base": "blocks"},
-            "nav_menu_item": {"rest_base": "menu-items"},
-        }
-        with patch.object(moteur, "_api", return_value=(types, {})):
-            bases = moteur._bases_rest()
-        assert "media" not in bases
-        assert "blocks" not in bases
-        assert "menu-items" not in bases
-        # les galeries passent en premier grâce au tri (« galer »)
-        assert bases[0] == "galeries"
-
-
-class TestResoudreParents:
-    def test_lookup_titre(self, tmp_path):
-        moteur = _moteur(tmp_path)
-
-        def faux_api(chemin, params=None):
-            if chemin == "types":
-                return {"post": {"rest_base": "posts"}}, {}
-            items = [{"id": 42, "slug": "match-du-siecle",
-                      "title": {"rendered": "Match du siècle"}}]
-            return items, {}
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            titres = moteur.resoudre_parents({42})
-        assert titres == {42: "match-du-siecle"}
-
-    def test_non_trouve_journalise(self, tmp_path):
-        journal = []
-        moteur = _moteur(tmp_path)
-        moteur._journal = journal.append
-
-        def faux_api(chemin, params=None):
-            if chemin == "types":
-                return {"post": {"rest_base": "posts"}}, {}
-            return [], {}   # pas de correspondance
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            titres = moteur.resoudre_parents({99})
-        assert titres == {}
-        # un message signale les galeries non identifiées
-        assert any("non identifi" in m for m in journal)
-
-    def test_set_vide(self, tmp_path):
-        moteur = _moteur(tmp_path)
-        assert moteur.resoudre_parents(set()) == {}
-
-    def test_arret_boucle_quand_restants_vides(self, tmp_path):
-        # premier base trouve tout : le second n'est jamais interrogé
-        moteur = _moteur(tmp_path)
-        appels = []
-
-        def faux_api(chemin, params=None):
-            appels.append(chemin)
-            if chemin == "types":
-                return {
-                    "a": {"rest_base": "galeries"},
-                    "b": {"rest_base": "posts"},
-                }, {}
-            if chemin == "galeries":
-                return [{"id": 42, "slug": "match"}], {}
-            return [], {}
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            titres = moteur.resoudre_parents({42})
-        assert titres == {42: "match"}
-        assert "posts" not in appels
-
-    def test_runtime_error_sur_un_base_continue(self, tmp_path):
-        # RuntimeError sur une base → on saute et on tente la suivante
-        moteur = _moteur(tmp_path)
-
-        def faux_api(chemin, params=None):
-            if chemin == "types":
-                return {
-                    "a": {"rest_base": "galeries"},
-                    "b": {"rest_base": "posts"},
-                }, {}
-            if chemin == "galeries":
-                raise RuntimeError("HS")
-            return [{"id": 42, "slug": "trouve"}], {}
-
-        with patch.object(moteur, "_api", side_effect=faux_api):
-            titres = moteur.resoudre_parents({42})
-        assert titres == {42: "trouve"}
 
 
 # --------------------------------------------------------------------------- #
@@ -908,9 +744,28 @@ class TestMoteurInit:
         assert m.arret is not None
         assert m.arret.is_set() is False
 
+    def test_source_par_defaut_est_wordpress(self, tmp_path):
+        # Options par défaut : type_source == "wordpress"
+        m = Moteur(Options(dossier=tmp_path, delai=0))
+        assert m.source.type == "wordpress"
+
+    def test_source_djangoplicity_choisi_via_options(self, tmp_path):
+        m = Moteur(Options(dossier=tmp_path, delai=0,
+                           type_source="djangoplicity",
+                           format_image="Small"))
+        assert m.source.type == "djangoplicity"
+        # le format est transmis à l'adaptateur via `reglages`
+        assert m.source.format_image == "Small"
+
+    def test_type_inconnu_repli_sur_wordpress(self, tmp_path):
+        # défensif : un type inconnu (config corrompue) ne doit pas planter
+        m = Moteur(Options(dossier=tmp_path, delai=0,
+                           type_source="inconnu"))
+        assert m.source.type == "wordpress"
+
 
 # --------------------------------------------------------------------------- #
-# _api : rejeux, cas 400, RuntimeError
+# Plomberie : arrêt coopératif
 # --------------------------------------------------------------------------- #
 
 class TestPlomberieMoteur:
@@ -931,45 +786,6 @@ class TestPlomberieMoteur:
         avant = time.monotonic()
         m._pause(0.01)
         assert time.monotonic() - avant >= 0.005
-
-
-class TestApi:
-    def test_reponse_400_renvoie_none(self, tmp_path):
-        m = _moteur(tmp_path)
-        m.session = MagicMock()
-        m.session.get.return_value = FakeResponse(400, {"h": "1"})
-        payload, headers = m._api("media", {"page": 999})
-        assert payload is None
-        assert headers.get("h") == "1"
-
-    def test_reponse_normale(self, tmp_path):
-        m = _moteur(tmp_path)
-        rep = MagicMock(status_code=200, headers={"h": "1"})
-        rep.json.return_value = [{"id": 1}]
-        rep.raise_for_status = MagicMock()
-        m.session = MagicMock()
-        m.session.get.return_value = rep
-        payload, _ = m._api("media")
-        assert payload == [{"id": 1}]
-
-    def test_rejeu_puis_succes(self, tmp_path):
-        m = _moteur(tmp_path)
-        m.session = MagicMock()
-        bon = MagicMock(status_code=200, headers={})
-        bon.json.return_value = {"ok": True}
-        bon.raise_for_status = MagicMock()
-        m.session.get.side_effect = [requests.ConnectionError("boum"), bon]
-        with patch.object(m, "_pause"):   # évite les 2 secondes de vraie pause
-            payload, _ = m._api("types")
-        assert payload == {"ok": True}
-        assert m.session.get.call_count == 2
-
-    def test_echec_repete_leve_runtime(self, tmp_path):
-        m = _moteur(tmp_path)
-        m.session = MagicMock()
-        m.session.get.side_effect = requests.ConnectionError("HS")
-        with patch.object(m, "_pause"), pytest.raises(RuntimeError):
-            m._api("media")
 
 
 # --------------------------------------------------------------------------- #
@@ -1000,10 +816,12 @@ class TestChargerManifeste:
 # --------------------------------------------------------------------------- #
 
 class TestExecuterExtra:
-    def test_site_configurable_et_slash_final_normalise(self, tmp_path):
+    def test_base_normalise_slash_final(self, tmp_path):
+        # la base du moteur enlève le slash final ; c'est aussi ce que voit
+        # l'adaptateur.
         moteur = _moteur(tmp_path, site="https://example.test/")
         assert moteur.base == "https://example.test"
-        assert moteur.api == "https://example.test/wp-json/wp/v2"
+        assert moteur.source.base == "https://example.test"
 
     def test_status_inchange_compte_dans_inchangees(self, tmp_path):
         # fichier connu à revérifier avec 304
@@ -1013,19 +831,19 @@ class TestExecuterExtra:
             "1": {"fichier": "ok.jpg", "taille": 5, "etag": "e"},
         })
         moteur = _moteur(tmp_path, verifier=True)
-        with patch.object(moteur, "lister_medias", return_value=[_media(1)]), \
+        with _patch_inventaire(moteur, [_element(1, taille=5)]), \
              patch.object(moteur, "telecharger",
                           return_value=("inchangé",
                                         {"fichier": "ok.jpg", "taille": 5, "etag": "e"})):
             res = moteur.executer()
         assert res.inchangees == 1
 
-    def test_resoudre_galeries_appele_en_mode_galerie(self, tmp_path):
+    def test_resoudre_groupes_appele_en_mode_galerie(self, tmp_path):
         moteur = _moteur(tmp_path, classement="galerie")
-        with patch.object(moteur, "lister_medias",
-                          return_value=[_media(1, post=42)]), \
-             patch.object(moteur, "resoudre_parents",
-                          return_value={42: "match-42"}) as res_parents, \
+        el = _element(1, groupe=42)
+        with _patch_inventaire(moteur, [el]), \
+             patch.object(moteur.source, "resoudre_groupes",
+                          return_value={"42": "match-42"}) as res_parents, \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})):
@@ -1036,9 +854,25 @@ class TestExecuterExtra:
         m = lire_manifeste(tmp_path)
         assert m["1"]["fichier"].replace("\\", "/").startswith("match-42/")
 
+    def test_resoudre_groupes_ignore_si_source_ne_les_supporte_pas(self, tmp_path):
+        # Djangoplicity n'a pas « galerie » dans ses classements. Même si
+        # l'utilisateur l'a laissé dans son options, le moteur ne doit pas
+        # appeler resoudre_groupes, et retomber sur le classement par date.
+        moteur = _moteur(tmp_path, classement="galerie",
+                         type_source="djangoplicity")
+        el = _element(1, groupe="42", mois="2026-03",
+                      url="https://cdn.eso.org/large/potw.jpg")
+        with _patch_inventaire(moteur, [el]), \
+             patch.object(moteur.source, "resoudre_groupes") as res_g, \
+             patch.object(moteur, "telecharger",
+                          return_value=("ok", {"taille": 1, "etag": "",
+                                               "modifie": "", "url": "u"})):
+            moteur.executer()
+        res_g.assert_not_called()
+
     def test_oserror_capturee(self, tmp_path):
         moteur = _moteur(tmp_path)
-        with patch.object(moteur, "lister_medias",
+        with patch.object(moteur.source, "inventaire",
                           side_effect=OSError("disque plein")):
             res = moteur.executer()
         assert "disque plein" in res.message
@@ -1047,8 +881,8 @@ class TestExecuterExtra:
         moteur = _moteur(tmp_path, classement="date", largeur_min=1000)
         journal = []
         moteur._journal = journal.append
-        with patch.object(moteur, "lister_medias",
-                          return_value=[_media(1, width=200), _media(2, width=300)]):
+        with _patch_inventaire(moteur, [_element(1, largeur=200),
+                                        _element(2, largeur=300)]):
             moteur.executer()
         assert any("écarté" in m for m in journal)
 
@@ -1056,9 +890,12 @@ class TestExecuterExtra:
         # 26 images : sauver_manifeste doit être appelé au moins à la 25ème
         # et une fois de plus dans finally
         moteur = _moteur(tmp_path, classement="date")
-        medias = [_media(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg")
-                  for i in range(1, 27)]
-        with patch.object(moteur, "lister_medias", return_value=medias), \
+        elements = [
+            _element(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg",
+                     mois="2026-03")
+            for i in range(1, 27)
+        ]
+        with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})), \
@@ -1066,6 +903,22 @@ class TestExecuterExtra:
             moteur.executer()
         # au moins 2 appels : périodique + finally
         assert sauver.call_count >= 2
+
+    def test_metadata_source_ecrite_dans_manifeste(self, tmp_path):
+        # Un adaptateur (Djangoplicity) peut fournir crédit / droits / checksum
+        # dans `element.extra` : le moteur les recopie dans le manifeste sans
+        # les interpréter — utile pour l'export catalogue à venir.
+        moteur = _moteur(tmp_path, classement="date")
+        el = _element(7, url="https://cdn.eso.org/large/eso1907a.jpg",
+                      mois="2026-03",
+                      extra={"credit": "ESO/T. Preibisch"})
+        with _patch_inventaire(moteur, [el]), \
+             patch.object(moteur, "telecharger",
+                          return_value=("ok", {"taille": 1, "etag": "",
+                                               "modifie": "", "url": "u"})):
+            moteur.executer()
+        stocke = lire_manifeste(tmp_path)["7"]
+        assert stocke.get("extra", {}).get("credit") == "ESO/T. Preibisch"
 
 
 # --------------------------------------------------------------------------- #
@@ -1124,7 +977,7 @@ class TestCacheAPI:
         assert not chemin_cache(tmp_path).exists()
 
     def test_executer_utilise_date_du_cache_comme_after(self, tmp_path):
-        # Un cache pré-existant doit être passé à lister_medias comme override
+        # Un cache pré-existant doit être passé à `source.inventaire` comme depuis
         ecrire_cache(tmp_path, {
             "site": "https://x.example",
             "derniere_date_media": "2026-06-15T12:00:00",
@@ -1132,11 +985,11 @@ class TestCacheAPI:
         m = _moteur(tmp_path, site="https://x.example", classement="date")
         capture = {}
 
-        def faux_lister(depuis_override=None):
-            capture["depuis"] = depuis_override
-            return []
+        def faux_inventaire(depuis, jusqua):
+            capture["depuis"] = depuis
+            return iter([])
 
-        with patch.object(m, "lister_medias", side_effect=faux_lister):
+        with patch.object(m.source, "inventaire", side_effect=faux_inventaire):
             m.executer()
         assert capture["depuis"] == "2026-06-15T12:00:00"
 
@@ -1146,24 +999,24 @@ class TestCacheAPI:
                     classement="date")
         capture = {}
 
-        def faux_lister(depuis_override=None):
-            capture["depuis"] = depuis_override
-            return []
+        def faux_inventaire(depuis, jusqua):
+            capture["depuis"] = depuis
+            return iter([])
 
-        with patch.object(m, "lister_medias", side_effect=faux_lister):
+        with patch.object(m.source, "inventaire", side_effect=faux_inventaire):
             m.executer()
         # avec `depuis` utilisateur, on n'injecte PAS la date du cache
-        assert capture["depuis"] is None
+        assert capture["depuis"] == "2020-01-01"
 
     def test_executer_met_a_jour_la_date_max(self, tmp_path):
         m = _moteur(tmp_path, site="https://x", classement="date")
-        medias = [
-            _media(1, url="https://x/wp-content/uploads/2026/03/a.jpg"),
-            _media(2, url="https://x/wp-content/uploads/2026/06/b.jpg"),
+        elements = [
+            _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
+                     mois="2026-03", date="2026-03-10T08:00:00"),
+            _element(2, url="https://x/wp-content/uploads/2026/06/b.jpg",
+                     mois="2026-06", date="2026-06-20T09:30:00"),
         ]
-        medias[0]["date"] = "2026-03-10T08:00:00"
-        medias[1]["date"] = "2026-06-20T09:30:00"
-        with patch.object(m, "lister_medias", return_value=medias), \
+        with _patch_inventaire(m, elements), \
              patch.object(m, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})):
@@ -1174,10 +1027,11 @@ class TestCacheAPI:
 
     def test_executer_cache_les_titres_de_galeries(self, tmp_path):
         m = _moteur(tmp_path, site="https://x", classement="galerie")
-        media = _media(1, url="https://x/wp-content/uploads/2026/03/a.jpg", post=42)
-        with patch.object(m, "lister_medias", return_value=[media]), \
-             patch.object(m, "resoudre_parents",
-                          return_value={42: "match-a"}) as res_p, \
+        el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
+                      groupe=42, mois="2026-03")
+        with _patch_inventaire(m, [el]), \
+             patch.object(m.source, "resoudre_groupes",
+                          return_value={"42": "match-a"}) as res_p, \
              patch.object(m, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})):
@@ -1186,36 +1040,68 @@ class TestCacheAPI:
         res_p.assert_called_once()
 
     def test_executer_reutilise_titres_caches(self, tmp_path):
-        # Cache pré-rempli : le prochain run n'appelle plus l'API pour cet ID
+        # Cache pré-rempli : le moteur passe le cache à l'adaptateur, qui doit
+        # renvoyer le nom sans appeler d'API (contrat testé sur WordPress dans
+        # `test_source_wordpress::TestResoudreGroupes::test_court_circuite_sur_cache_connus`).
+        # Ici on vérifie l'orchestration côté moteur.
         ecrire_cache(tmp_path, {
             "site": "https://x",
             "titres_parents": {"42": "match-cache"},
         })
         m = _moteur(tmp_path, site="https://x", classement="galerie")
-        media = _media(1, url="https://x/wp-content/uploads/2026/03/a.jpg", post=42)
-        with patch.object(m, "lister_medias", return_value=[media]), \
-             patch.object(m, "_bases_rest") as bases, \
+        el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
+                      groupe=42, mois="2026-03")
+        appels = []
+
+        def faux_resoudre(cles, connus=None):
+            appels.append((cles, dict(connus or {})))
+            # comportement de l'adaptateur : les entrées connues sont reprises
+            # telles quelles, aucune requête n'est faite pour elles.
+            return dict(connus or {})
+
+        with _patch_inventaire(m, [el]), \
+             patch.object(m.source, "resoudre_groupes", side_effect=faux_resoudre), \
              patch.object(m, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})):
             m.executer()
-        # _bases_rest ne doit jamais avoir été appelé : le titre venait du cache
-        bases.assert_not_called()
+        # l'adaptateur a reçu le cache : à lui de court-circuiter.
+        assert appels and appels[0][1] == {"42": "match-cache"}
         # le fichier a été rangé dans « match-cache »
         assert lire_manifeste(tmp_path)["1"]["fichier"].replace("\\", "/") \
             .startswith("match-cache/")
 
-    def test_resoudre_parents_court_circuite_sur_cache(self, tmp_path):
-        m = _moteur(tmp_path)
-        with patch.object(m, "_api") as api:
-            r = m.resoudre_parents({42}, cache_titres={42: "deja-connu"})
-        assert r == {42: "deja-connu"}
-        api.assert_not_called()
-
     def test_interruption_ne_sauve_pas_le_cache(self, tmp_path):
         m = _moteur(tmp_path, site="https://x")
-        with patch.object(m, "lister_medias", side_effect=Interrompu()):
+        with patch.object(m.source, "inventaire", side_effect=Interrompu()):
             r = m.executer()
         assert r.interrompu is True
         # aucune écriture de cache : la date max n'a pas été validée
         assert not chemin_cache(tmp_path).exists()
+
+    def test_charger_cache_ignore_si_type_change(self, tmp_path):
+        # cache écrit sous type "wordpress", moteur créé sous type
+        # "djangoplicity" : deux espaces d'identifiants distincts, on
+        # repart de zéro.
+        ecrire_cache(tmp_path, {
+            "site": "https://x", "type_source": "wordpress",
+            "derniere_date_media": "2026-06-01T00:00:00",
+        })
+        m = _moteur(tmp_path, site="https://x", type_source="djangoplicity")
+        assert m.charger_cache() == {}
+
+    def test_charger_cache_migration_silencieuse_sans_type(self, tmp_path):
+        # cache pré-existant sans champ `type_source` (config v1.0.38) : on
+        # le lit comme s'il correspondait au type courant, pas de perte.
+        ecrire_cache(tmp_path, {
+            "site": "https://x",
+            "derniere_date_media": "2026-06-01T00:00:00",
+        })
+        m = _moteur(tmp_path, site="https://x")   # défaut : wordpress
+        assert m.charger_cache()["derniere_date_media"] == "2026-06-01T00:00:00"
+
+    def test_sauver_cache_ajoute_le_type_source(self, tmp_path):
+        m = _moteur(tmp_path, site="https://y", type_source="djangoplicity")
+        m.sauver_cache({"derniere_date_media": "2026-01-01T00:00:00"})
+        stocke = lire_cache(tmp_path)
+        assert stocke["type_source"] == "djangoplicity"

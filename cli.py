@@ -23,8 +23,16 @@ from WpImageDownloader.engine import (
 
 def main() -> int:
     c = Config.charger()
-    p = argparse.ArgumentParser(description="Télécharge les images d'un site WordPress.")
+    p = argparse.ArgumentParser(
+        description="Télécharge les images d'un site (WordPress ou Djangoplicity).")
     p.add_argument("-d", "--dossier", default=c.dossier, help="dossier de destination")
+    p.add_argument("--type", dest="type_source",
+                   choices=["wordpress", "djangoplicity"],
+                   default=c.type_source, help="type de site à interroger")
+    p.add_argument("--format", dest="format_image",
+                   choices=["Large", "Original", "Small"],
+                   default=c.format_image,
+                   help="résolution Djangoplicity (ignoré pour WordPress)")
     p.add_argument("--classement", choices=["galerie", "date", "plat"],
                    default=c.classement)
     p.add_argument("--largeur-min", type=int, default=c.largeur_min)
@@ -55,6 +63,8 @@ def main() -> int:
         depuis=args.depuis,
         jusqua=args.jusqua,
         utiliser_cache=not args.pas_cache,
+        type_source=args.type_source,
+        format_image=args.format_image,
     )
 
     dernier = [""]
