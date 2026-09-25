@@ -18,12 +18,19 @@ Décisions actées au moment de la planification :
 
 ## US-01 — Inventaire des docstrings et choix confirmé du style
 
-- [ ] Lister les modules et symboles publics de `Glaneur/`, `app.py`,
+- [x] Lister les modules et symboles publics de `Glaneur/`, `app.py`,
       `cli.py`, `servette/`.
-- [ ] Classer chaque docstring : absent / prose libre / rST partiel.
-- [ ] Confirmer Napoleon (Google-style) et documenter le choix dans
+- [x] Classer chaque docstring : absent / prose libre / rST partiel.
+- [x] Confirmer Napoleon (Google-style) et documenter le choix dans
       `docs/sphinx/README.md`.
-- [ ] Établir l'ordre de conversion pour US-03 en fonction du volume mesuré.
+- [x] Établir l'ordre de conversion pour US-03 en fonction du volume mesuré.
+
+Résultat : 137 symboles publics, 65 avec docstring (47 %), 100 % en prose
+libre. Aucune conversion rST à faire, uniquement de l'enrichissement
+Napoleon. Détails et ordre de conversion dans `docs/sphinx/README.md`.
+
+`servette/` sort du périmètre : ne contient que du `.pyc` (résidu du
+rename), à traiter par un lot de nettoyage séparé.
 
 Impact Map : lecture seule. Validation : aucune.
 
