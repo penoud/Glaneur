@@ -22,6 +22,19 @@ from Glaneur.engine import (
 
 
 def main() -> int:
+    """Point d'entrée de la CLI.
+
+    Parse la ligne de commande, applique les arguments par-dessus la
+    configuration persistée, exécute un run du :class:`Glaneur.engine.Moteur`
+    et imprime un résumé lisible sur stdout. Une interruption clavier
+    (``Ctrl+C``) propage un ``arret`` coopératif au moteur avant de
+    sortir.
+
+    Returns:
+        ``0`` si le run s'est bien terminé, ``1`` si tous les
+        téléchargements ont échoué sans qu'aucun nouveau fichier ne soit
+        récupéré, ``130`` sur interruption clavier (convention shell).
+    """
     c = Config.charger()
     p = argparse.ArgumentParser(
         description="Télécharge les images d'un site (WordPress ou Djangoplicity).")
@@ -70,6 +83,14 @@ def main() -> int:
     dernier = [""]
 
     def progression(fait: int, total: int, etiquette: str) -> None:
+        """Callback de progression : réécrit une seule ligne sur stdout.
+
+        Args:
+            fait: Nombre d'éléments traités.
+            total: Nombre d'éléments à traiter.
+            etiquette: Libellé court à afficher (tronqué à 60
+                caractères).
+        """
         ligne = f"\r  {fait}/{total} — {etiquette[:60]:<60}"
         if ligne != dernier[0]:
             sys.stdout.write(ligne)

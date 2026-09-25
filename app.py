@@ -136,11 +136,19 @@ class Travailleur(QThread):
     fini = Signal(object)
 
     def __init__(self, options: Options, arret: threading.Event) -> None:
+        """Prépare le thread avec ses ``options`` et son event d'arrêt partagé.
+
+        Args:
+            options: Paramètres du moteur (dossier, site, filtres…).
+            arret: ``threading.Event`` positionné depuis l'UI pour
+                interrompre le run coopérativement.
+        """
         super().__init__()
         self.options = options
         self.arret = arret
 
     def run(self) -> None:
+        """Instancie le moteur et lance le run ; émet ``fini(Resultat)`` en sortie."""
         moteur = Moteur(
             self.options,
             journal=self.journal.emit,
@@ -158,6 +166,13 @@ class DialogueSupprimees(QDialog):
     """Liste les images effacées du disque et propose de les remettre en file."""
 
     def __init__(self, parent, entrees: list[dict]) -> None:
+        """Construit le dialogue à partir de la liste d'entrées supprimées.
+
+        Args:
+            parent: Widget parent Qt.
+            entrees: Liste d'entrées telle que renvoyée par
+                :func:`Glaneur.engine.lister_supprimees`.
+        """
         super().__init__(parent)
         self.setWindowTitle(self.tr("Images supprimées"))
         self.resize(540, 380)
@@ -190,6 +205,11 @@ class DialogueSupprimees(QDialog):
             self.liste.item(i).setCheckState(Qt.Checked)
 
     def choix(self) -> list[str]:
+        """Renvoie les identifiants des lignes cochées par l'utilisateur.
+
+        Returns:
+            Les ``id`` (au sens du manifeste) des entrées à restaurer.
+        """
         return [self.entrees[i]["id"] for i in range(self.liste.count())
                 if self.liste.item(i).checkState() == Qt.Checked]
 
@@ -203,6 +223,13 @@ class DialoguePreferences(QDialog):
     quand l'utilisateur valide, via `appliquer()`. Cancel = tout est jeté."""
 
     def __init__(self, parent, cfg: Config) -> None:
+        """Construit le dialogue et initialise les champs depuis ``cfg``.
+
+        Args:
+            parent: Widget parent Qt.
+            cfg: Instance :class:`Glaneur.config.Config` à éditer. Ne
+                sera modifiée qu'à l'appel de :meth:`appliquer`.
+        """
         super().__init__(parent)
         self.setWindowTitle(self.tr("Préférences"))
         self.setMinimumSize(560, 420)
@@ -458,6 +485,13 @@ class DialogueSignalerBug(QDialog):
     """
 
     def __init__(self, parent, chemin_log: Path | None) -> None:
+        """Construit le formulaire, en pré-remplissant le contexte technique.
+
+        Args:
+            parent: Widget parent Qt.
+            chemin_log: Chemin du fichier de log à joindre au bug
+                report, ou ``None`` pour ne rien joindre.
+        """
         super().__init__(parent)
         self.setWindowTitle(self.tr("Signaler un bug"))
         self.setMinimumSize(560, 460)
@@ -536,6 +570,11 @@ class DialogueAPropos(QDialog):
     """Fenêtre d'information sur l'application."""
 
     def __init__(self, parent) -> None:
+        """Construit le dialogue « À propos » de taille fixe.
+
+        Args:
+            parent: Widget parent Qt.
+        """
         super().__init__(parent)
         self.setWindowTitle(self.tr("À propos de Glaneur"))
         self.setFixedSize(440, 320)
@@ -593,7 +632,17 @@ class DialogueAPropos(QDialog):
 # --------------------------------------------------------------------------- #
 
 class Fenetre(QMainWindow):
+    """Fenêtre principale de l'application.
+
+    Orchestre la configuration, le moteur (via :class:`Travailleur`), le
+    planificateur, l'icône de zone de notification et la vérification
+    de mises à jour au démarrage. Toute la logique métier vit ailleurs :
+    cette classe se contente d'assembler les widgets et de relayer les
+    signaux entre eux.
+    """
+
     def __init__(self) -> None:
+        """Charge la configuration, monte l'UI et démarre le minuteur d'échéance."""
         super().__init__()
         self.setWindowTitle(self.tr("Glaneur — Téléchargeur d'images {version}").format(
             version=__version__))
@@ -1168,6 +1217,20 @@ class Fenetre(QMainWindow):
     # ------------------------------------------------------------ sortie ---
 
     def closeEvent(self, event) -> None:
+        """Intercepte la fermeture pour réduire dans la barre de notification.
+
+        Comportement :
+
+        - la croix réduit dans le tray tant que
+          :attr:`Config.fermer_dans_barre` est vrai et qu'un tray est
+          disponible ;
+        - sous Linux sans tray host, prévient une fois par session avant
+          de vraiment quitter ;
+        - si un run est en cours, demande confirmation avant d'interrompre.
+
+        Args:
+            event: :class:`QCloseEvent` fourni par Qt.
+        """
         # la croix réduit dans la zone de notification, sauf demande explicite
         if (not self._quitter_demande and self.cfg.fermer_dans_barre
                 and self.tray and self.tray.isVisible()):
@@ -1223,15 +1286,22 @@ class Fenetre(QMainWindow):
 # --------------------------------------------------------------------------- #
 
 def main() -> int:
-    if "--controle-bundle" in sys.argv:
-        # Contrôle du bundle PyInstaller : on importe ce que le .spec pourrait
-        # oublier, sans ouvrir de fenêtre. L'exe est fenêtré (`console=False`),
-        # donc `sys.stdout` peut valoir None et un `print` lèverait — on
-        # signale le résultat par le seul code de sortie.
-        import Glaneur.engine  # noqa: F401
-        import Glaneur.sources  # noqa: F401
-        sys.exit(0)
+    """Point d'entrée de l'application graphique.
 
+    Enchaîne :
+
+    1. migration éventuelle d'une config héritée de ``WpImageDownloader`` ;
+    2. mise en place du logging fichier + console ;
+    3. création de la :class:`QApplication` ;
+    4. installation du traducteur Qt (avant tout widget) ;
+    5. construction de la :class:`Fenetre` principale, éventuellement
+       cachée si ``--reduit`` est passé sur la ligne de commande ;
+    6. boucle événementielle Qt.
+
+    Returns:
+        Le code de sortie renvoyé par ``QApplication.exec()``, prêt à
+        passer à ``sys.exit``.
+    """
     from Glaneur.config import dossier_config, migrer_depuis_ancien_nom
     from Glaneur.i18n import installer_traducteur
     from Glaneur.logsetup import configure_logging
