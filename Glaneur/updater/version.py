@@ -16,13 +16,40 @@ _PATTERN = re.compile(
 @total_ordering
 @dataclass(frozen=True)
 class Version:
+    """Version SemVer immuable, comparable et ordonnée totalement.
+
+    Compare sur ``(major, minor, patch)`` puis, à égalité de triplet,
+    par les identifiants de prerelease selon la règle SemVer 2.0 : une
+    version sans prerelease est plus grande que la même avec
+    prerelease, et les identifiants sont comparés numérique-vs-numérique
+    puis lexicographiquement.
+    """
+
+    #: Nombre majeur.
     major: int
+    #: Nombre mineur.
     minor: int
+    #: Nombre de patch.
     patch: int
+    #: Identifiants de prerelease (``()`` pour une version stable).
     prerelease: tuple[str, ...] = ()
 
     @classmethod
     def parse(cls, value: str) -> "Version":
+        """Analyse une chaîne SemVer (avec ``v`` optionnel et metadata build ignorée).
+
+        Args:
+            value: Chaîne à analyser (par exemple ``"v1.2.3"``,
+                ``"1.2.3-rc.1"``, ``"1.2.3+build.5"``).
+
+        Returns:
+            La :class:`Version` correspondante. Le suffixe ``+build``
+            est reconnu mais non conservé.
+
+        Raises:
+            ValueError: Si la chaîne ne correspond pas au format
+                SemVer strict.
+        """
         match = _PATTERN.fullmatch(value.strip())
         if not match:
             raise ValueError(f"Version SemVer invalide : {value!r}")

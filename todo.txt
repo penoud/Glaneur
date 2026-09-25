@@ -81,7 +81,11 @@ Un module = un commit, dans l'ordre :
 - [x] `Glaneur/i18n.py` — enrichissement Napoleon des 3 fonctions.
 - [x] `Glaneur/logsetup.py` — enrichissement Napoleon de configure_logging.
 - [x] `Glaneur/bug_report.py` — enrichissement Napoleon des 3 fonctions.
-- [ ] `Glaneur/updater/`
+- [x] `Glaneur/updater/` — 6 fichiers, 20 docstrings ajoutés/enrichis
+      (module + Version, ReleaseAsset, Release, UpdateInfo,
+      GitHubReleaseProvider, DownloadError, download, verify_sha256,
+      temporary_directory, VerificationMiseAJour, TelechargementMiseAJour).
+      13 tests test_updater* verts.
 - [ ] `app.py`
 - [ ] `cli.py`
 
