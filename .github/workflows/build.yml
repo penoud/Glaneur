@@ -16,6 +16,11 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
+      - name: Compile translations
+        # Sans cette étape, translations/*.qm est vide et le .spec ne
+        # bundle aucun fichier de traduction — l'app tourne alors en FR
+        # même quand Config.langue vaut "en".
+        run: python translations\build_translations.py release
       - run: pyinstaller build\WpImageDownloader.spec --noconfirm --clean
       - name: Sign application when certificate is configured
         env:

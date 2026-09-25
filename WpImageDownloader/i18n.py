@@ -12,6 +12,7 @@ d'i18n dans le README §4).
 
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -23,20 +24,27 @@ LANGUES_DISPONIBLES: dict[str, str] = {
     "en": "English",
 }
 
+logger = logging.getLogger(__name__)
+
 _translator: QTranslator | None = None
 
 
 def dossier_traductions() -> Path:
-    """Cherche `translations/` en dev (racine du dépôt) et dans le bundle
-    PyInstaller (`sys._MEIPASS`)."""
+    """Cherche `translations/` d'abord dans le bundle PyInstaller (`_MEIPASS`),
+    puis en dev (racine du dépôt à côté du paquet).
+
+    Ordre important : dans un bundle, `__file__` pointe dans le PYZ zip
+    (`.parent.parent` ne mène nulle part d'utile), donc `_MEIPASS` doit
+    passer en premier. En dev, `_MEIPASS` n'existe pas, on retombe sur
+    la racine du dépôt."""
     candidats = [
+        Path(getattr(sys, "_MEIPASS", "")) / "translations" if hasattr(sys, "_MEIPASS") else None,
         Path(__file__).resolve().parent.parent / "translations",
-        Path(getattr(sys, "_MEIPASS", ".")) / "translations",
     ]
     for c in candidats:
-        if c.is_dir():
+        if c is not None and c.is_dir():
             return c
-    return candidats[0]
+    return candidats[-1]
 
 
 def resoudre_langue(langue_configuree: str) -> str:
@@ -53,12 +61,18 @@ def installer_traducteur(app, langue_configuree: str = "") -> str:
     n'existe pas — on tombe alors sur la source FR)."""
     global _translator
     langue = resoudre_langue(langue_configuree)
+    dossier = dossier_traductions()
+    logger.info("i18n : langue=%s dossier=%s existe=%s",
+                langue, dossier, dossier.is_dir())
     if langue == "fr":
         return "fr"
     _translator = QTranslator()
     fichier = f"wpimagedownloader_{langue}"
-    if _translator.load(fichier, str(dossier_traductions())):
+    if _translator.load(fichier, str(dossier)):
         app.installTranslator(_translator)
+        logger.info("i18n : traduction %s chargée depuis %s", fichier, dossier)
         return langue
+    logger.warning("i18n : traduction %s introuvable dans %s — retombe sur FR",
+                   fichier, dossier)
     _translator = None
     return "fr"
