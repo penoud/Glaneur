@@ -26,8 +26,8 @@ an image that is already present.
 
 ## 1. Architecture
 
-The layout strictly separates the engine from the interface: `Glaneur/engine.py`
-imports nothing from Tkinter and communicates through callbacks. It can
+The layout strictly separates the engine from the interface: `Glaneur/engine/`
+imports nothing from Qt widgets and communicates through callbacks. It can
 therefore be driven from the UI, from `cli.py`, or from a future Windows
 service without rewriting anything.
 
@@ -39,9 +39,16 @@ glaneur/
 ├── build.bat               Full build in a single command
 ├── Glaneur/
 │   ├── config.py           Persisted preferences (JSON in %APPDATA%)
-│   ├── engine.py           Engine: orchestration, manifest, downloads, resumes
+│   ├── engine/             Engine package: orchestration, manifest, downloads, resumes
+│   │   ├── core.py             `Moteur`, main loop
+│   │   ├── options.py          `Options` input dataclass
+│   │   ├── result.py           `Resultat` output dataclass
+│   │   ├── cache_path.py, read_cache.py, write_cache.py       Per-site JSON cache
+│   │   ├── manifest_path.py, read_manifest.py, write_manifest.py  Downloaded-file manifest
+│   │   ├── delete_image.py, list_deleted.py, restore.py           Trash / restore
+│   │   ├── sanitize.py, format_bytes.py, _merge.py, _locks.py, _constants.py
 │   ├── scheduler.py        Due-date computation (pure logic, no thread)
-│   ├── systeme.py          Windows registry, folder opening
+│   ├── system.py           Windows registry, folder opening
 │   ├── logsetup.py         Rotating file logger (%APPDATA%\Glaneur\app.log)
 │   ├── bug_report.py       Builds the GitHub issues/new URL used by Help → Report a bug
 │   ├── i18n.py             Loads QTranslator on startup (see §4 Internationalisation)
@@ -58,6 +65,13 @@ glaneur/
     ├── Glaneur.spec        PyInstaller recipe
     └── installer.iss       Inno Setup script
 ```
+
+The `engine` package exposes its public API (`Moteur`, `Options`, `Resultat`,
+`chemin_cache`, `chemin_manifeste`, `ecrire_cache`, `ecrire_manifeste`,
+`lire_cache`, `lire_manifeste`, `nettoyer`, `restaurer`, `supprimer_image`,
+`lister_supprimees`, `format_octets`) through `Glaneur/engine/__init__.py`.
+Callers import from `Glaneur.engine` and stay decoupled from the internal
+module split.
 
 **Engine contract.** `Moteur(options, journal, progression, arret).executer()`
 returns a `Resultat`. The engine imports neither Qt nor any widget: callbacks
@@ -407,10 +421,9 @@ une image déjà présente.
 ## 1. Architecture
 
 Le découpage sépare strictement le moteur de l'interface :
-`Glaneur/engine.py`
-n'importe rien de Tkinter et communique par callbacks. On peut donc le piloter
-depuis l'UI, depuis `cli.py`, ou depuis un futur service Windows sans rien
-réécrire.
+`Glaneur/engine/` n'importe rien des widgets Qt et communique par callbacks.
+On peut donc le piloter depuis l'UI, depuis `cli.py`, ou depuis un futur
+service Windows sans rien réécrire.
 
 ```
 glaneur/
@@ -420,9 +433,16 @@ glaneur/
 ├── build.bat               Construction complète en une commande
 ├── Glaneur/
 │   ├── config.py           Préférences persistées (JSON dans %APPDATA%)
-│   ├── engine.py           Moteur : orchestration, manifeste, téléchargement, reprise
+│   ├── engine/             Paquet moteur : orchestration, manifeste, téléchargement, reprise
+│   │   ├── core.py             `Moteur`, boucle principale
+│   │   ├── options.py          `Options` (dataclass d'entrée)
+│   │   ├── result.py           `Resultat` (dataclass de sortie)
+│   │   ├── cache_path.py, read_cache.py, write_cache.py       Cache JSON par site
+│   │   ├── manifest_path.py, read_manifest.py, write_manifest.py  Manifeste des fichiers téléchargés
+│   │   ├── delete_image.py, list_deleted.py, restore.py           Corbeille / restauration
+│   │   ├── sanitize.py, format_bytes.py, _merge.py, _locks.py, _constants.py
 │   ├── scheduler.py        Calcul d'échéance (logique pure, sans thread)
-│   ├── systeme.py          Registre Windows, ouverture de dossier
+│   ├── system.py           Registre Windows, ouverture de dossier
 │   ├── logsetup.py         Logger fichier rotatif (%APPDATA%\Glaneur\app.log)
 │   ├── bug_report.py       Compose l'URL GitHub issues/new du menu Aide → Signaler un bug
 │   ├── i18n.py             Charge QTranslator au démarrage (voir §4 Internationalisation)
@@ -439,6 +459,13 @@ glaneur/
     ├── Glaneur.spec Recette PyInstaller
     └── installer.iss       Script Inno Setup
 ```
+
+Le paquet `engine` réexporte son API publique (`Moteur`, `Options`,
+`Resultat`, `chemin_cache`, `chemin_manifeste`, `ecrire_cache`,
+`ecrire_manifeste`, `lire_cache`, `lire_manifeste`, `nettoyer`, `restaurer`,
+`supprimer_image`, `lister_supprimees`, `format_octets`) via
+`Glaneur/engine/__init__.py`. Les appelants importent depuis
+`Glaneur.engine` sans dépendre du découpage interne.
 
 **Contrat du moteur.** `Moteur(options, journal, progression, arret).executer()`
 renvoie un `Resultat`. Le moteur n'importe ni Qt ni aucun widget : les
