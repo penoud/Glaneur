@@ -32,16 +32,16 @@ class TestBuildIssueUrl:
         url = build_issue_url("o", "r", "É&é ?", "```\nlog\n```")
         parsed = urlparse(url)
         q = parse_qs(parsed.query)
-        # décodé, on retrouve les valeurs originales
+        # decoded, we recover the original values
         assert q["title"] == ["É&é ?"]
         assert q["body"] == ["```\nlog\n```"]
-        # encodé, pas de & ni ? bruts dans les valeurs
-        assert "%26" in parsed.query   # & encodé
-        assert "%3F" in parsed.query   # ? encodé
+        # encoded, no raw & or ? in the values
+        assert "%26" in parsed.query   # & encoded
+        assert "%3F" in parsed.query   # ? encoded
 
     def test_ne_tronque_jamais_le_body(self):
-        # La troncature silencieuse a été retirée : le caller doit avertir
-        # l'utilisateur via is_url_too_long() plutôt que perdre du contenu.
+        # Silent truncation has been removed: the caller must warn the
+        # user via is_url_too_long() rather than lose content.
         body = "x" * 20000
         url = build_issue_url("o", "r", "t", body)
         q = parse_qs(urlparse(url).query)
@@ -58,8 +58,8 @@ class TestIsUrlTooLong:
         assert is_url_too_long(url) is False
 
     def test_url_longue_detectee(self):
-        # 20 000 chars bruts + accents/backslashes gonflent l'URL encodée
-        # bien au-delà de MAX_URL_LENGTH.
+        # 20 000 raw chars + accents/backslashes inflate the encoded URL
+        # well beyond MAX_URL_LENGTH.
         body = ("Chemin C:\\Users\\Denis\\AppData é à ù\n" * 500)
         url = build_issue_url("o", "r", "t", body)
         assert len(url) > MAX_URL_LENGTH
@@ -93,18 +93,18 @@ class TestCollectContext:
         ctx = collect_context("1.2.3", chemin_log=chemin, nb_lignes=5)
         assert "ligne99" in ctx
         assert "ligne95" in ctx
-        assert "ligne94" not in ctx   # sous la fenêtre de 5
+        assert "ligne94" not in ctx   # below the 5-line window
 
     def test_log_inaccessible_omet_section(self, tmp_path):
-        # fichier absent -> section omise sans lever
+        # missing file -> section omitted without raising
         ctx = collect_context("1.2.3", chemin_log=tmp_path / "absent.log")
         assert "Dernières lignes de log" not in ctx
 
     def test_log_est_compacte(self, tmp_path):
-        # Le log réel du user (préfixe logger + chemins Windows + timestamps
-        # à ms) doit être compacté avant d'être inclus dans le body. Deux
-        # dates différentes pour désactiver la sortie de date en en-tête et
-        # tester la compaction ligne par ligne.
+        # The real user log (logger prefix + Windows paths + ms-precision
+        # timestamps) must be compacted before being included in the body.
+        # Two different dates disable the date-in-header output so we can
+        # test per-line compaction.
         chemin = tmp_path / "app.log"
         chemin.write_text(
             "2026-09-21 15:03:04,949 INFO Glaneur.app.update: "
@@ -116,13 +116,13 @@ class TestCollectContext:
         assert "Glaneur." not in ctx
         assert "C:\\Users\\Denis" not in ctx
         assert "%TEMP%" in ctx
-        assert ",949" not in ctx      # ms droppées
-        assert "2026-" not in ctx     # année droppée en tête de ligne
+        assert ",949" not in ctx      # ms dropped
+        assert "2026-" not in ctx     # year dropped at the line start
         assert "09-21 15:03:04" in ctx
 
     def test_log_meme_jour_note_la_date_dans_len_tete(self, tmp_path):
-        # Toutes les lignes le même jour -> date sortie en tête, HH:MM:SS
-        # seulement dans les lignes.
+        # All lines on the same day -> date in the header, HH:MM:SS
+        # only in the lines themselves.
         chemin = tmp_path / "app.log"
         chemin.write_text(
             "2026-09-21 15:03:04,949 INFO Glaneur.foo: a\n"
@@ -130,7 +130,7 @@ class TestCollectContext:
         )
         ctx = collect_context("1.2.3", chemin_log=chemin, nb_lignes=10)
         assert "date : 2026-09-21" in ctx
-        assert "09-21 15:03:04" not in ctx   # date retirée aussi des lignes
+        assert "09-21 15:03:04" not in ctx   # date also stripped from the lines
         assert "15:03:04 INFO foo: a" in ctx
 
 
@@ -140,15 +140,15 @@ class TestCollectContext:
 
 class TestCompactLine:
     def test_strip_prefixe_logger_uniquement_apres_le_niveau(self):
-        # Le préfixe est enlevé après INFO/WARN/… mais PAS quand il apparaît
-        # dans un message (ex: dépôt GitHub, chemin, etc.).
+        # The prefix is stripped after INFO/WARN/… but NOT when it appears
+        # inside a message (e.g., GitHub repo, path, etc.).
         line = (
             "2026-09-21 15:03:04,949 INFO Glaneur.updater.foo: "
             "repo=penoud/Glaneur.git"
         )
         out = _compact_line(line)
         assert "INFO updater.foo:" in out
-        assert "penoud/Glaneur.git" in out  # non touché
+        assert "penoud/Glaneur.git" in out  # untouched
 
     def test_strip_millisecondes(self):
         out = _compact_line("2026-09-21 15:03:04,949 INFO foo: bar")
@@ -173,4 +173,4 @@ class TestCompactLine:
         assert "%LOCALAPPDATA%\\Programs\\y" in out
         assert "%APPDATA%\\w" in out
         assert "%USERPROFILE%\\Documents" in out
-        assert "Denis" not in out   # bonus vie privée
+        assert "Denis" not in out   # privacy bonus

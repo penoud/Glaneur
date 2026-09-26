@@ -52,7 +52,7 @@ class TestCommandeLancement:
 
 
 # --------------------------------------------------------------------------- #
-# Démarrage automatique (Windows uniquement, silencieux ailleurs)
+# Auto-start (Windows only, silent elsewhere)
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.skipif(sys.platform == "win32",
@@ -69,7 +69,7 @@ class TestDemarrageHorsWindows:
 
 
 # --------------------------------------------------------------------------- #
-# Fond d'écran (COM Windows) : silencieux hors plateforme
+# Wallpaper (Windows COM): silent off-platform
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.skipif(sys.platform == "win32",
@@ -82,7 +82,7 @@ class TestFondEcranHorsWindows:
         assert fond_ecran_actuel() is None
 
     def test_avancer_diaporama_ne_leve_rien(self):
-        # aucun retour attendu, seul le silence est un succès
+        # no return expected, silence is the success criterion
         avancer_diaporama()
 
     def test_instancier_bureau_renvoie_none(self):
@@ -92,14 +92,14 @@ class TestFondEcranHorsWindows:
 
 
 # --------------------------------------------------------------------------- #
-# Sous Windows on peut au moins vérifier qu'aucune exception ne remonte
+# On Windows we can at least verify no exception bubbles up
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.skipif(sys.platform != "win32",
                     reason="Windows uniquement")
 class TestFondEcranSousWindows:
     def test_fond_ecran_actuel_ne_leve_rien(self):
-        # peut renvoyer un chemin ou None selon l'état du bureau ; pas d'exception
+        # may return a path or None depending on the desktop state; no exception
         fond_ecran_actuel()
 
     def test_avancer_diaporama_ne_leve_rien(self):
@@ -107,8 +107,8 @@ class TestFondEcranSousWindows:
 
 
 # --------------------------------------------------------------------------- #
-# Contrats internes : indices vtable, type de retour de _creer_tableau_images
-# (bugs qui ont provoqué le crash de la case « diaporama »).
+# Internal contracts: vtable indices, return type of _creer_tableau_images
+# (bugs that caused the "slideshow" checkbox to crash).
 # --------------------------------------------------------------------------- #
 
 class TestContratsWallpaper:
@@ -117,9 +117,9 @@ class TestContratsWallpaper:
     n'importe quoi sans lever)."""
 
     def test_indices_vtable_conformes_a_idesktopwallpaper(self):
-        # Les indices doivent correspondre à la vtable Microsoft : SetSlideshow=12,
-        # AdvanceSlideshow=16. Une valeur off-by-one appelait GetPosition à la
-        # place et corrompait la mémoire → crash.
+        # Indices must match the Microsoft vtable: SetSlideshow=12,
+        # AdvanceSlideshow=16. An off-by-one called GetPosition instead
+        # and corrupted memory → crash.
         assert systeme._VT_RELEASE == 2
         assert systeme._VT_GETWALLPAPER == 4
         assert systeme._VT_GETMONITORDEVICEPATHAT == 5
@@ -128,16 +128,16 @@ class TestContratsWallpaper:
         assert systeme._VT_ADVANCESLIDESHOW == 16
 
     def test_liberer_bureau_ignore_les_types_bizarres(self):
-        # Robustesse : appeler _liberer_bureau avec autre chose qu'un c_void_p
-        # ne doit jamais lever (le finally de definir_dossier_diaporama en dépend).
+        # Robustness: calling _liberer_bureau with something other than a
+        # c_void_p must never raise (definir_dossier_diaporama's finally relies on it).
         systeme._liberer_bureau(None, False)
         systeme._liberer_bureau((None, None), False)
         systeme._liberer_bureau("pas un pointeur", False)
-        # aucune exception : succès
+        # no exception: success
 
 
 # --------------------------------------------------------------------------- #
-# Simulations : sys.platform = "win32" mais COM/ctypes non disponibles
+# Simulations: sys.platform = "win32" but COM/ctypes unavailable
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.skipif(sys.platform == "win32",
@@ -148,8 +148,8 @@ class TestSimulationsWin:
     ne sont pas là (ce qui est le cas quand on tourne les tests sur Linux)."""
 
     def test_instancier_bureau_gerre_erreur_ctypes(self, monkeypatch):
-        # sur Linux, ctypes.windll n'existe pas : l'AttributeError doit être
-        # attrapée et se traduire par (None, False)
+        # on Linux, ctypes.windll does not exist: the AttributeError must
+        # be caught and translated to (None, False)
         monkeypatch.setattr(sys, "platform", "win32")
         ptr, uninit = systeme._instancier_bureau()
         assert ptr is None
@@ -161,16 +161,16 @@ class TestSimulationsWin:
 
     def test_avancer_diaporama_silencieux_si_com_ko(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
-        avancer_diaporama()  # ne doit rien lever
+        avancer_diaporama()  # must not raise anything
 
-    # `demarrage_automatique` importe `winreg` de manière inconditionnelle
-    # une fois qu'on est sous Windows. Simuler l'échec de cet import sur
-    # Linux ne correspond à aucune situation réelle — Windows a toujours
-    # `winreg` — donc on n'ajoute pas de test dédié.
+    # `demarrage_automatique` imports `winreg` unconditionally once we
+    # are on Windows. Simulating that import's failure on Linux does not
+    # match any real situation — Windows always has `winreg` — so no
+    # dedicated test is added.
 
 
 # --------------------------------------------------------------------------- #
-# ouvrir_dossier : appel non-bloquant (aucun subprocess réellement lancé)
+# ouvrir_dossier: non-blocking call (no subprocess is actually launched)
 # --------------------------------------------------------------------------- #
 
 class TestOuvrirDossier:
@@ -187,7 +187,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "win32")
         faux = MagicMock()
-        # os.startfile n'existe pas sous Linux : on l'installe pour le test
+        # os.startfile does not exist on Linux: install it for the test
         import os
         monkeypatch.setattr(os, "startfile", faux, raising=False)
         systeme.ouvrir_dossier(tmp_path)

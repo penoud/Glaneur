@@ -70,7 +70,7 @@ def _reponse(entrees, next_url=None, count=None):
 
 
 class FauxServeur:
-    """Serveur `d2d/` factice : associe URL → réponse JSON."""
+    """Fake `d2d/` server: maps URL → JSON response."""
 
     def __init__(self, pages: dict[str, dict]):
         self.pages = pages
@@ -81,17 +81,17 @@ class FauxServeur:
         cle = url
         if url in self.pages:
             return self.pages[url], {}
-        raise AssertionError(f"URL non attendue : {url}")
+        raise AssertionError(f"URL non attendue : {url}")  # unexpected URL
 
 
 # --------------------------------------------------------------------------- #
-# Contrat de base
+# Base contract
 # --------------------------------------------------------------------------- #
 
 class TestBase:
     def test_type_et_classements(self):
         assert Djangoplicity.type == "djangoplicity"
-        # doc §3 : « galerie » n'a pas d'équivalent naturel
+        # doc §3: "galerie" has no natural equivalent
         assert "galerie" not in Djangoplicity.classements
         assert {"date", "plat"} <= Djangoplicity.classements
 
@@ -102,13 +102,13 @@ class TestBase:
     def test_convertir_depuis(self):
         s = _source()
         assert s.convertir_depuis("2026-06-15T12:00:00") == "20260615120000"
-        # tolérance : AAAA-MM-JJ suffit, l'heure est complétée en zéros
+        # tolerant: YYYY-MM-DD is enough, the time is zero-padded
         assert s.convertir_depuis("2026-06-15") == "20260615000000"
         assert s.convertir_depuis(None) is None
 
 
 # --------------------------------------------------------------------------- #
-# Transformation en Element
+# Transformation into Element
 # --------------------------------------------------------------------------- #
 
 class TestToElement:
@@ -129,10 +129,10 @@ class TestToElement:
                        taille=200_000, dims=(1280.0, 720.0)),
         ])
         e = s._to_element(entree)
-        # l'ident garde le format effectivement téléchargé
+        # the ident keeps the format actually downloaded
         assert e.ident == "eso1907a:Small"
         assert e.url == "https://cdn.eso.org/small/eso1907a.jpg"
-        # `Dimensions` flottantes → int
+        # float `Dimensions` → int
         assert e.largeur == 1280
 
     def test_aucun_format_disponible_url_none(self):
@@ -143,7 +143,7 @@ class TestToElement:
         ])
         e = s._to_element(entree)
         assert e.url is None
-        # l'ident conserve le format demandé (pas le format effectif)
+        # the ident keeps the requested format (not the effective one)
         assert e.ident.endswith(":Large")
 
     def test_original_choisi_si_configure(self):
@@ -180,14 +180,14 @@ class TestToElement:
         assert e.largeur is None
 
     def test_sanitizer_byte_repr(self):
-        # Bug connu (issue djangoplicity #147) : Credit rendu sous la forme
-        # `"b'…'"` au lieu d'une chaîne propre.
+        # Known bug (djangoplicity issue #147): Credit rendered as
+        # `"b'…'"` instead of a clean string.
         s = _source()
         e = s._to_element(_entree("eso1907a", credit="b'ESO/T. Preibisch'"))
         assert e.extra["credit"] == "ESO/T. Preibisch"
 
     def test_sanitizer_sur_id(self):
-        # même bug appliqué à l'ID : le nom doit sortir intact.
+        # same bug applied to the ID: the name must come out intact.
         s = _source()
         entree = _entree("eso1907a")
         entree["ID"] = "b'eso1907a'"
@@ -196,7 +196,7 @@ class TestToElement:
 
 
 # --------------------------------------------------------------------------- #
-# Inventaire (pagination sur Next)
+# Inventory (pagination via Next)
 # --------------------------------------------------------------------------- #
 
 class TestInventaire:
@@ -213,12 +213,12 @@ class TestInventaire:
         with patch.object(s.transport, "get_json", side_effect=faux.get_json):
             r = list(s.inventaire(None, None))
         assert [e.ident for e in r] == ["a:Large", "b:Large", "c:Large"]
-        # bien deux requêtes, pas trois
+        # exactly two requests, not three
         assert len(faux.appels) == 2
 
     def test_arret_sur_absence_de_next_meme_page_courte(self):
-        # page renvoyant moins d'entrées que `count` mais pas de `Next` :
-        # l'adaptateur doit s'arrêter (doc §7).
+        # page returning fewer entries than `count` but no `Next`:
+        # the adapter must stop (doc §7).
         s = _source(base="https://x.example")
         page1 = _reponse([_entree("a")], next_url=None, count=100)
         faux = FauxServeur({"https://x.example/images/d2d/": page1})
@@ -227,7 +227,7 @@ class TestInventaire:
         assert [e.ident for e in r] == ["a:Large"]
 
     def test_deduplication_par_id(self):
-        # doublon inter-pages : ignoré silencieusement
+        # cross-page duplicate: silently ignored
         s = _source(base="https://x.example")
         page1 = _reponse([_entree("a"), _entree("b")],
                          next_url="https://x.example/images/d2d/?page=2")
@@ -254,16 +254,16 @@ class TestInventaire:
 
 
 # --------------------------------------------------------------------------- #
-# `after` inclusif — l'élément frontière ne doit pas être compté 2× dans les
-# téléchargements par le moteur ; le manifeste le repère en « déjà à jour ».
+# inclusive `after` — the boundary element must not be counted twice among
+# downloads by the engine; the manifest flags it as "already up to date".
 # --------------------------------------------------------------------------- #
 
 class TestAfterInclusif:
     def test_element_frontiere_non_retelecharge(self, tmp_path):
-        # Simule : un run précédent a téléchargé `a` (id "a:Large"). Un second
-        # run avec `after` inclusif renvoie `a` en tête, puis un `b` neuf.
-        # Le manifeste doit dire `a` → déjà à jour (1 deja_presentes), pas
-        # une deuxième copie en telechargees.
+        # Simulate: a previous run downloaded `a` (id "a:Large"). A second
+        # run with inclusive `after` returns `a` first, then a new `b`.
+        # The manifest must report `a` → already up to date (1 deja_presentes),
+        # not a second copy in telechargees.
         fichier_a = tmp_path / "a.jpg"
         fichier_a.write_bytes(b"contenu-a-attendu")
         from Glaneur.engine import ecrire_manifeste
@@ -279,7 +279,7 @@ class TestAfterInclusif:
         )
         moteur = Moteur(options)
 
-        # Fabrique les entrées telles que le fake serveur les fournirait.
+        # Build the entries as the fake server would supply them.
         entree_a = _entree("a", ressources=[
             _ressource("Large", "https://cdn.eso.org/large/a.jpg",
                        taille=len(b"contenu-a-attendu")),
@@ -298,16 +298,16 @@ class TestAfterInclusif:
                                                "modifie": "", "url": "u"})):
             res = moteur.executer()
 
-        # `a` reconnu comme déjà présent ; seule `b` téléchargée.
+        # `a` recognized as already present; only `b` downloaded.
         assert res.deja_presentes == 1
         assert res.telechargees == 1
-        # manifeste étoffé, mais l'entrée `a` n'a pas été recréée en double
+        # manifest extended, but entry `a` was not duplicated
         m = lire_manifeste(tmp_path)
         assert "a:Large" in m and "b:Large" in m
 
 
 # --------------------------------------------------------------------------- #
-# Ressource manquante → ignorée par le moteur
+# Missing resource → ignored by the engine
 # --------------------------------------------------------------------------- #
 
 class TestRessourceManquante:
@@ -319,7 +319,7 @@ class TestRessourceManquante:
         )
         moteur = Moteur(options)
 
-        # deux entrées : une bonne, une sans format utilisable (uniquement
+        # two entries: one good, one without a usable format (only
         # Icon / Thumbnail)
         bonne = _entree("bon")
         aucune = _entree("mauvaise", ressources=[
@@ -335,6 +335,6 @@ class TestRessourceManquante:
                           return_value=("ok", {"taille": 3_500_000, "etag": "",
                                                "modifie": "", "url": "u"})):
             res = moteur.executer()
-        # bon : téléchargé ; mauvaise : ignorée
+        # good: downloaded; bad: ignored
         assert res.telechargees == 1
         assert res.ignorees == 1

@@ -16,19 +16,19 @@ from urllib.parse import urlencode
 
 from PySide6.QtCore import QCoreApplication
 
-# NB : lupdate n'extrait que les appels QCoreApplication.translate("Ctx", "src")
-# avec contexte ET source *littéraux* — un alias `_tr()` ne serait pas
-# détecté. On inline donc, avec le contexte fixe « BugReport ».
+# NB: lupdate only extracts QCoreApplication.translate("Ctx", "src") calls
+# with *literal* context AND source — a `_tr()` alias would not be
+# detected. So we inline, with the fixed "BugReport" context.
 
 # --------------------------------------------------------------------------- #
-# Compactage des lignes de log — chaque char économisé laisse plus de place
-# au texte de l'utilisateur avant que l'URL GitHub ne dépasse le plafond.
+# Log line compaction — every char saved leaves more room
+# for the user's text before the GitHub URL exceeds the cap.
 # --------------------------------------------------------------------------- #
 
 _APP_LOGGER_PREFIX = "Glaneur."
 
-# Ancré sur le niveau de log pour ne pas rogner le préfixe s'il apparaît
-# dans un message (chemin, dépôt, etc.).
+# Anchored on the log level so we do not clip the prefix if it appears
+# inside a message (path, repository, etc.).
 _LEVEL_PREFIX_RE = re.compile(
     r"(\b(?:DEBUG|INFO|WARNING|WARN|ERROR|CRITICAL)\s+)"
     + re.escape(_APP_LOGGER_PREFIX)
@@ -37,7 +37,7 @@ _TS_MS_RE = re.compile(r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3}")
 _TS_YEAR_RE = re.compile(r"^\d{4}-(\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 _TS_DATE_RE = re.compile(r"^\d{2}-\d{2} (?=\d{2}:\d{2}:\d{2})")
 
-# Ordre : le plus spécifique d'abord (Temp avant Local, Local avant profil).
+# Order: most specific first (Temp before Local, Local before profile).
 _PATH_SUBSTITUTIONS = [
     (re.compile(r"[Cc]:\\Users\\[^\\]+\\AppData\\Local\\Temp"), r"%TEMP%"),
     (re.compile(r"[Cc]:\\Users\\[^\\]+\\AppData\\Local"), r"%LOCALAPPDATA%"),
@@ -70,12 +70,11 @@ def _all_same_date(lignes: list[str]) -> str | None:
             dates.add(m.group(1))
     return dates.pop() if len(dates) == 1 else None
 
-# GitHub renvoie une 500 « Whoops, something went wrong! » quand l'URL de
-# préremplissage dépasse ~7000 octets (le seuil bouge selon les caractères
-# encodés). On plafonne la longueur de l'URL *encodée*, pas la taille brute
-# du body : les chemins Windows (`\` → `%5C`) et les accents français gonflent
-# l'encodage 2-3×. Au-delà du plafond on avertit l'utilisateur plutôt que de
-# tronquer silencieusement.
+# GitHub returns a 500 "Whoops, something went wrong!" when the prefill
+# URL exceeds ~7000 bytes (the threshold varies depending on encoded
+# characters). We cap the *encoded* URL length, not the raw body size:
+# Windows paths (`\` → `%5C`) and French accents inflate the encoding
+# 2-3×. Above the cap we warn the user rather than silently truncating.
 MAX_URL_LENGTH = 6000
 
 

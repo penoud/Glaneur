@@ -17,7 +17,7 @@ NOM_APP = "Glaneur"
 GITHUB_OWNER = "penoud"
 GITHUB_REPOSITORY = "Glaneur"
 
-# intervalles proposés dans l'interface : libellé -> heures (0 = manuel)
+# intervals offered in the UI: label -> hours (0 = manual)
 INTERVALLES: dict[str, int] = {
     "Manuel uniquement": 0,
     "Toutes les 6 heures": 6,
@@ -26,20 +26,20 @@ INTERVALLES: dict[str, int] = {
     "Une fois par semaine": 168,
 }
 
-# classements proposés dans l'interface : libellé -> valeur stockée
+# sort modes offered in the UI: label -> stored value
 CLASSEMENTS: dict[str, str] = {
     "Par galerie": "galerie",
     "Par date": "date",
     "Tout dans un dossier": "plat",
 }
 
-# types de sites supportés : libellé -> clé du registre `sources.SOURCES`
+# supported site types: label -> key of the `sources.SOURCES` registry
 TYPES_SOURCE: dict[str, str] = {
     "WordPress (API REST)": "wordpress",
     "Djangoplicity (ESO, ESA/Hubble…)": "djangoplicity",
 }
 
-# formats d'image Djangoplicity : libellé -> `ResourceType` du flux d2d
+# Djangoplicity image formats: label -> `ResourceType` from the d2d feed
 FORMATS_DJANGOPLICITY: dict[str, str] = {
     "Grand JPEG": "Large",
     "Original (TIFF, très lourd)": "Original",
@@ -66,9 +66,9 @@ def dossier_config() -> Path:
     return base / "glaneur"
 
 
-# Anciens noms utilisés avant le rename WpImageDownloader → Glaneur.
-# `migrer_depuis_ancien_nom()` copie le contenu du premier de ces dossiers
-# qui existe encore vers `dossier_config()` au premier lancement de Glaneur.
+# Legacy names used before the WpImageDownloader → Glaneur rename.
+# `migrer_depuis_ancien_nom()` copies the contents of the first of these
+# directories that still exists to `dossier_config()` on first launch of Glaneur.
 _ANCIENS_NOMS_APP: tuple[str, ...] = ("WpImageDownloader",)
 _ANCIENS_NOMS_XDG: tuple[str, ...] = ("wp-image-downloader",)
 
@@ -145,44 +145,44 @@ class Config:
     :class:`Glaneur.engine.Options`).
     """
 
-    #: Origine du site source, propagée à :attr:`Glaneur.engine.Options.site`.
+    #: Source site origin, propagated to :attr:`Glaneur.engine.Options.site`.
     site: str = "https://example.com"
-    #: Dossier cible de synchronisation ; vide = valeur de
+    #: Target sync directory; empty = value returned by
     #: :func:`dossier_images_defaut`.
     dossier: str = ""
-    #: Intervalle entre deux runs automatiques, en heures. Doit appartenir
-    #: aux valeurs de ``INTERVALLES`` (``0`` = manuel uniquement).
+    #: Interval between two automatic runs, in hours. Must belong to
+    #: the values of ``INTERVALLES`` (``0`` = manual only).
     intervalle_heures: int = 24
-    #: Écarte les images plus étroites (en pixels).
+    #: Skips images narrower than this (in pixels).
     largeur_min: int = 800
-    #: ``galerie``, ``date`` ou ``plat``.
+    #: ``galerie``, ``date`` or ``plat``.
     classement: str = "galerie"
-    #: Clé du registre ``Glaneur.sources.SOURCES``.
+    #: Key of the ``Glaneur.sources.SOURCES`` registry.
     type_source: str = "wordpress"
-    #: Utilisé par Djangoplicity ; valeurs dans ``FORMATS_DJANGOPLICITY``.
+    #: Used by Djangoplicity; values in ``FORMATS_DJANGOPLICITY``.
     format_image: str = "Large"
-    #: Revalidation ETag/Last-Modified des fichiers déjà présents.
+    #: ETag/Last-Modified revalidation of files already present.
     verifier_integrite: bool = False
-    #: Configure le dossier comme diaporama de fond d'écran Windows.
+    #: Sets the directory as the Windows desktop wallpaper slideshow.
     diaporama_dossier: bool = False
-    #: Plancher de pause entre deux requêtes, en secondes.
+    #: Floor of the pause between two requests, in seconds.
     delai_requetes: float = 0.5
-    #: Date ISO 8601 du dernier run, alimentée par le planificateur.
+    #: ISO 8601 date of the last run, fed by the scheduler.
     derniere_execution: str = ""
-    #: Ajoute l'application au démarrage de la session utilisateur.
+    #: Adds the application to the user session's startup items.
     lancer_au_demarrage: bool = False
-    #: La croix réduit dans la zone de notification au lieu de fermer.
+    #: The close button minimizes to the notification area instead of exiting.
     fermer_dans_barre: bool = True
-    #: Bulle système après une mise à jour automatique.
+    #: System notification bubble after an automatic update.
     notifications: bool = True
-    #: Interroge GitHub Releases au lancement pour proposer une mise à jour.
+    #: Queries GitHub Releases at launch to offer an update.
     verifier_maj_demarrage: bool = True
-    #: Code de langue (``fr``, ``en``…). Vide = locale système.
+    #: Language code (``fr``, ``en``…). Empty = system locale.
     langue: str = ""
 
     _chemin: Path | None = field(default=None, repr=False, compare=False)
 
-    # -- chargement / sauvegarde ------------------------------------------- #
+    # -- load / save ------------------------------------------------------- #
 
     @classmethod
     def charger(cls, chemin: Path | None = None) -> "Config":
@@ -213,7 +213,7 @@ class Config:
                     if cle in connus:
                         setattr(cfg, cle, valeur)
             except (json.JSONDecodeError, OSError, TypeError):
-                pass  # config illisible : on repart sur les valeurs par défaut
+                pass  # unreadable config: fall back to default values
         if not cfg.dossier:
             cfg.dossier = str(dossier_images_defaut())
         cfg.valider()
@@ -235,7 +235,7 @@ class Config:
         tmp.replace(chemin)
         self._chemin = chemin
 
-    # -- garde-fous --------------------------------------------------------- #
+    # -- guardrails --------------------------------------------------------- #
 
     def valider(self) -> None:
         """Ramène les valeurs aberrantes dans des bornes raisonnables.
@@ -257,13 +257,13 @@ class Config:
             self.type_source = "wordpress"
         if self.format_image not in FORMATS_DJANGOPLICITY.values():
             self.format_image = "Large"
-        # Le classement doit être supporté par la source. Import différé pour
-        # éviter le cycle `config → sources → engine → config`.
+        # The sort mode must be supported by the source. Deferred import to
+        # avoid the `config → sources → engine → config` cycle.
         from .sources import classements_pour
         classements_ok = classements_pour(self.type_source)
         if classements_ok and self.classement not in classements_ok:
             self.classement = "date"
-        # un délai trop court martèlerait le serveur du club
+        # too short a delay would hammer the club's server
         self.delai_requetes = max(0.2, min(float(self.delai_requetes), 10.0))
 
     @property

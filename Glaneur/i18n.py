@@ -19,7 +19,7 @@ from pathlib import Path
 from PySide6.QtCore import QLocale, QTranslator
 
 LANGUES_DISPONIBLES: dict[str, str] = {
-    # code ISO -> libellé natif à afficher dans les préférences
+    # ISO code -> native label displayed in the preferences
     "fr": "Français",
     "en": "English",
 }

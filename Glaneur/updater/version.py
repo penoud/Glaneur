@@ -25,13 +25,13 @@ class Version:
     puis lexicographiquement.
     """
 
-    #: Nombre majeur.
+    #: Major number.
     major: int
-    #: Nombre mineur.
+    #: Minor number.
     minor: int
-    #: Nombre de patch.
+    #: Patch number.
     patch: int
-    #: Identifiants de prerelease (``()`` pour une version stable).
+    #: Prerelease identifiers (``()`` for a stable version).
     prerelease: tuple[str, ...] = ()
 
     @classmethod

@@ -35,32 +35,32 @@ class Element:
     d'index entre autodoc et Napoleon).
     """
 
-    #: Identifiant unique au sein de la source, clé du manifeste. Chaîne
-    #: pour accepter aussi bien les entiers WordPress que les identifiants
-    #: alphanumériques de Djangoplicity.
+    #: Unique identifier within the source, key of the manifest. String,
+    #: to accept both WordPress integers and the alphanumeric identifiers
+    #: from Djangoplicity.
     ident: str
-    #: URL de la ressource à télécharger. ``None`` si la source n'a pas
-    #: trouvé de ressource pour le format demandé : le moteur comptera
-    #: l'élément en :attr:`Glaneur.engine.Resultat.ignorees`.
+    #: URL of the resource to download. ``None`` if the source did not
+    #: find a resource for the requested format: the engine will count
+    #: the element in :attr:`Glaneur.engine.Resultat.ignorees`.
     url: str | None
-    #: Nom de fichier à donner à la ressource sur le disque, sans dossier.
+    #: File name to give the resource on disk, without directory.
     nom_fichier: str
-    #: Date de publication au format ISO, si connue.
+    #: Publication date in ISO format, if known.
     date: str | None = None
-    #: Mois ``AAAA-MM`` extrait de la date, utilisé pour le classement
-    #: par date.
+    #: ``YYYY-MM`` month extracted from the date, used for the
+    #: by-date sort.
     mois: str | None = None
-    #: Largeur en pixels, quand la source la fournit — utilisée par le
-    #: filtre :attr:`Glaneur.engine.Options.largeur_min`.
+    #: Width in pixels, when the source provides it — used by the
+    #: :attr:`Glaneur.engine.Options.largeur_min` filter.
     largeur: int | None = None
-    #: Taille du fichier en octets, si annoncée par la source (permet à
-    #: :meth:`Glaneur.engine.Moteur.fichier_complet` de valider).
+    #: File size in bytes, if announced by the source (allows
+    #: :meth:`Glaneur.engine.Moteur.fichier_complet` to validate).
     taille: int | None = None
-    #: Identifiant du parent (galerie WordPress, collection Djangoplicity)
-    #: pour le classement ``galerie``.
+    #: Parent identifier (WordPress gallery, Djangoplicity collection)
+    #: for the ``galerie`` sort mode.
     groupe: str | None = None
-    #: Métadonnées libres transmises tel quel au manifeste (crédit,
-    #: checksum…). Le moteur ne les interprète pas.
+    #: Free-form metadata passed through to the manifest (credit,
+    #: checksum…). The engine does not interpret them.
     extra: dict = field(default_factory=dict)
 
 
