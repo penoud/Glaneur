@@ -21,16 +21,16 @@ from pathlib import Path
 CLE_RUN = r"Software\Microsoft\Windows\CurrentVersion\Run"
 NOM_ENTREE = "Glaneur"
 
-# --- IDesktopWallpaper : identifiants et indices de vtable ------------------ #
-# On accède au COM en ctypes brut plutôt que de tirer pywin32 ou comtypes.
+# --- IDesktopWallpaper: identifiers and vtable indices ---------------------- #
+# We access COM via raw ctypes rather than pulling in pywin32 or comtypes.
 _CLSID_DESKTOP_WALLPAPER = "{C2CF3110-460E-4FC1-B9D0-8A1C0C9CC4BD}"
 _IID_IDESKTOP_WALLPAPER = "{B92B56A9-8B55-4E14-9A89-0199BBB6F93B}"
 _CLSCTX_ALL = 23
 _COINIT_APARTMENTTHREADED = 0x2
 _RPC_E_CHANGED_MODE = 0x80010106
 
-# Indices dans la vtable IDesktopWallpaper. IUnknown occupe 0-2 (QueryInterface,
-# AddRef, Release), puis les 16 méthodes de l'interface : SetWallpaper=3,
+# Indices in the IDesktopWallpaper vtable. IUnknown occupies 0-2 (QueryInterface,
+# AddRef, Release), then the 16 interface methods: SetWallpaper=3,
 # GetWallpaper=4, GetMonitorDevicePathAt=5, GetMonitorDevicePathCount=6,
 # GetMonitorRECT=7, SetBackgroundColor=8, GetBackgroundColor=9, SetPosition=10,
 # GetPosition=11, SetSlideshow=12, GetSlideshow=13, SetSlideshowOptions=14,
@@ -137,7 +137,7 @@ def ouvrir_dossier(chemin: Path) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Fond d'écran Windows
+# Windows wallpaper
 # --------------------------------------------------------------------------- #
 
 def _instancier_bureau():
@@ -152,7 +152,7 @@ def _instancier_bureau():
     if sys.platform != "win32":
         return None, False
     try:
-        import ctypes  # local : indisponible correctement hors Windows
+        import ctypes  # local: not properly available off Windows
 
         class GUID(ctypes.Structure):
             _fields_ = [
@@ -164,7 +164,7 @@ def _instancier_bureau():
 
         ole32 = ctypes.windll.ole32
         hr_init = ole32.CoInitializeEx(None, _COINIT_APARTMENTTHREADED)
-        uninit = hr_init in (0, 1)   # S_OK ou S_FALSE : à apparier
+        uninit = hr_init in (0, 1)   # S_OK or S_FALSE: to be paired
         if hr_init not in (0, 1) and (hr_init & 0xFFFFFFFF) != _RPC_E_CHANGED_MODE:
             return None, False
 

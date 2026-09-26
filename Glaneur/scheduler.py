@@ -18,8 +18,8 @@ from datetime import datetime, timedelta
 
 from PySide6.QtCore import QCoreApplication
 
-# lupdate n'extrait que les appels QCoreApplication.translate("Ctx", "src")
-# avec des littéraux : on inline plutôt que d'aliaser (voir bug_report.py).
+# lupdate only extracts QCoreApplication.translate("Ctx", "src") calls
+# with literals: we inline rather than aliasing (see bug_report.py).
 
 
 class Planificateur:
@@ -41,7 +41,7 @@ class Planificateur:
         """
         self.config = config
 
-    # -- état ---------------------------------------------------------------- #
+    # -- state --------------------------------------------------------------- #
 
     def derniere(self) -> datetime | None:
         """Date du dernier run, désérialisée depuis la configuration.
@@ -70,7 +70,7 @@ class Planificateur:
             return None
         derniere = self.derniere()
         if derniere is None:
-            return datetime.now()      # jamais exécuté : dès que possible
+            return datetime.now()      # never run: as soon as possible
         return derniere + timedelta(hours=self.config.intervalle_heures)
 
     def echeance_atteinte(self) -> bool:
@@ -92,7 +92,7 @@ class Planificateur:
         self.config.derniere_execution = datetime.now().isoformat(timespec="seconds")
         self.config.sauver()
 
-    # -- affichage ----------------------------------------------------------- #
+    # -- display ------------------------------------------------------------- #
 
     def texte_prochaine(self) -> str:
         """Libellé localisé pour l'utilisateur : « Prochaine mise à jour dans… ».

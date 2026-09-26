@@ -22,7 +22,7 @@ from Glaneur.sources.wordpress import WordPress
 # --------------------------------------------------------------------------- #
 
 def _wp(**kw):
-    """Fabrique une source WordPress avec un transport à délai nul."""
+    """Builds a WordPress source with a zero-delay transport."""
     transport = Transport(delai=0, arret=threading.Event())
     return WordPress(
         base=kw.pop("base", "https://x.example"),
@@ -45,7 +45,7 @@ def _media(id_, url="https://x/wp-content/uploads/2026/01/img.jpg",
 
 
 # --------------------------------------------------------------------------- #
-# Construction et normalisation
+# Construction and normalization
 # --------------------------------------------------------------------------- #
 
 class TestBase:
@@ -60,7 +60,7 @@ class TestBase:
 
 
 # --------------------------------------------------------------------------- #
-# Transformation en Element
+# Transformation into Element
 # --------------------------------------------------------------------------- #
 
 class TestToElement:
@@ -105,7 +105,7 @@ class TestToElement:
 
 
 # --------------------------------------------------------------------------- #
-# Inventaire (pagination)
+# Inventory (pagination)
 # --------------------------------------------------------------------------- #
 
 class TestInventaire:
@@ -134,7 +134,7 @@ class TestInventaire:
             headers = {"X-WP-Total": "3", "X-WP-TotalPages": "2"}
             if params["page"] == 1:
                 return [_media(1), _media(2)], headers
-            # page 2 renvoie l'id 2 en double + 3 nouveau
+            # page 2 returns id 2 as a duplicate + a new 3
             return [_media(2), _media(3)], headers
 
         with patch.object(s, "_api", side_effect=faux_api):
@@ -142,7 +142,7 @@ class TestInventaire:
         assert sorted(e.ident for e in r) == ["1", "2", "3"]
 
     def test_arret_immediat_si_pas_de_pages_totales(self):
-        # sans pages_totales et un lot vide, la boucle sort dès la 1ʳᵉ page
+        # without pages_totales and an empty batch, the loop exits on the 1st page
         s = _wp()
         appels = []
 
@@ -156,7 +156,7 @@ class TestInventaire:
         assert len(appels) == 1
 
     def test_stop_sur_deux_pages_vides_apres_contenu(self):
-        # une fois pages_totales connu, il faut deux vides consécutives
+        # once pages_totales is known, two consecutive empty pages are required
         s = _wp()
         appels = []
 
@@ -165,7 +165,7 @@ class TestInventaire:
             headers = {"X-WP-Total": "1", "X-WP-TotalPages": "9"}
             if params["page"] == 1:
                 return [_media(1)], headers
-            return [], headers   # pages 2 et 3 vides
+            return [], headers   # pages 2 and 3 empty
 
         with patch.object(s, "_api", side_effect=faux_api):
             r = list(s.inventaire(None, None))
@@ -173,7 +173,7 @@ class TestInventaire:
         assert appels == [1, 2, 3]
 
     def test_stop_sur_400_via_lot_none_page1(self):
-        # première page = None (400) : sortie immédiate
+        # first page = None (400): immediate exit
         s = _wp()
         with patch.object(s, "_api",
                           return_value=(None, {"X-WP-TotalPages": "0"})):
@@ -190,7 +190,7 @@ class TestInventaire:
 
         with patch.object(s, "_api", side_effect=faux_api):
             list(s.inventaire(None, None))
-        assert appels == [1, 2, 3]   # ne va pas au-delà de la 3e page
+        assert appels == [1, 2, 3]   # does not go past the 3rd page
 
     def test_filtre_depuis_et_jusqua(self):
         s = _wp()
@@ -207,7 +207,7 @@ class TestInventaire:
 
 
 # --------------------------------------------------------------------------- #
-# `_bases_rest` : découverte des types de contenu à interroger
+# `_bases_rest`: discovery of the content types to query
 # --------------------------------------------------------------------------- #
 
 class TestBasesRest:
@@ -231,12 +231,12 @@ class TestBasesRest:
         assert "media" not in bases
         assert "blocks" not in bases
         assert "menu-items" not in bases
-        # les galeries passent en premier grâce au tri (« galer »)
+        # galleries come first thanks to the sort ("galer")
         assert bases[0] == "galeries"
 
 
 # --------------------------------------------------------------------------- #
-# `resoudre_groupes` : lookup des parents (WP retourne des IDs entiers)
+# `resoudre_groupes`: parent lookup (WP returns integer IDs)
 # --------------------------------------------------------------------------- #
 
 class TestResoudreGroupes:
@@ -252,8 +252,7 @@ class TestResoudreGroupes:
 
         with patch.object(s, "_api", side_effect=faux_api):
             titres = s.resoudre_groupes({"42"})
-        # les clés du résultat sont des strings pour rester alignées avec
-        # les clés du manifeste
+        # result keys are strings to stay aligned with the manifest keys
         assert titres == {"42": "match-du-siecle"}
 
     def test_non_trouve_journalise(self):
@@ -263,12 +262,12 @@ class TestResoudreGroupes:
         def faux_api(chemin, params=None):
             if chemin == "types":
                 return {"post": {"rest_base": "posts"}}, {}
-            return [], {}   # pas de correspondance
+            return [], {}   # no match
 
         with patch.object(s, "_api", side_effect=faux_api):
             titres = s.resoudre_groupes({"99"})
         assert titres == {}
-        # un message signale les galeries non identifiées
+        # a message reports unidentified galleries
         assert any("non identifi" in m for m in journal)
 
     def test_set_vide(self):
@@ -276,7 +275,7 @@ class TestResoudreGroupes:
         assert s.resoudre_groupes(set()) == {}
 
     def test_arret_boucle_quand_restants_vides(self):
-        # premier base trouve tout : le second n'est jamais interrogé
+        # the first base finds everything: the second is never queried
         s = _wp()
         appels = []
 
@@ -297,7 +296,7 @@ class TestResoudreGroupes:
         assert "posts" not in appels
 
     def test_runtime_error_sur_un_base_continue(self):
-        # RuntimeError sur une base → on saute et on tente la suivante
+        # RuntimeError on a base → skip and try the next one
         s = _wp()
 
         def faux_api(chemin, params=None):
@@ -323,7 +322,7 @@ class TestResoudreGroupes:
 
 
 # --------------------------------------------------------------------------- #
-# Transport.get_json : rejeux, code de fin, RuntimeError
+# Transport.get_json: retries, end-of-pagination code, RuntimeError
 # --------------------------------------------------------------------------- #
 
 class TestTransportGetJson:
@@ -353,7 +352,7 @@ class TestTransportGetJson:
         bon.json.return_value = {"ok": True}
         bon.raise_for_status = MagicMock()
         t.session.get.side_effect = [requests.ConnectionError("boum"), bon]
-        with patch.object(t, "pause"):   # évite les 2 secondes de vraie pause
+        with patch.object(t, "pause"):   # avoids the 2 real seconds of pause
             payload, _ = t.get_json("https://x/api")
         assert payload == {"ok": True}
         assert t.session.get.call_count == 2
@@ -366,10 +365,10 @@ class TestTransportGetJson:
             t.get_json("https://x/api")
 
     def test_wordpress_passe_fin_si_400(self):
-        # ne teste pas un cas isolé, mais confirme le contrat : c'est
-        # l'adaptateur WordPress qui transporte la règle « 400 = fin de
-        # pagination » via `fin_si={400}` — le moteur ne l'impose pas aux
-        # autres sources.
+        # not an isolated case, but confirms the contract: it is the
+        # WordPress adapter that carries the rule "400 = end of
+        # pagination" via `fin_si={400}` — the engine does not force it
+        # on the other sources.
         s = _wp()
         capture = {}
 

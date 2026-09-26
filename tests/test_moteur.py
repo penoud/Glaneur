@@ -35,7 +35,7 @@ from Glaneur.sources import Element
 
 
 # --------------------------------------------------------------------------- #
-# Utilitaires libres
+# Free-standing utilities
 # --------------------------------------------------------------------------- #
 
 class TestNettoyer:
@@ -43,14 +43,14 @@ class TestNettoyer:
         assert nettoyer("Match WordPress") == "match-wordpress"
 
     def test_accents_supprimes(self):
-        # unidecode sur NFKD : les accents disparaissent
+        # unidecode on NFKD: accents disappear
         assert nettoyer("Été à Genève") == "ete-a-geneve"
 
     def test_html_entities(self):
         assert nettoyer("WordPress &amp; Bâle") == "wordpress-bale"
 
     def test_caracteres_dangereux(self):
-        # Windows refuse < > : " / \ | ? *
+        # Windows rejects < > : " / \ | ? *
         r = nettoyer('a<b>c:d"e/f\\g|h?i*j')
         for interdit in '<>:"/\\|?*':
             assert interdit not in r
@@ -71,7 +71,7 @@ class TestNettoyer:
         assert len(r) == 80
 
     def test_pas_de_point_final(self):
-        # Windows refuse les noms terminant par un point
+        # Windows rejects names ending with a dot
         assert not nettoyer("Titre.").endswith(".")
         assert not nettoyer("Titre...").endswith(".")
 
@@ -92,12 +92,12 @@ class TestFormatOctets:
         assert format_octets(1024 ** 3) == "1.0 Go"
 
     def test_au_dela_du_giga(self):
-        # la boucle plafonne à « Go », les To restent exprimés en Go
+        # the loop caps at "Go", TB stays expressed in GB
         assert format_octets(1024 ** 4).endswith(" Go")
 
 
 # --------------------------------------------------------------------------- #
-# Manifeste — I/O de bas niveau
+# Manifest — low-level I/O
 # --------------------------------------------------------------------------- #
 
 class TestManifesteIO:
@@ -122,7 +122,7 @@ class TestManifesteIO:
         assert lire_manifeste(tmp_path) == m
 
     def test_ecriture_atomique(self, tmp_path):
-        # après écriture, aucun fichier .tmp ne doit rester
+        # after write, no .tmp file must remain
         ecrire_manifeste(tmp_path, {"1": {}})
         assert not (tmp_path / ".etat.json.tmp").exists()
         assert (tmp_path / ".etat.json").exists()
@@ -154,7 +154,7 @@ class TestListerSupprimees:
         })
         e = lister_supprimees(tmp_path)
         assert len(e) == 2
-        # tri par horodatage : la plus ancienne d'abord
+        # sort by timestamp: oldest first
         assert e[0]["id"] == "3"
         assert e[1]["id"] == "2"
 
@@ -197,7 +197,7 @@ class TestRestaurer:
         ecrire_manifeste(tmp_path, {
             "42": {"fichier": "a.jpg", "supprime": "2026-01-01"},
         })
-        # restaurer accepte des ints, doit str() en interne
+        # restaurer accepts ints, must str() internally
         assert restaurer(tmp_path, [42]) == 1
 
 
@@ -248,7 +248,7 @@ class TestSupprimerImage:
         assert "supprime" not in lire_manifeste(interne)["1"]
 
     def test_dossier_voisin_meme_prefixe(self, tmp_path):
-        """`commonpath` évite le piège d'un `startswith` naïf."""
+        """`commonpath` avoids the trap of a naive `startswith`."""
         dossier = tmp_path / "photos"
         voisin = tmp_path / "photos-archives"
         dossier.mkdir()
@@ -273,8 +273,8 @@ class TestSupprimerImage:
         assert "supprime" in lire_manifeste(tmp_path)["9"]
 
     def test_fichier_pas_dans_manifeste(self, tmp_path):
-        # fichier valide dans le dossier mais inconnu du manifeste : effacement
-        # réussi, rien à marquer
+        # valid file in the directory but unknown to the manifest: deletion
+        # succeeds, nothing to mark
         fichier = tmp_path / "orphelin.jpg"
         fichier.write_bytes(b"o")
         ecrire_manifeste(tmp_path, {"1": {"fichier": "autre.jpg"}})
@@ -283,40 +283,40 @@ class TestSupprimerImage:
         assert "supprime" not in lire_manifeste(tmp_path)["1"]
 
     def test_fichier_egale_dossier_refuse(self, tmp_path):
-        # supprimer le dossier lui-même ne doit surtout pas être accepté
+        # deleting the directory itself must absolutely not be accepted
         assert supprimer_image(tmp_path, tmp_path) is False
 
     def test_realpath_qui_leve_renvoie_false(self, tmp_path, monkeypatch):
-        # OSError sur realpath (chemin fantôme sous Windows par ex.) → False
+        # OSError on realpath (ghost path on Windows e.g.) → False
         def boum(*_a, **_kw):
             raise OSError("no such")
         monkeypatch.setattr("os.path.realpath", boum)
         assert supprimer_image(tmp_path, tmp_path / "x.jpg") is False
 
     def test_commonpath_valueerror_renvoie_false(self, tmp_path, monkeypatch):
-        # ValueError = deux lecteurs différents sous Windows
+        # ValueError = two different drives on Windows
         def boum(_paths):
             raise ValueError("mixed drives")
         monkeypatch.setattr("os.path.commonpath", boum)
         assert supprimer_image(tmp_path, tmp_path / "x.jpg") is False
 
     def test_unlink_oserror_renvoie_false(self, tmp_path):
-        # PermissionError descend d'OSError : le fichier reste, on renvoie False
+        # PermissionError inherits from OSError: the file stays, we return False
         fichier = tmp_path / "verrouille.jpg"
         fichier.write_bytes(b"y")
         ecrire_manifeste(tmp_path, {"1": {"fichier": "verrouille.jpg"}})
         with patch("pathlib.Path.unlink",
                    side_effect=PermissionError("verrouille")):
             assert supprimer_image(tmp_path, fichier) is False
-        # la marque n'a pas été posée puisque l'effacement a échoué
+        # the mark was not set since the deletion failed
         assert "supprime" not in lire_manifeste(tmp_path)["1"]
 
     def test_entree_manifeste_sans_fichier_ignoree(self, tmp_path):
-        # une entrée sans champ 'fichier' ne doit pas planter la recherche
+        # an entry without a 'fichier' field must not crash the lookup
         fichier = tmp_path / "cible.jpg"
         fichier.write_bytes(b"y")
         ecrire_manifeste(tmp_path, {
-            "1": {"taille": 42},   # pas de fichier
+            "1": {"taille": 42},   # no file
             "2": {"fichier": "cible.jpg"},
         })
         assert supprimer_image(tmp_path, fichier) is True
@@ -324,14 +324,14 @@ class TestSupprimerImage:
 
 
 # --------------------------------------------------------------------------- #
-# Moteur : méthodes utilitaires (pas de I/O réseau)
+# Moteur: utility methods (no network I/O)
 # --------------------------------------------------------------------------- #
 
 def _moteur(tmp_path, **kw):
-    """Construit un Moteur avec un Options par défaut, surchargable.
+    """Builds a Moteur with a default Options, overridable.
 
-    Le moteur construit un adaptateur `wordpress` par défaut ; les tests le
-    remplacent au besoin par un fake, ou patchent `moteur.source.inventaire`
+    The engine builds a `wordpress` adapter by default; tests replace it
+    with a fake as needed, or patch `moteur.source.inventaire`
     / `moteur.source.resoudre_groupes`.
     """
     options = Options(dossier=tmp_path, delai=0, **kw)
@@ -341,10 +341,10 @@ def _moteur(tmp_path, **kw):
 def _element(ident, url="https://x/img.jpg", *, largeur=1600,
              groupe=None, mois="2026-01", date="2026-01-01T00:00:00",
              taille=None, nom_fichier=None, extra=None):
-    """Fabrique un Element pour les tests d'orchestration.
+    """Builds an Element for orchestration tests.
 
-    Défauts pensés pour représenter le cas WordPress moyen ; les tests de
-    Djangoplicity ont leur propre helper.
+    Defaults chosen to represent the average WordPress case; Djangoplicity
+    tests have their own helper.
     """
     return Element(
         ident=str(ident),
@@ -387,15 +387,15 @@ class TestFichierComplet:
         assert Moteur.fichier_complet(f, {}, 42) is False
 
     def test_sans_taille_attendue_accepte(self, tmp_path):
-        # ni état.taille ni taille_api : on croit ce qu'on a
+        # neither état.taille nor taille_api: we trust what we have
         f = tmp_path / "x.jpg"
         f.write_bytes(b"a")
         assert Moteur.fichier_complet(f, None, None) is True
 
 
 class TestDossierPour:
-    """`dossier_pour` est générique : il ne parle plus d'URL WP, il lit
-    `element.mois` et `element.groupe`."""
+    """`dossier_pour` is generic: it no longer speaks of WP URLs, it reads
+    `element.mois` and `element.groupe`."""
 
     def test_plat(self, tmp_path):
         m = _moteur(tmp_path, classement="plat")
@@ -443,11 +443,11 @@ class TestCheminLibre:
 
 
 # --------------------------------------------------------------------------- #
-# Moteur.telecharger — session HTTP mockée
+# Moteur.telecharger — mocked HTTP session
 # --------------------------------------------------------------------------- #
 
 class FakeResponse:
-    """Réponse HTTP factice, iterable comme celle de requests."""
+    """Fake HTTP response, iterable like the one from requests."""
 
     def __init__(self, status_code=200, headers=None, content=b""):
         self.status_code = status_code
@@ -486,7 +486,7 @@ class TestTelecharger:
         statut, infos = m.telecharger("https://x/f.jpg", dest,
                                       {"etag": "e1", "taille": 4})
         assert statut == "inchangé"
-        # l'état renvoyé est celui passé, sans altération
+        # the returned state is the one passed in, unaltered
         assert infos == {"etag": "e1", "taille": 4}
 
     def test_404_introuvable(self, tmp_path):
@@ -500,7 +500,7 @@ class TestTelecharger:
         assert not dest.exists()
 
     def test_reprise_depuis_part(self, tmp_path):
-        # un .part existant déclenche un GET Range → 206
+        # an existing .part triggers a Range GET → 206
         m = _moteur(tmp_path)
         m.session = MagicMock()
         m.session.get.return_value = FakeResponse(206, {}, b"XYZ")
@@ -508,14 +508,14 @@ class TestTelecharger:
         (dest.with_suffix(dest.suffix + ".part")).write_bytes(b"AB")
         statut, infos = m.telecharger("https://x/f.jpg", dest, None)
         assert statut == "repris"
-        # le contenu final concatène le .part et la suite téléchargée
+        # the final content concatenates the .part and the downloaded remainder
         assert dest.read_bytes() == b"ABXYZ"
-        # le Range a été envoyé
+        # the Range was sent
         _, kwargs = m.session.get.call_args
         assert kwargs["headers"].get("Range") == "bytes=2-"
 
     def test_416_relance_sans_range(self, tmp_path):
-        # 416 (Range invalide) → suppression du .part et reprise à zéro
+        # 416 (invalid Range) → delete the .part and restart from scratch
         m = _moteur(tmp_path)
         m.session = MagicMock()
         m.session.get.side_effect = [
@@ -529,7 +529,7 @@ class TestTelecharger:
         assert dest.read_bytes() == b"neuf"
 
     def test_if_modified_since_utilise(self, tmp_path):
-        # etat sans etag mais avec modifie → header conditionnel autre
+        # state without etag but with modifie → other conditional header
         m = _moteur(tmp_path, verifier=True)
         m.session = MagicMock()
         m.session.get.return_value = FakeResponse(304)
@@ -552,9 +552,9 @@ class TestTelecharger:
         assert not dest.exists()
 
     def test_interruption_conserve_part(self, tmp_path):
-        # l'arrêt en pleine lecture doit laisser le .part pour la reprise
+        # the stop mid-read must leave the .part for the resume
         m = _moteur(tmp_path)
-        m.arret.set()   # coupe dès le premier bloc
+        m.arret.set()   # cut off on the first block
 
         class GrosseResponse(FakeResponse):
             def iter_content(self_, chunk_size):
@@ -574,11 +574,11 @@ class TestTelecharger:
 # --------------------------------------------------------------------------- #
 
 def _patch_inventaire(moteur, elements):
-    """Raccourci : patch `moteur.source.inventaire` pour renvoyer `elements`.
+    """Shortcut: patch `moteur.source.inventaire` to return `elements`.
 
-    L'adaptateur d'inventaire est ce que le moteur consomme désormais ; les
-    tests d'orchestration ne testent plus l'appel API brut, mais bien
-    l'orchestration en aval du contrat `Element`.
+    The inventory adapter is what the engine consumes now; orchestration
+    tests no longer test the raw API call, only the orchestration
+    downstream of the `Element` contract.
     """
     return patch.object(moteur.source, "inventaire",
                         return_value=iter(elements))
@@ -599,8 +599,8 @@ class TestExecuter:
         assert "supprime" in lire_manifeste(tmp_path)["42"]
 
     def test_ignore_les_elements_sans_url(self, tmp_path):
-        # Une source qui n'a pas trouvé de ressource au format demandé : le
-        # moteur doit compter ignoree, sans planter.
+        # A source that did not find a resource at the requested format:
+        # the engine must count it as ignoree, without crashing.
         moteur = _moteur(tmp_path, classement="date")
         sans_url = _element(1, url=None, nom_fichier="", mois="2026-01")
         with _patch_inventaire(moteur, [sans_url]), \
@@ -610,7 +610,7 @@ class TestExecuter:
         assert tel.call_count == 0
 
     def test_detecte_effacement_disque(self, tmp_path):
-        # état complet mais fichier disparu → marquée supprime, pas de download
+        # complete state but file gone → marked deleted, no download
         ecrire_manifeste(tmp_path, {
             "8": {"fichier": "manquant.jpg", "taille": 10},
         })
@@ -688,7 +688,7 @@ class TestExecuter:
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})):
             res = moteur.executer()
-        assert res.telechargees == 1   # seul le grand a été traité
+        assert res.telechargees == 1   # only the big one was processed
 
     def test_interruption(self, tmp_path):
         moteur = _moteur(tmp_path)
@@ -708,10 +708,10 @@ class TestExecuter:
                           side_effect=RuntimeError("API HS")):
             res = moteur.executer()
         assert "API HS" in res.message
-        assert res.echecs == 0   # RuntimeError ≠ échec par image
+        assert res.echecs == 0   # RuntimeError ≠ per-image failure
 
     def test_force_ignore_manifeste(self, tmp_path):
-        # avec force, une image marquée supprime doit être retéléchargée
+        # with force, an image marked deleted must be re-downloaded
         ecrire_manifeste(tmp_path, {
             "1": {"fichier": "a.jpg", "taille": 100,
                   "supprime": "2026-01-01T00:00:00"},
@@ -729,15 +729,15 @@ class TestExecuter:
 
 
 # --------------------------------------------------------------------------- #
-# Moteur.__init__ : rôles par défaut
+# Moteur.__init__: default roles
 # --------------------------------------------------------------------------- #
 
 class TestMoteurInit:
     def test_callbacks_par_defaut_sont_no_op(self, tmp_path):
-        # sans callbacks : le moteur n'explose pas quand il « journalise »
+        # without callbacks: the engine does not explode when it "logs"
         m = Moteur(Options(dossier=tmp_path, delai=0))
         m._journal("un message")
-        m._progression(1, 2, "étiquette")   # rien ne lève
+        m._progression(1, 2, "étiquette")   # nothing raises
 
     def test_arret_par_defaut(self, tmp_path):
         m = Moteur(Options(dossier=tmp_path))
@@ -745,7 +745,7 @@ class TestMoteurInit:
         assert m.arret.is_set() is False
 
     def test_source_par_defaut_est_wordpress(self, tmp_path):
-        # Options par défaut : type_source == "wordpress"
+        # Default Options: type_source == "wordpress"
         m = Moteur(Options(dossier=tmp_path, delai=0))
         assert m.source.type == "wordpress"
 
@@ -754,18 +754,18 @@ class TestMoteurInit:
                            type_source="djangoplicity",
                            format_image="Small"))
         assert m.source.type == "djangoplicity"
-        # le format est transmis à l'adaptateur via `reglages`
+        # the format is forwarded to the adapter via `reglages`
         assert m.source.format_image == "Small"
 
     def test_type_inconnu_repli_sur_wordpress(self, tmp_path):
-        # défensif : un type inconnu (config corrompue) ne doit pas planter
+        # defensive: an unknown type (corrupt config) must not crash
         m = Moteur(Options(dossier=tmp_path, delai=0,
                            type_source="inconnu"))
         assert m.source.type == "wordpress"
 
 
 # --------------------------------------------------------------------------- #
-# Plomberie : arrêt coopératif
+# Plumbing: cooperative stop
 # --------------------------------------------------------------------------- #
 
 class TestPlomberieMoteur:
@@ -777,11 +777,11 @@ class TestPlomberieMoteur:
 
     def test_verifier_arret_silencieux_sinon(self, tmp_path):
         m = _moteur(tmp_path)
-        m._verifier_arret()   # rien ne lève
+        m._verifier_arret()   # nothing raises
 
     def test_pause_dort_puis_rend_la_main(self, tmp_path):
         m = _moteur(tmp_path)
-        # une très courte pause exerce la boucle sleep
+        # a very short pause exercises the sleep loop
         import time
         avant = time.monotonic()
         m._pause(0.01)
@@ -789,7 +789,7 @@ class TestPlomberieMoteur:
 
 
 # --------------------------------------------------------------------------- #
-# charger_manifeste : options force et repli sur vide
+# charger_manifeste: force option and fallback to empty
 # --------------------------------------------------------------------------- #
 
 class TestChargerManifeste:
@@ -812,19 +812,19 @@ class TestChargerManifeste:
 
 
 # --------------------------------------------------------------------------- #
-# executer : branches complémentaires (inchangé, résolution galerie, OSError…)
+# executer: extra branches (inchangé, gallery resolution, OSError…)
 # --------------------------------------------------------------------------- #
 
 class TestExecuterExtra:
     def test_base_normalise_slash_final(self, tmp_path):
-        # la base du moteur enlève le slash final ; c'est aussi ce que voit
-        # l'adaptateur.
+        # the engine's base strips the trailing slash; that is also what
+        # the adapter sees.
         moteur = _moteur(tmp_path, site="https://example.test/")
         assert moteur.base == "https://example.test"
         assert moteur.source.base == "https://example.test"
 
     def test_status_inchange_compte_dans_inchangees(self, tmp_path):
-        # fichier connu à revérifier avec 304
+        # known file to re-verify with 304
         f = tmp_path / "ok.jpg"
         f.write_bytes(b"12345")
         ecrire_manifeste(tmp_path, {
@@ -850,14 +850,14 @@ class TestExecuterExtra:
             res = moteur.executer()
         assert res.telechargees == 1
         res_parents.assert_called_once()
-        # le fichier a bien été rangé dans le dossier « match-42 »
+        # the file was placed in the "match-42" directory
         m = lire_manifeste(tmp_path)
         assert m["1"]["fichier"].replace("\\", "/").startswith("match-42/")
 
     def test_resoudre_groupes_ignore_si_source_ne_les_supporte_pas(self, tmp_path):
-        # Djangoplicity n'a pas « galerie » dans ses classements. Même si
-        # l'utilisateur l'a laissé dans son options, le moteur ne doit pas
-        # appeler resoudre_groupes, et retomber sur le classement par date.
+        # Djangoplicity does not have "galerie" in its sort modes. Even if
+        # the user left it in their options, the engine must not call
+        # resoudre_groupes, and fall back to the by-date sort.
         moteur = _moteur(tmp_path, classement="galerie",
                          type_source="djangoplicity")
         el = _element(1, groupe="42", mois="2026-03",
@@ -884,11 +884,11 @@ class TestExecuterExtra:
         with _patch_inventaire(moteur, [_element(1, largeur=200),
                                         _element(2, largeur=300)]):
             moteur.executer()
-        assert any("écarté" in m for m in journal)
+        assert any("écarté" in m for m in journal)  # localized "excluded"
 
     def test_sauvegarde_periodique(self, tmp_path):
-        # 26 images : sauver_manifeste doit être appelé au moins à la 25ème
-        # et une fois de plus dans finally
+        # 26 images: sauver_manifeste must be called at least at the 25th
+        # and once more in finally
         moteur = _moteur(tmp_path, classement="date")
         elements = [
             _element(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg",
@@ -901,13 +901,13 @@ class TestExecuterExtra:
                                                "modifie": "", "url": "u"})), \
              patch.object(moteur, "sauver_manifeste") as sauver:
             moteur.executer()
-        # au moins 2 appels : périodique + finally
+        # at least 2 calls: periodic + finally
         assert sauver.call_count >= 2
 
     def test_metadata_source_ecrite_dans_manifeste(self, tmp_path):
-        # Un adaptateur (Djangoplicity) peut fournir crédit / droits / checksum
-        # dans `element.extra` : le moteur les recopie dans le manifeste sans
-        # les interpréter — utile pour l'export catalogue à venir.
+        # An adapter (Djangoplicity) can provide credit / rights / checksum
+        # in `element.extra`: the engine copies them into the manifest
+        # without interpreting them — useful for the upcoming catalog export.
         moteur = _moteur(tmp_path, classement="date")
         el = _element(7, url="https://cdn.eso.org/large/eso1907a.jpg",
                       mois="2026-03",
@@ -922,7 +922,7 @@ class TestExecuterExtra:
 
 
 # --------------------------------------------------------------------------- #
-# Cache API : lire, écrire, effet sur les runs suivants
+# API cache: read, write, effect on subsequent runs
 # --------------------------------------------------------------------------- #
 
 class TestCacheAPI:
@@ -953,7 +953,7 @@ class TestCacheAPI:
         assert m.charger_cache() == {}
 
     def test_charger_cache_ignore_si_site_change(self, tmp_path):
-        # cache écrit pour un autre site : pas d'exploitation croisée
+        # cache written for another site: no cross-usage
         ecrire_cache(tmp_path, {"site": "https://autre.example",
                                 "derniere_date_media": "2026"})
         m = _moteur(tmp_path, site="https://nouveau.example")
@@ -977,7 +977,7 @@ class TestCacheAPI:
         assert not chemin_cache(tmp_path).exists()
 
     def test_executer_utilise_date_du_cache_comme_after(self, tmp_path):
-        # Un cache pré-existant doit être passé à `source.inventaire` comme depuis
+        # A pre-existing cache must be passed to `source.inventaire` as `depuis`
         ecrire_cache(tmp_path, {
             "site": "https://x.example",
             "derniere_date_media": "2026-06-15T12:00:00",
@@ -1005,7 +1005,7 @@ class TestCacheAPI:
 
         with patch.object(m.source, "inventaire", side_effect=faux_inventaire):
             m.executer()
-        # avec `depuis` utilisateur, on n'injecte PAS la date du cache
+        # with a user `depuis`, we do NOT inject the cache date
         assert capture["depuis"] == "2020-01-01"
 
     def test_executer_met_a_jour_la_date_max(self, tmp_path):
@@ -1040,10 +1040,11 @@ class TestCacheAPI:
         res_p.assert_called_once()
 
     def test_executer_reutilise_titres_caches(self, tmp_path):
-        # Cache pré-rempli : le moteur passe le cache à l'adaptateur, qui doit
-        # renvoyer le nom sans appeler d'API (contrat testé sur WordPress dans
+        # Pre-populated cache: the engine passes the cache to the adapter,
+        # which must return the name without calling the API (contract
+        # tested on WordPress in
         # `test_source_wordpress::TestResoudreGroupes::test_court_circuite_sur_cache_connus`).
-        # Ici on vérifie l'orchestration côté moteur.
+        # Here we check the engine-side orchestration.
         ecrire_cache(tmp_path, {
             "site": "https://x",
             "titres_parents": {"42": "match-cache"},
@@ -1055,8 +1056,8 @@ class TestCacheAPI:
 
         def faux_resoudre(cles, connus=None):
             appels.append((cles, dict(connus or {})))
-            # comportement de l'adaptateur : les entrées connues sont reprises
-            # telles quelles, aucune requête n'est faite pour elles.
+            # adapter behavior: known entries are kept as-is, no request
+            # is made for them.
             return dict(connus or {})
 
         with _patch_inventaire(m, [el]), \
@@ -1065,9 +1066,9 @@ class TestCacheAPI:
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"})):
             m.executer()
-        # l'adaptateur a reçu le cache : à lui de court-circuiter.
+        # the adapter received the cache: it's up to it to short-circuit.
         assert appels and appels[0][1] == {"42": "match-cache"}
-        # le fichier a été rangé dans « match-cache »
+        # the file was placed in "match-cache"
         assert lire_manifeste(tmp_path)["1"]["fichier"].replace("\\", "/") \
             .startswith("match-cache/")
 
@@ -1076,13 +1077,13 @@ class TestCacheAPI:
         with patch.object(m.source, "inventaire", side_effect=Interrompu()):
             r = m.executer()
         assert r.interrompu is True
-        # aucune écriture de cache : la date max n'a pas été validée
+        # no cache write: the max date was not committed
         assert not chemin_cache(tmp_path).exists()
 
     def test_charger_cache_ignore_si_type_change(self, tmp_path):
-        # cache écrit sous type "wordpress", moteur créé sous type
-        # "djangoplicity" : deux espaces d'identifiants distincts, on
-        # repart de zéro.
+        # cache written under type "wordpress", engine created under type
+        # "djangoplicity": two distinct identifier spaces, start from
+        # scratch.
         ecrire_cache(tmp_path, {
             "site": "https://x", "type_source": "wordpress",
             "derniere_date_media": "2026-06-01T00:00:00",
@@ -1091,13 +1092,13 @@ class TestCacheAPI:
         assert m.charger_cache() == {}
 
     def test_charger_cache_migration_silencieuse_sans_type(self, tmp_path):
-        # cache pré-existant sans champ `type_source` (config v1.0.38) : on
-        # le lit comme s'il correspondait au type courant, pas de perte.
+        # pre-existing cache without `type_source` field (config v1.0.38):
+        # read as if it matched the current type, no loss.
         ecrire_cache(tmp_path, {
             "site": "https://x",
             "derniere_date_media": "2026-06-01T00:00:00",
         })
-        m = _moteur(tmp_path, site="https://x")   # défaut : wordpress
+        m = _moteur(tmp_path, site="https://x")   # default: wordpress
         assert m.charger_cache()["derniere_date_media"] == "2026-06-01T00:00:00"
 
     def test_sauver_cache_ajoute_le_type_source(self, tmp_path):

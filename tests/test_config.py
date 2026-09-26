@@ -20,18 +20,18 @@ from Glaneur.config import (
 
 
 # --------------------------------------------------------------------------- #
-# Emplacement par défaut du fichier de configuration
+# Default location of the configuration file
 # --------------------------------------------------------------------------- #
 
 class TestEmplacements:
     def test_dossier_config_renvoie_chemin(self):
         d = dossier_config()
         assert isinstance(d, Path)
-        assert d.name  # non vide
+        assert d.name  # non-empty
 
     def test_dossier_images_defaut_pointe_vers_home(self):
         d = dossier_images_defaut()
-        # doit contenir le nom d'application quelque part dans le chemin
+        # must contain the application name somewhere in the path
         assert "Glaneur" in str(d)
 
     def test_dossier_config_windows(self, monkeypatch, tmp_path):
@@ -66,7 +66,7 @@ class TestEmplacements:
         assert d.name == "glaneur"
 
     def test_dossier_images_defaut_repli_sur_home(self, monkeypatch, tmp_path):
-        # aucun dossier "Pictures"/"Images" présent -> repli sur ~/Glaneur
+        # no "Pictures"/"Images" directory present -> fall back to ~/Glaneur
         vide = tmp_path / "vide-home"
         vide.mkdir()
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: vide))
@@ -75,13 +75,13 @@ class TestEmplacements:
 
 
 # --------------------------------------------------------------------------- #
-# Migration depuis l'ancien nom WpImageDownloader
+# Migration from the legacy WpImageDownloader name
 # --------------------------------------------------------------------------- #
 
 class TestMigrationAncienNom:
     def test_copie_ancienne_config_si_cible_absente(self, monkeypatch, tmp_path):
-        # Simule un ancien dossier `%APPDATA%\WpImageDownloader\` peuplé
-        # et une nouvelle cible `%APPDATA%\Glaneur\` inexistante.
+        # Simulate a populated legacy `%APPDATA%\WpImageDownloader\`
+        # directory and a non-existent new target `%APPDATA%\Glaneur\`.
         monkeypatch.setenv("APPDATA", str(tmp_path))
         monkeypatch.setattr("sys.platform", "win32")
         ancien = tmp_path / "WpImageDownloader"
@@ -96,7 +96,7 @@ class TestMigrationAncienNom:
         cible = tmp_path / "Glaneur"
         assert (cible / "config.json").read_text() == '{"site": "https://ex.com"}'
         assert (cible / "logs" / "app.log").read_text() == "historique\n"
-        # L'ancien reste intact (copie, pas move)
+        # The legacy directory remains intact (copy, not move)
         assert (ancien / "config.json").exists()
 
     def test_ne_ecrase_pas_config_glaneur_existante(self, monkeypatch, tmp_path):
@@ -133,7 +133,7 @@ class TestMigrationAncienNom:
 
 
 # --------------------------------------------------------------------------- #
-# Chargement / sauvegarde
+# Load / save
 # --------------------------------------------------------------------------- #
 
 class TestChargement:
@@ -145,7 +145,7 @@ class TestChargement:
         assert cfg.verifier_integrite is False
         assert cfg.diaporama_dossier is False
         assert cfg.verifier_maj_demarrage is True
-        # dossier renseigné même sans fichier
+        # dossier populated even without a file
         assert cfg.dossier
 
     def test_relecture(self, tmp_path):
@@ -166,8 +166,8 @@ class TestChargement:
         assert c2.verifier_maj_demarrage is False
 
     def test_verifier_maj_demarrage_absent_du_json_reprend_defaut(self, tmp_path):
-        # config antérieure à l'ajout du champ : doit se relire sans erreur
-        # et retomber sur la valeur par défaut True.
+        # config pre-dating the field addition: must re-read without error
+        # and fall back to the default value True.
         chemin = tmp_path / "c.json"
         chemin.write_text(json.dumps({"intervalle_heures": 12}))
         c = Config.charger(chemin)
@@ -177,19 +177,19 @@ class TestChargement:
         chemin = tmp_path / "c.json"
         chemin.write_text("{pas du json")
         c = Config.charger(chemin)
-        assert c.intervalle_heures == 24   # défaut recouvré
+        assert c.intervalle_heures == 24   # default recovered
 
     def test_cles_inconnues_ignorees(self, tmp_path):
         chemin = tmp_path / "c.json"
         chemin.write_text(json.dumps({
             "intervalle_heures": 6,
             "cle_inconnue": "poubelle",
-            "_chemin": "/attaque/tentative",   # attribut privé, ignoré
+            "_chemin": "/attaque/tentative",   # private attribute, ignored
         }))
         c = Config.charger(chemin)
         assert c.intervalle_heures == 6
         assert not hasattr(c, "cle_inconnue")
-        # _chemin est notre attribut interne, pas celui du JSON
+        # _chemin is our internal attribute, not the one from JSON
         assert c._chemin == chemin
 
     def test_sauver_atomique_pas_de_tmp(self, tmp_path):
@@ -203,7 +203,7 @@ class TestChargement:
         c = Config.charger(chemin)
         c.sauver()
         donnees = json.loads(chemin.read_text())
-        # `_chemin` ne doit pas fuiter dans le JSON
+        # `_chemin` must not leak into the JSON
         assert "_chemin" not in donnees
 
     def test_dossier_par_defaut_conserve_apres_sauvegarde(self, tmp_path):
@@ -216,7 +216,7 @@ class TestChargement:
 
 
 # --------------------------------------------------------------------------- #
-# Validation (clamp des valeurs aberrantes)
+# Validation (clamping aberrant values)
 # --------------------------------------------------------------------------- #
 
 class TestValider:
@@ -231,7 +231,7 @@ class TestValider:
 
     def test_intervalle_manuel_admis(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.intervalle_heures = 0   # « Manuel uniquement »
+        c.intervalle_heures = 0   # "Manual only"
         c.valider()
         assert c.intervalle_heures == 0
 
@@ -249,7 +249,7 @@ class TestValider:
 
     def test_largeur_flottant_accepte(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.largeur_min = 1234.7   # cast int
+        c.largeur_min = 1234.7   # int cast
         c.valider()
         assert c.largeur_min == 1234
 
@@ -263,7 +263,7 @@ class TestValider:
         c = self._neuve(tmp_path)
         c.delai_requetes = 0.01
         c.valider()
-        # plancher à 0.2 pour ne pas marteler le serveur
+        # floor at 0.2 to avoid hammering the server
         assert c.delai_requetes == pytest.approx(0.2)
 
     def test_delai_plafond(self, tmp_path):
@@ -273,7 +273,7 @@ class TestValider:
         assert c.delai_requetes == 10.0
 
     def test_type_source_par_defaut_wordpress(self, tmp_path):
-        # config vierge : type_source défaut = "wordpress", zéro migration
+        # fresh config: type_source default = "wordpress", zero migration
         c = self._neuve(tmp_path)
         assert c.type_source == "wordpress"
         assert c.format_image == "Large"
@@ -291,7 +291,7 @@ class TestValider:
         assert c.format_image == "Large"
 
     def test_classement_snap_si_source_ne_le_supporte_pas(self, tmp_path):
-        # Djangoplicity ne fait pas "galerie" : `valider` rabat sur "date"
+        # Djangoplicity does not support "galerie": `valider` falls back to "date"
         c = self._neuve(tmp_path)
         c.type_source = "djangoplicity"
         c.classement = "galerie"
@@ -299,7 +299,7 @@ class TestValider:
         assert c.classement == "date"
 
     def test_classement_conserve_si_supporte(self, tmp_path):
-        # WordPress supporte "galerie" : rien à changer
+        # WordPress supports "galerie": nothing to change
         c = self._neuve(tmp_path)
         c.type_source = "wordpress"
         c.classement = "galerie"
@@ -307,9 +307,9 @@ class TestValider:
         assert c.classement == "galerie"
 
     def test_v1038_config_charge_sans_champs_nouveaux(self, tmp_path):
-        # config écrite par 1.0.38 (sans type_source ni format_image) :
-        # elle doit se relire sans erreur, avec les valeurs par défaut,
-        # et le comportement WordPress est préservé.
+        # config written by 1.0.38 (without type_source or format_image):
+        # must re-read without error, with default values, and the
+        # WordPress behavior is preserved.
         chemin = tmp_path / "c.json"
         chemin.write_text(json.dumps({
             "site": "https://old.example",
@@ -319,12 +319,12 @@ class TestValider:
         c = Config.charger(chemin)
         assert c.type_source == "wordpress"
         assert c.format_image == "Large"
-        assert c.classement == "galerie"   # non snapée car WP la supporte
+        assert c.classement == "galerie"   # not snapped because WP supports it
 
 
 class TestConstantesSource:
     def test_types_source_contient_wordpress_et_djangoplicity(self):
-        # sanity check : les deux clés attendues par l'engine sont là.
+        # sanity check: both keys expected by the engine are present.
         valeurs = set(TYPES_SOURCE.values())
         assert "wordpress" in valeurs
         assert "djangoplicity" in valeurs
@@ -334,7 +334,7 @@ class TestConstantesSource:
 
 
 # --------------------------------------------------------------------------- #
-# Libellés d'affichage (traduction interne ↔ interface)
+# Display labels (internal value ↔ UI label)
 # --------------------------------------------------------------------------- #
 
 class TestLibelles:
@@ -346,7 +346,7 @@ class TestLibelles:
 
     def test_libelle_intervalle_repli(self, tmp_path):
         c = Config.charger(tmp_path / "c.json")
-        c.intervalle_heures = -1   # non listé
+        c.intervalle_heures = -1   # not listed
         assert c.libelle_intervalle == "Une fois par jour"
 
     def test_libelle_classement_connu(self, tmp_path):

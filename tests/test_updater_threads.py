@@ -25,7 +25,7 @@ from Glaneur.updater.version import Version
 
 
 def _attendre_fin_propre(thread) -> None:
-    """Attend que le QThread ait vraiment quitté run() avant le GC Python."""
+    """Waits until the QThread has really exited run() before Python GC."""
     assert thread.wait(2000), "QThread ne s'est pas terminé dans le délai imparti"
 
 
@@ -86,7 +86,7 @@ class TestTelechargementMiseAJour:
         checksum_path = tmp_path / "installer.sha256"
         checksum_path.write_text("a" * 64)
 
-        # download rend le fichier installateur puis le fichier checksum
+        # download returns the installer file then the checksum file
         rendus = iter([installer_path, checksum_path])
         monkeypatch.setattr(
             "Glaneur.updater.qt_threads.download",
@@ -106,7 +106,7 @@ class TestTelechargementMiseAJour:
             thread.start()
         _attendre_fin_propre(thread)
         assert blocker.args[0] == installer_path
-        assert installer_path.exists()  # non supprimé en cas de succès
+        assert installer_path.exists()  # not deleted on success
 
     def test_supprime_fichier_si_sha256_incorrect(self, qtbot, fausse_release, tmp_path, monkeypatch):
         installer_path = tmp_path / "installer.exe"
@@ -133,10 +133,10 @@ class TestTelechargementMiseAJour:
             thread.start()
         _attendre_fin_propre(thread)
         assert "SHA-256" in blocker.args[0]
-        assert not installer_path.exists()  # nettoyé après échec de vérification
+        assert not installer_path.exists()  # cleaned up after verification failure
 
     def test_emet_erreur_si_installateur_manquant(self, qtbot):
-        # Release sans asset installer Windows attendu
+        # Release without the expected Windows installer asset
         release_vide = Release(Version.parse("2.0.0"), "v2.0.0", assets=())
         thread = TelechargementMiseAJour(release_vide)
         with qtbot.waitSignal(thread.erreur, timeout=3000) as blocker:

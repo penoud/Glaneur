@@ -37,9 +37,9 @@ class WordPress(Source):
     titres via l'endpoint correspondant.
     """
 
-    #: Clé utilisée dans ``Glaneur.sources.SOURCES``.
+    #: Key used in ``Glaneur.sources.SOURCES``.
     type = "wordpress"
-    #: Ensemble des classements supportés.
+    #: Set of supported sort modes.
     classements = frozenset({"galerie", "date", "plat"})
 
     def __init__(self, base, transport, reglages, journal=None, progression=None):
@@ -56,7 +56,7 @@ class WordPress(Source):
         url = f"{self.api}/{chemin.lstrip('/')}"
         return self.transport.get_json(url, params=params, fin_si=frozenset({400}))
 
-    # -- Inventaire ------------------------------------------------------- #
+    # -- Inventory -------------------------------------------------------- #
 
     def inventaire(
         self, depuis: str | None, jusqua: str | None,
@@ -140,7 +140,7 @@ class WordPress(Source):
             groupe=str(m["post"]) if m.get("post") else None,
         )
 
-    # -- Regroupement (galerie) ------------------------------------------- #
+    # -- Grouping (gallery) ----------------------------------------------- #
 
     def _bases_rest(self) -> list[str]:
         try:
@@ -180,8 +180,8 @@ class WordPress(Source):
         if not restants:
             return titres
 
-        # côté WP les IDs sont des entiers ; on convertit pour les paramètres
-        # et on garde des clés string dans le résultat.
+        # WP-side IDs are integers; we convert for the parameters and
+        # keep string keys in the result.
         for base in self._bases_rest():
             if not restants:
                 break

@@ -11,7 +11,7 @@ from Glaneur.scheduler import Planificateur
 
 
 def _cfg(tmp_path, **kw):
-    """Config isolée dans tmp_path, surchargée par kw."""
+    """Config isolated in tmp_path, overridden by kw."""
     c = Config.charger(tmp_path / "c.json")
     for k, v in kw.items():
         setattr(c, k, v)
@@ -77,10 +77,10 @@ class TestMarquerExecution:
         cfg = _cfg(tmp_path, intervalle_heures=24, derniere_execution="")
         p = Planificateur(cfg)
         p.marquer_execution()
-        # relire depuis disque : l'horodatage a été persisté
+        # re-read from disk: the timestamp has been persisted
         cfg2 = Config.charger(tmp_path / "c.json")
         assert cfg2.derniere_execution
-        # bien parsable en datetime
+        # parses cleanly to a datetime
         datetime.fromisoformat(cfg2.derniere_execution)
 
 
@@ -96,18 +96,18 @@ class TestTextePresentable:
         assert "imminente" in p.texte_prochaine()
 
     def test_reste_en_minutes(self, tmp_path):
-        # échéance dans ~30 min : derniere = maintenant - 23h30
+        # due time in ~30 min: derniere = now - 23h30
         t0 = (datetime.now() - timedelta(hours=23, minutes=30)).isoformat(
             timespec="seconds")
         p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
         r = p.texte_prochaine()
         assert "min" in r
-        # < 1h → pas de champ "h"
+        # < 1h → no "h" field
         assert " h " not in r
 
     def test_reste_en_heures(self, tmp_path):
-        # échéance dans ~3h30 : derniere = maintenant - 20h30
+        # due time in ~3h30: derniere = now - 20h30
         t0 = (datetime.now() - timedelta(hours=20, minutes=30)).isoformat(
             timespec="seconds")
         p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
@@ -115,7 +115,7 @@ class TestTextePresentable:
         assert " h " in p.texte_prochaine()
 
     def test_reste_en_jours(self, tmp_path):
-        # échéance dans 5 j : intervalle 7 j, derniere = il y a 2 j
+        # due time in 5 days: interval 7 days, derniere = 2 days ago
         t0 = (datetime.now() - timedelta(days=2)).isoformat(timespec="seconds")
         p = Planificateur(_cfg(tmp_path, intervalle_heures=168,
                                derniere_execution=t0))

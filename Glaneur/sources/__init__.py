@@ -12,8 +12,8 @@ from .base import Element, Interrompu, Source, Transport
 from .djangoplicity import Djangoplicity
 from .wordpress import WordPress
 
-#: Registre des adaptateurs de source disponibles. Clé : le libellé porté
-#: par la classe (:attr:`Source.type`), valeur : la classe elle-même.
+#: Registry of available source adapters. Key: the label carried by
+#: the class (:attr:`Source.type`), value: the class itself.
 SOURCES: dict[str, Type[Source]] = {
     WordPress.type: WordPress,
     Djangoplicity.type: Djangoplicity,

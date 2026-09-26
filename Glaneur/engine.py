@@ -33,11 +33,11 @@ from PySide6.QtCore import QCoreApplication
 
 from .sources import SOURCES, Element, Interrompu, Transport
 
-# lupdate n'extrait QCoreApplication.translate("Ctx", "src") que si contexte
-# et source sont littéraux : on inline plutôt que d'aliaser un _tr().
+# lupdate only extracts QCoreApplication.translate("Ctx", "src") when context
+# and source are literals: we inline rather than aliasing a _tr().
 
-# Réexport de `Interrompu` pour les appelants qui l'importent via `engine`.
-Interrompu = Interrompu   # noqa: PLW0127 — alias explicite
+# Re-export of `Interrompu` for callers that import it via `engine`.
+Interrompu = Interrompu   # noqa: PLW0127 — explicit alias
 
 UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
 
@@ -50,33 +50,33 @@ class Options:
     éviter la duplication d'index entre autodoc et Napoleon.
     """
 
-    #: Répertoire cible où déposer manifeste, cache et fichiers.
+    #: Target directory where manifest, cache and files land.
     dossier: Path
-    #: Origine du site source (par exemple ``https://example.com``).
+    #: Source site origin (for example ``https://example.com``).
     site: str = "https://example.com"
-    #: ``galerie`` (par titre parent), ``date`` (par mois) ou ``plat``
-    #: (tout au même niveau).
+    #: ``galerie`` (by parent title), ``date`` (by month) or ``plat``
+    #: (everything at the same level).
     classement: str = "galerie"
-    #: Écarte les ressources plus étroites, en pixels.
+    #: Skips resources narrower than this, in pixels.
     largeur_min: int = 800
-    #: Plancher de pause entre deux requêtes réseau, en secondes.
+    #: Floor of the pause between two network requests, in seconds.
     delai: float = 0.5
-    #: Revalide les fichiers déjà présents via ``If-None-Match`` et
+    #: Revalidates files already present via ``If-None-Match`` and
     #: ``If-Modified-Since``.
     verifier: bool = False
-    #: Ignore complètement le manifeste existant.
+    #: Fully ignores the existing manifest.
     force: bool = False
-    #: Borne basse au format ``AAAA-MM-JJ``.
+    #: Lower bound in ``YYYY-MM-DD`` format.
     depuis: str | None = None
-    #: Borne haute au format ``AAAA-MM-JJ``.
+    #: Upper bound in ``YYYY-MM-DD`` format.
     jusqua: str | None = None
-    #: Autorise le cache disque (date max vue, titres de galeries).
+    #: Enables the disk cache (max date seen, gallery titles).
     utiliser_cache: bool = True
-    #: Clé de ``Glaneur.sources.SOURCES`` (par exemple ``wordpress`` ou
+    #: Key of ``Glaneur.sources.SOURCES`` (for example ``wordpress`` or
     #: ``djangoplicity``).
     type_source: str = "wordpress"
-    #: Variante d'image demandée aux sources qui exposent plusieurs
-    #: formats (utilisé par Djangoplicity).
+    #: Image variant requested from sources that expose several
+    #: formats (used by Djangoplicity).
     format_image: str = "Large"
 
 
@@ -84,34 +84,34 @@ class Options:
 class Resultat:
     """Compteurs et message renvoyés par un run du moteur."""
 
-    #: Nouveaux fichiers effectivement téléchargés.
+    #: New files actually downloaded.
     telechargees: int = 0
-    #: Fichiers repris depuis un ``.part`` partiel.
+    #: Files resumed from a partial ``.part``.
     reprises: int = 0
-    #: Réponses 304 (ETag/Last-Modified inchangés).
+    #: 304 responses (ETag/Last-Modified unchanged).
     inchangees: int = 0
-    #: Fichiers déjà à jour dans le manifeste et sur le disque.
+    #: Files already up to date in the manifest and on disk.
     deja_presentes: int = 0
-    #: Fichiers manquants du disque à ce passage — marqués comme
-    #: supprimés dans le manifeste.
+    #: Files missing from disk on this pass — marked as
+    #: deleted in the manifest.
     supprimees: int = 0
-    #: Fichiers connus comme supprimés ou sans URL utilisable, non
-    #: retéléchargés.
+    #: Files known as deleted or without a usable URL, not
+    #: re-downloaded.
     ignorees: int = 0
-    #: Fichiers dont le téléchargement a échoué.
+    #: Files whose download failed.
     echecs: int = 0
-    #: Volume total téléchargé, en octets.
+    #: Total volume downloaded, in bytes.
     octets: int = 0
-    #: Vrai si l'utilisateur a demandé l'arrêt en cours de run.
+    #: True if the user requested a stop mid-run.
     interrompu: bool = False
-    #: Résumé prêt à afficher à l'utilisateur (localisé).
+    #: Summary ready to display to the user (localized).
     message: str = ""
-    #: Bac libre pour informations additionnelles.
+    #: Free-form bag for extra information.
     details: dict = field(default_factory=dict)
 
 
 # --------------------------------------------------------------------------- #
-# Utilitaires
+# Utilities
 # --------------------------------------------------------------------------- #
 
 SIZE_SUFFIX = re.compile(r"-\d{2,5}x\d{2,5}(?=\.[A-Za-z]{3,4}$)")
@@ -136,7 +136,7 @@ def nettoyer(titre: str, defaut: str = "divers") -> str:
     texte = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode("ascii")
     texte = re.sub(r"[^\w\s-]", "", texte).strip()
     texte = re.sub(r"[\s_]+", "-", texte).lower()
-    texte = texte.strip(".-")            # Windows refuse les noms finissant par un point
+    texte = texte.strip(".-")            # Windows rejects names ending with a dot
     return texte[:80] or defaut
 
 
@@ -158,7 +158,7 @@ def format_octets(n: int) -> str:
 
 
 # --------------------------------------------------------------------------- #
-# Manifeste — fonctions libres, pour que l'UI le consulte sans instancier un moteur
+# Manifest — free functions, so the UI can inspect it without instantiating an engine
 # --------------------------------------------------------------------------- #
 
 def chemin_manifeste(dossier: Path) -> Path:
@@ -216,9 +216,9 @@ def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Cache API : date maximale des médias vus, titres des galeries résolues.
-# Sert à accélérer les runs suivants — le manifeste dit ce qu'on a téléchargé,
-# le cache dit ce qu'on a demandé à l'API pour éviter de le redemander.
+# API cache: max date of media seen, titles of resolved galleries.
+# Speeds up subsequent runs — the manifest says what has been downloaded,
+# the cache says what has been asked of the API to avoid asking again.
 # --------------------------------------------------------------------------- #
 
 def chemin_cache(dossier: Path) -> Path:
@@ -306,8 +306,8 @@ def restaurer(dossier: Path, ids: Iterable) -> int:
     for ident in ids:
         etat = manifeste.get(str(ident))
         if etat and etat.pop("supprime", None):
-            # la marque ne tombe qu'au téléchargement réussi, qui réécrit
-            # l'entrée : un échec réseau ne reclasse pas l'image en « supprimée »
+            # the mark only clears on a successful download, which rewrites
+            # the entry: a network failure will not reclassify the image as "deleted"
             etat["restaure"] = True
             retablies += 1
     if retablies:
@@ -344,13 +344,13 @@ def supprimer_image(dossier: Path, fichier: Path) -> bool:
     try:
         commun = os.path.commonpath([base, cible])
     except ValueError:
-        return False   # lecteurs différents sous Windows
+        return False   # different drives on Windows
     if commun != base or cible == base:
         return False
 
-    # Chemin relatif à comparer aux entrées du manifeste. Un manifeste écrit
-    # sous Windows contient des antislashs ; on ramène les deux formes à un
-    # séparateur commun avant `normcase`.
+    # Relative path to compare against manifest entries. A manifest written
+    # on Windows contains backslashes; we normalize both forms to a common
+    # separator before `normcase`.
     try:
         relatif = os.path.relpath(cible, base)
     except ValueError:
@@ -370,7 +370,7 @@ def supprimer_image(dossier: Path, fichier: Path) -> bool:
     try:
         Path(fichier).unlink()
     except FileNotFoundError:
-        pass   # déjà absent : la marque est posée quand même
+        pass   # already gone: the mark is set anyway
     except OSError:
         return False
 
@@ -383,7 +383,7 @@ def supprimer_image(dossier: Path, fichier: Path) -> bool:
 
 
 # --------------------------------------------------------------------------- #
-# Moteur
+# Engine
 # --------------------------------------------------------------------------- #
 
 class Moteur:
@@ -425,8 +425,8 @@ class Moteur:
         self._progression = progression or (lambda fait, total, etiquette: None)
         self.arret = arret or threading.Event()
         self.transport = Transport(delai=options.delai, arret=self.arret)
-        # La session de téléchargement passe par le transport partagé : un
-        # seul user-agent, un seul plancher de pause.
+        # The download session goes through the shared transport: a single
+        # user-agent, a single pause floor.
         self.session = self.transport.session
         classe = SOURCES.get(options.type_source) or SOURCES["wordpress"]
         self.source = classe(
@@ -437,7 +437,7 @@ class Moteur:
             progression=self._progression,
         )
 
-    # -- plomberie ---------------------------------------------------------- #
+    # -- plumbing ----------------------------------------------------------- #
 
     def _verifier_arret(self) -> None:
         if self.arret.is_set():
@@ -447,7 +447,7 @@ class Moteur:
         """Attente fractionnée, pour réagir vite à une demande d'arrêt."""
         self.transport.pause(secondes)
 
-    # -- manifeste ---------------------------------------------------------- #
+    # -- manifest ----------------------------------------------------------- #
 
     def charger_manifeste(self) -> dict:
         """Charge le manifeste du run précédent, ou ``{}`` en mode force.
@@ -497,7 +497,7 @@ class Moteur:
         attendue = (etat or {}).get("taille") or taille_api
         return not (attendue and taille != attendue)
 
-    # -- cache API ---------------------------------------------------------- #
+    # -- API cache ---------------------------------------------------------- #
 
     def charger_cache(self) -> dict:
         """Lit le cache disque, en le vidant si le contexte a changé.
@@ -542,7 +542,7 @@ class Moteur:
             **cache, "site": self.base, "type_source": self.o.type_source,
         })
 
-    # -- chemins ------------------------------------------------------------ #
+    # -- paths -------------------------------------------------------------- #
 
     def dossier_pour(self, element: Element, titres: dict[str, str]) -> str:
         """Sous-dossier relatif où ranger ``element`` selon le classement retenu.
@@ -589,7 +589,7 @@ class Moteur:
         pris.add(relatif)
         return dest
 
-    # -- téléchargement ----------------------------------------------------- #
+    # -- download ----------------------------------------------------------- #
 
     def telecharger(self, url: str, dest: Path, etat: dict | None) -> tuple[str, dict | None]:
         """Télécharge ``url`` vers ``dest`` avec reprise et revalidation.
@@ -651,7 +651,7 @@ class Moteur:
                 for bloc in r.iter_content(65536):
                     if self.arret.is_set():
                         f.flush()
-                        raise Interrompu()   # le .part est conservé pour la reprise
+                        raise Interrompu()   # the .part is kept for resume
                     f.write(bloc)
             tmp.replace(dest)
 
@@ -697,8 +697,8 @@ class Moteur:
         if manifeste:
             self._journal(QCoreApplication.translate("Moteur", "{n} image(s) déjà connues.").format(n=len(manifeste)))
 
-        # Cache : on ne l'utilise que si l'utilisateur n'a pas déjà borné la
-        # période — dans ce cas, ses bornes priment sur la mémoire du cache.
+        # Cache: only used if the user has not already bounded the period —
+        # in that case, their bounds override the cache's memory.
         depuis_cache = None
         if not (self.o.depuis or self.o.jusqua):
             depuis_cache = cache.get("derniere_date_media")
@@ -718,8 +718,8 @@ class Moteur:
                     e for e in elements
                     if e.largeur is None or e.largeur >= self.o.largeur_min
                 ]
-                # Un `Element` sans URL (source qui n'a pas trouvé la ressource
-                # demandée) ne peut plus être téléchargé : il file en `ignorees`.
+                # An `Element` without a URL (source that did not find the
+                # requested resource) can no longer be downloaded: goes to `ignorees`.
                 ecartees = avant - len(elements)
                 if ecartees:
                     self._journal(QCoreApplication.translate(
@@ -731,10 +731,10 @@ class Moteur:
                 res.message = QCoreApplication.translate("Moteur", "Aucune image ne correspond aux critères.")
                 return res
 
-            # noms déjà attribués, pour qu'une image n'en écrase pas une autre
+            # names already assigned, so an image does not overwrite another
             pris = {e["fichier"] for e in manifeste.values() if e.get("fichier")}
 
-            # tri : déjà sur le disque vs à traiter
+            # sort: already on disk vs to be processed
             a_faire: list[tuple[Element, Path | None]] = []
             for e in elements:
                 etat = manifeste.get(e.ident)
@@ -744,12 +744,12 @@ class Moteur:
                     res.ignorees += 1
                     continue
                 if e.url is None:
-                    # La source n'a pas trouvé de ressource utilisable.
+                    # The source did not find any usable resource.
                     res.ignorees += 1
                     continue
                 if (connu is not None and etat.get("taille") and not connu.exists()
                         and not etat.get("restaure")):
-                    # déjà téléchargée puis disparue : l'utilisateur l'a effacée
+                    # already downloaded then gone: the user erased it
                     etat["supprime"] = datetime.now().isoformat(timespec="seconds")
                     res.supprimees += 1
                     continue
@@ -791,7 +791,7 @@ class Moteur:
                     fichier = connu
                 else:
                     sous = self.dossier_pour(e, titres)
-                    # nettoyer("") renverrait "divers" et créerait un dossier fantôme
+                    # nettoyer("") would return "divers" and create a phantom directory
                     dossier = (self.o.dossier / nettoyer(sous)) if sous else self.o.dossier
                     nom = e.nom_fichier or Path(urlparse(url).path).name
                     fichier = self.chemin_libre(dossier / nom, e.ident, pris)
@@ -800,9 +800,9 @@ class Moteur:
 
                 if infos:
                     infos["fichier"] = str(fichier.relative_to(self.o.dossier))
-                    # Métadonnées de la source (crédit, checksum…) : on les
-                    # copie dans le manifeste pour l'export catalogue à venir,
-                    # sans que le moteur les interprète.
+                    # Source metadata (credit, checksum…): copied into the
+                    # manifest for the upcoming catalog export, without the
+                    # engine interpreting them.
                     if e.extra:
                         infos.setdefault("extra", {}).update(e.extra)
                     manifeste[e.ident] = infos
@@ -816,8 +816,8 @@ class Moteur:
                     res.inchangees += 1
                 else:
                     res.echecs += 1
-                    # `statut` peut être un code interne ("introuvable") ou une
-                    # phrase déjà traduite (voir télécharger()).
+                    # `statut` can be an internal code ("introuvable") or an
+                    # already-translated phrase (see télécharger()).
                     affiche = QCoreApplication.translate("Moteur", "introuvable") if statut == "introuvable" else statut
                     self._journal(f"{fichier.name} : {affiche}")
 
@@ -828,9 +828,9 @@ class Moteur:
             res.message = QCoreApplication.translate("Moteur", "{n} nouvelle(s) image(s), {taille} téléchargés.").format(
                 n=res.telechargees, taille=format_octets(res.octets))
 
-            # Mise à jour du cache : date maximale et titres nouvellement résolus.
-            # On ne l'écrit qu'en sortie normale, jamais après une interruption
-            # ou une erreur, pour ne pas mémoriser un état incomplet.
+            # Cache update: max date and newly resolved titles.
+            # Only written on normal exit, never after an interruption
+            # or an error, to avoid remembering an incomplete state.
             dates = [e.date for e in elements if e.date]
             if dates:
                 ancienne = cache.get("derniere_date_media") or ""

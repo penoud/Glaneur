@@ -21,14 +21,14 @@ from .base import Element, Source
 
 PER_PAGE = 100
 
-# Ordre de repli quand le format demandé manque : du plus proche du « Large »
-# au plus léger. `Original` n'est pas dans la liste de repli automatique :
-# rapatrier accidentellement un TIFF d'un Go n'est pas une bonne surprise.
+# Fallback order when the requested format is missing: from closest to "Large"
+# down to the lightest. `Original` is not in the automatic fallback list:
+# accidentally pulling down a one-GB TIFF is not a pleasant surprise.
 REPLIS = ("Large", "Small")
 
-# Certaines installations Djangoplicity renvoient des textes sous la forme
-# `"b'…'"` (repr Python de bytes). On les désencapsule avant d'en faire un
-# nom de dossier ou de le stocker dans le manifeste.
+# Some Djangoplicity installations return texts in the form
+# `"b'…'"` (Python bytes repr). We unwrap them before turning them into
+# a directory name or storing them in the manifest.
 _BYTES_REPR = re.compile(r"^b'(.*)'$|^b\"(.*)\"$")
 
 
@@ -62,12 +62,11 @@ class Djangoplicity(Source):
     de rapatrier des TIFF de plusieurs centaines de Mo par surprise.
     """
 
-    #: Clé utilisée dans ``Glaneur.sources.SOURCES``.
+    #: Key used in ``Glaneur.sources.SOURCES``.
     type = "djangoplicity"
-    # Pas de « galerie » : Djangoplicity n'expose pas d'album cohérent en
-    # ligne. Le classement par `Subject.Category` (§9 Q5) est délibérément
-    # différé.
-    #: Ensemble des classements supportés (pas de ``galerie``).
+    # No "galerie": Djangoplicity does not expose a coherent album online.
+    # Sorting by `Subject.Category` (§9 Q5) is deliberately deferred.
+    #: Set of supported sort modes (no ``galerie``).
     classements = frozenset({"date", "plat"})
 
     def __init__(self, base, transport, reglages, journal=None, progression=None):
@@ -81,12 +80,12 @@ class Djangoplicity(Source):
         Arguments identiques à :meth:`Glaneur.sources.base.Source.__init__`.
         """
         super().__init__(base, transport, reglages, journal, progression)
-        # Point d'entrée du flux : `<base>/images/d2d/`. Sur eso.org la base
-        # inclut souvent déjà `/public`, donc on ne rajoute que `/images/d2d/`.
+        # Feed entry point: `<base>/images/d2d/`. On eso.org the base
+        # often already includes `/public`, so we only add `/images/d2d/`.
         self.endpoint = f"{self.base}/images/d2d/"
         self.format_image = reglages.get("format_image") or "Large"
 
-    # -- utilitaires ------------------------------------------------------ #
+    # -- utilities -------------------------------------------------------- #
 
     def convertir_depuis(self, iso: str | None) -> str | None:
         """Convertit ``AAAA-MM-JJThh:mm:ss`` en ``AAAAMMJJhhmmss``.
@@ -105,7 +104,7 @@ class Djangoplicity(Source):
         """
         if not iso:
             return None
-        # tolérant : accepte "AAAA-MM-JJ" comme "AAAA-MM-JJTHH:MM:SS"
+        # tolerant: accepts "YYYY-MM-DD" as well as "YYYY-MM-DDTHH:MM:SS"
         s = iso.replace("-", "").replace(":", "").replace("T", "").replace(" ", "")
         return s[:14].ljust(14, "0")
 
@@ -126,8 +125,8 @@ class Djangoplicity(Source):
         ressource, format_effectif = self._choisir_ressource(ressources)
 
         publication = _sain(entree.get("PublicationDate") or "")
-        # `PublicationDate` typique : "2026-09-21T13:00:00" ; on en extrait
-        # "AAAA-MM" pour le classement par date.
+        # Typical `PublicationDate`: "2026-09-21T13:00:00"; we extract
+        # "YYYY-MM" from it for the by-date sort.
         mois = publication[:7] if len(publication) >= 7 else None
 
         extra: dict = {}
@@ -137,8 +136,8 @@ class Djangoplicity(Source):
             extra["rights"] = _sain(entree.get("Rights"))
 
         if ressource is None:
-            # Aucune ressource utilisable : on renvoie un Element sans URL,
-            # que le moteur comptera en `ignoree`.
+            # No usable resource: return an Element without URL,
+            # which the engine will count as `ignoree`.
             return Element(
                 ident=f"{ident_brut}:{self.format_image}",
                 url=None,
@@ -182,7 +181,7 @@ class Djangoplicity(Source):
             extra=extra,
         )
 
-    # -- Inventaire ------------------------------------------------------- #
+    # -- Inventory -------------------------------------------------------- #
 
     def inventaire(
         self, depuis: str | None, jusqua: str | None,

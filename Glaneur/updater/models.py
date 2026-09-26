@@ -11,11 +11,11 @@ from .version import Version
 class ReleaseAsset:
     """Un asset attaché à une release GitHub (installateur, checksum…)."""
 
-    #: Nom du fichier (par exemple ``Glaneur-1.1.0-setup.exe``).
+    #: File name (for example ``Glaneur-1.1.0-setup.exe``).
     name: str
-    #: URL de téléchargement direct fournie par GitHub.
+    #: Direct download URL provided by GitHub.
     download_url: str
-    #: Taille annoncée en octets, ou 0 si inconnue.
+    #: Announced size in bytes, or 0 if unknown.
     size: int = 0
 
 
@@ -23,13 +23,13 @@ class ReleaseAsset:
 class Release:
     """Une release publiée sur GitHub avec ses assets et sa version SemVer."""
 
-    #: Version SemVer parsée à partir de :attr:`tag_name`.
+    #: SemVer version parsed from :attr:`tag_name`.
     version: Version
-    #: Tag Git (par exemple ``v1.1.0``).
+    #: Git tag (for example ``v1.1.0``).
     tag_name: str
-    #: Assets attachés à la release.
+    #: Assets attached to the release.
     assets: tuple[ReleaseAsset, ...]
-    #: URL humaine de la page release, si connue.
+    #: Human URL of the release page, if known.
     html_url: str = ""
 
     def windows_installer(self) -> ReleaseAsset | None:
@@ -64,9 +64,9 @@ class Release:
 class UpdateInfo:
     """Résultat d'un check de mise à jour."""
 
-    #: Version actuellement installée.
+    #: Currently installed version.
     current: Version
-    #: Dernière release stable connue, ou ``None`` (aucune, ou erreur).
+    #: Latest known stable release, or ``None`` (none, or error).
     latest: Release | None
 
     @property
