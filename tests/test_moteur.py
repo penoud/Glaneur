@@ -1106,3 +1106,130 @@ class TestCacheAPI:
         m.sauver_cache({"derniere_date_media": "2026-01-01T00:00:00"})
         stocke = lire_cache(tmp_path)
         assert stocke["type_source"] == "djangoplicity"
+
+
+# --------------------------------------------------------------------------- #
+# Moteur.sauver_manifeste: read-merge-write fusion (UI vs engine race)
+# --------------------------------------------------------------------------- #
+
+class TestSauverManifesteFusion:
+    """Fusion en écriture : la marque UI l'emporte sur la version mémoire du moteur.
+
+    Non-régression contre la race last-writer-wins entre
+    ``Moteur.executer()`` (charge le manifeste à l'entrée, réécrit tout
+    dans le ``finally``) et ``supprimer_image``/``restaurer`` (lire-muter-
+    écrire côté UI).
+    """
+
+    def test_marque_supprime_ui_survit_a_sauvegarde_moteur(self, tmp_path):
+        """La marque `supprime` posée par l'UI pendant un run survit au `finally` du moteur."""
+        # Disk state at run start; engine loads it into memory.
+        ecrire_manifeste(tmp_path, {"1": {"fichier": "a.jpg", "taille": 42}})
+        # File must exist for supprimer_image to succeed.
+        (tmp_path / "a.jpg").write_bytes(b"x" * 42)
+        moteur = _moteur(tmp_path)
+        # In-memory version the engine will flush in its finally.
+        manifeste = {"1": {"fichier": "a.jpg", "taille": 42}}
+        # UI deletion happens mid-run: writes `supprime` directly to disk.
+        assert supprimer_image(tmp_path, tmp_path / "a.jpg") is True
+        # The engine's finally now flushes its in-memory copy, without the
+        # `supprime` mark; the fusion must re-inject the disk mark.
+        moteur.sauver_manifeste(manifeste)
+        assert "supprime" in lire_manifeste(tmp_path)["1"]
+
+    def test_marque_restaure_ui_survit_a_sauvegarde_moteur(self, tmp_path):
+        """La marque `restaure` posée par l'UI pendant un run survit au `finally` du moteur."""
+        # Disk starts with a `supprime` mark; engine loads it into memory.
+        ecrire_manifeste(tmp_path, {
+            "1": {"fichier": "a.jpg", "taille": 42,
+                  "supprime": "2026-01-01T00:00:00"},
+        })
+        moteur = _moteur(tmp_path)
+        # Engine's in-memory copy carries the same `supprime`.
+        manifeste = {"1": {"fichier": "a.jpg", "taille": 42,
+                           "supprime": "2026-01-01T00:00:00"}}
+        # UI restore happens mid-run: replaces `supprime` with `restaure` on disk.
+        assert restaurer(tmp_path, ["1"]) == 1
+        # Engine's finally flushes memory (which still has `supprime`, no `restaure`);
+        # fusion must let the UI's `restaure` win.
+        moteur.sauver_manifeste(manifeste)
+        stocke = lire_manifeste(tmp_path)["1"]
+        assert stocke.get("restaure") is True
+        assert "supprime" not in stocke
+
+    def test_entree_disque_hors_perimetre_preservee(self, tmp_path):
+        """Une entrée présente uniquement sur disque n'est pas effacée par la fusion."""
+        # Ident "2" is on disk with a `supprime` mark but not in the engine's
+        # inventory this run (e.g. filtered out); the fusion must keep it.
+        ecrire_manifeste(tmp_path, {
+            "1": {"fichier": "a.jpg"},
+            "2": {"fichier": "b.jpg", "supprime": "2026-01-01"},
+        })
+        moteur = _moteur(tmp_path)
+        moteur.sauver_manifeste({"1": {"fichier": "a.jpg"}})
+        m = lire_manifeste(tmp_path)
+        assert "2" in m
+        assert m["2"].get("supprime") == "2026-01-01"
+        assert m["2"].get("fichier") == "b.jpg"
+
+    def test_nouvelle_entree_moteur_ecrite(self, tmp_path):
+        """Une entrée que le moteur vient d'ajouter en mémoire est bien persistée."""
+        ecrire_manifeste(tmp_path, {"1": {"fichier": "a.jpg"}})
+        moteur = _moteur(tmp_path)
+        moteur.sauver_manifeste({
+            "1": {"fichier": "a.jpg"},
+            "3": {"fichier": "c.jpg", "taille": 10},
+        })
+        m = lire_manifeste(tmp_path)
+        assert "3" in m
+        assert m["3"]["fichier"] == "c.jpg"
+        assert m["3"]["taille"] == 10
+
+    def test_suppression_ui_pendant_reset_par_moteur(self, tmp_path):
+        """Suppression UI concomitante d'un re-téléchargement : `supprime` l'emporte, champs frais préservés."""
+        # Disk: user deleted the image just before the engine finished
+        # re-downloading it (fresh size/etag in memory, no `supprime`).
+        ecrire_manifeste(tmp_path, {
+            "1": {"fichier": "a.jpg", "taille": 5, "supprime": "2026-01-01"},
+        })
+        moteur = _moteur(tmp_path)
+        manifeste = {"1": {"fichier": "a.jpg", "taille": 42, "etag": "neuf"}}
+        moteur.sauver_manifeste(manifeste)
+        stocke = lire_manifeste(tmp_path)["1"]
+        # Last user gesture wins for the mark.
+        assert "supprime" in stocke
+        # Memory wins for every field that is not `supprime`/`restaure`.
+        assert stocke["taille"] == 42
+        assert stocke["etag"] == "neuf"
+
+    def test_champ_supprime_en_memoire_ecrase_disque_normalement(self, tmp_path):
+        """La marque `supprime` posée par le moteur en mémoire est écrite normalement (règle de fusion asymétrique)."""
+        # Engine set `supprime` itself (case "file disappeared during run",
+        # engine.py branch around line 750-755). Disk has no `supprime`.
+        ecrire_manifeste(tmp_path, {"1": {"fichier": "a.jpg"}})
+        moteur = _moteur(tmp_path)
+        manifeste = {"1": {"fichier": "a.jpg",
+                           "supprime": "2026-01-05T00:00:00"}}
+        moteur.sauver_manifeste(manifeste)
+        stocke = lire_manifeste(tmp_path)["1"]
+        # The fusion rule only reinjects a mark when it is on disk AND absent
+        # in memory; here it is the other way around, so memory wins.
+        assert stocke.get("supprime") == "2026-01-05T00:00:00"
+
+    def test_sauvegarde_periodique_non_regressee(self, tmp_path):
+        """La fusion ne rate pas le tick des 25 : ``sauver_manifeste`` reste appelée >= 2 fois avec 26 éléments."""
+        # Mirror of TestExecuterExtra::test_sauvegarde_periodique to detect any
+        # regression in the periodic save cadence once the fusion is added.
+        moteur = _moteur(tmp_path, classement="date")
+        elements = [
+            _element(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg",
+                     mois="2026-03")
+            for i in range(1, 27)
+        ]
+        with _patch_inventaire(moteur, elements), \
+             patch.object(moteur, "telecharger",
+                          return_value=("ok", {"taille": 1, "etag": "",
+                                               "modifie": "", "url": "u"})), \
+             patch.object(moteur, "sauver_manifeste") as sauver:
+            moteur.executer()
+        assert sauver.call_count >= 2
