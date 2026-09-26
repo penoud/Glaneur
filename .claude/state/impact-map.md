@@ -9,86 +9,89 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Sprint « Suppression pendant un run » : rendre `bouton_supprimer_fond`,
-`action_supprimer_fond`, `action_supprimer_fond_tray` et
-`bouton_supprimees` utilisables pendant une synchronisation. La cause
-racine est une race last-writer-wins sur le manifeste entre
-`Moteur.executer()` (charge à l'entrée, réécrit tout dans le `finally`)
-et `supprimer_image()`/`restaurer()` (lire-muter-écrire côté UI). Le
-correctif est une fusion en écriture côté moteur : la marque `supprime`
-ou `restaure` posée par l'UI l'emporte sur la version mémoire du moteur ;
-les entrées uniquement présentes sur disque sont préservées.
+Découpage de `Glaneur/engine.py` en paquet `Glaneur/engine/` avec un
+fichier par fonction/dataclass et un fichier pour la classe `Moteur`.
+But : simplifier la maintenance future en localisant chaque unité de
+comportement dans son propre fichier. Aucun changement de comportement,
+aucun changement de la surface publique — `from Glaneur.engine import …`
+continue de fonctionner à l'identique via un `__init__.py` qui
+ré-exporte l'API.
 
 ## Directly modified
 
-- Glaneur/engine.py                 (verrou + read-merge-write ;
-                                     `sauver_manifeste` devient fusionnant ;
-                                     `supprimer_image` et `restaurer`
-                                     passent par le même chemin)
-- app.py                            (retrait des `setEnabled(False)` en
-                                     début de run et de leur miroir en
-                                     fin de run ; commentaire obsolète
-                                     à supprimer)
-- tests/test_moteur.py              (tests de régression race UI/moteur)
+- Glaneur/engine.py                          (supprimé)
+- Glaneur/engine/__init__.py                 (ré-exports)
+- Glaneur/engine/_verrous.py                 (`_MANIFESTE_LOCK` partagé)
+- Glaneur/engine/_constantes.py              (`UA`, `SIZE_SUFFIX`)
+- Glaneur/engine/_fusion.py                  (`_fusionner_marques_ui`)
+- Glaneur/engine/options.py                  (`Options`)
+- Glaneur/engine/resultat.py                 (`Resultat`)
+- Glaneur/engine/nettoyer.py                 (`nettoyer`)
+- Glaneur/engine/format_octets.py            (`format_octets`)
+- Glaneur/engine/chemin_manifeste.py         (`chemin_manifeste`)
+- Glaneur/engine/lire_manifeste.py           (`lire_manifeste`)
+- Glaneur/engine/ecrire_manifeste.py         (`ecrire_manifeste`)
+- Glaneur/engine/chemin_cache.py             (`chemin_cache`)
+- Glaneur/engine/lire_cache.py               (`lire_cache`)
+- Glaneur/engine/ecrire_cache.py             (`ecrire_cache`)
+- Glaneur/engine/lister_supprimees.py        (`lister_supprimees`)
+- Glaneur/engine/restaurer.py                (`restaurer`)
+- Glaneur/engine/supprimer_image.py          (`supprimer_image`)
+- Glaneur/engine/moteur.py                   (classe `Moteur`)
+- tests/test_boundaries.py                   (KNOWN_QT_IMPORTS et
+                                              _qt_cases pointent
+                                              maintenant sur les
+                                              submodules du paquet)
+- CLAUDE.md                                  (section « Écarts connus » :
+                                              l'entrée `Glaneur/engine.py`
+                                              devient `Glaneur/engine/moteur.py`)
+- docs/sphinx/api/*.rst                      (régénéré par `apidoc`)
 
 ## Direct dependencies
 
-- `chemin_manifeste`, `lire_manifeste`, `ecrire_manifeste` :
-  contrat inchangé (I/O atomique tmp+rename), le verrou l'englobe.
-- `Moteur.executer()` : la sauvegarde périodique (tick 25) et le
-  `finally` passent par la nouvelle fusion, aucun autre changement
-  d'orchestration.
-- `app.py::_lancer`/`_terminer` : suppression des lignes 1110-1113 et
-  1167-1170 qui gèrent l'état des 4 contrôles pendant le run.
+- `cli.py`, `app.py`, `tests/test_moteur.py`,
+  `tests/test_source_djangoplicity.py` importent depuis
+  `Glaneur.engine` : imports inchangés (le paquet expose la même API que
+  l'ancien module).
+- `Glaneur/config.py` et `Glaneur/sources/base.py` référencent
+  `Glaneur.engine.*` dans les docstrings : chemins mis à jour vers le
+  chemin canonique du submodule (`Glaneur.engine.options.Options`,
+  `Glaneur.engine.resultat.Resultat`, `Glaneur.engine.moteur.Moteur`).
+  Nécessaire parce que Sphinx documente maintenant ces symboles à
+  l'endroit où ils vivent, pas au ré-export du paquet.
 
 ## Tests
 
-- tests/test_moteur.py — TestSauverManifeste (nouveau) :
-  * marque `supprime` posée pendant que le moteur détient un manifeste
-    en mémoire survit à sa réécriture ;
-  * marque `restaure` posée pendant un run survit ;
-  * entrée uniquement sur disque (ident non vu ce run) préservée ;
-  * nouvelle entrée écrite par le moteur reste écrite ;
-  * suppression + re-téléchargement dans la même passe : `supprime`
-    l'emporte (choix éditorial : dernier geste utilisateur gagne) ;
-  * pas de régression sur le tick des 25.
+- Suite complète (changement structurel touchant l'API publique).
+- `tests/test_boundaries.py::test_no_qt_outside_ui` doit continuer à
+  passer, `xfail(strict=True)` uniquement sur `Glaneur/engine/moteur.py`
+  (les autres submodules du paquet n'importent pas Qt).
 
 ## Potentially affected
 
-- CLAUDE.md — section « Écarts connus » : rien à retirer (l'écart
-  n'y figurait pas).
-- docs/sphinx/api/engine.rst — regénéré automatiquement par
-  `make -C docs/sphinx apidoc` uniquement si la surface publique du
-  module change ; ici seuls des docstrings évoluent, pas de nouveau
-  symbole → pas de régénération requise.
+- `docs/sphinx/api/Glaneur.engine.rst` : remplacé par la structure de
+  paquet (page paquet + page par submodule) via `make apidoc`.
+- `packaging/**` : pas d'entrée explicite pour `engine.py`. PyInstaller
+  collecte automatiquement le paquet via `Glaneur/__init__.py`. Point
+  de contrôle `--controle-bundle` dans `app.py` importe déjà le paquet.
 
 ## Explicitly out of scope
 
 - Frontière 1 (Qt hors moteur) : `QCoreApplication` reste importé dans
-  engine.py, `xfail(strict=True)` dans test_boundaries.py conservé.
-- Glaneur/scheduler.py : hors sujet.
-- Portage multi-plateforme de « Supprimer ce fond d'écran »
-  (encore Windows-only par nature — dépend de l'API du diaporama).
-- Format persistant du manifeste : inchangé, aucune migration.
-- Packaging, updater, sources, i18n.
+  `Glaneur/engine/moteur.py`. La dette est déplacée, pas résorbée.
+- Refactor du corps des fonctions : contenu identique, seule la
+  répartition en fichiers change.
+- Traduction (`.ts`) : le contexte `"Moteur"` des `translate(...)` reste
+  littéral dans `moteur.py`, donc `lupdate` continue à les extraire.
+- Suppression de `UA` / `SIZE_SUFFIX` qui semblent inutilisés : hors
+  périmètre.
 
 ## Invariants
 
-- Atomicité de `ecrire_manifeste` (tmp + os.replace) : préservée.
-- Le manifeste est la source de vérité de l'état « déjà téléchargé /
-  supprimé / restauré » : préservé, la fusion ne change pas la
-  sémantique de ces marques.
-- Frontière 1 : non aggravée (aucun nouvel import Qt dans le moteur).
-
-## Validation level
-
-subsystem
-
-## Agents
-
-- test-author  : écrit les tests de fusion (avant l'implémentation).
-- test-runner  : lance tests/test_moteur.py + ruff ciblé après le fix.
-- invariant-reviewer : review Sonnet (pas Opus — pas de changement
-  d'architecture, ni de format persistant, ni de sécurité) après le
-  passage des tests.
-- pas de server-prober, pas d'exploration complémentaire.
+- Surface publique de `Glaneur.engine` inchangée : mêmes symboles
+  importables au même chemin de qualification.
+- Atomicité de `ecrire_manifeste` / `ecrire_cache` inchangée.
+- `_MANIFESTE_LOCK` reste un unique `threading.Lock` partagé entre
+  `restaurer`, `supprimer_image` et `Moteur.sauver_manifeste`.
+- Frontière 1 : la seule frontière Qt violée reste celle du moteur ;
+  le paquet n'introduit pas de nouvelle violation ailleurs.

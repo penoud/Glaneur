@@ -24,7 +24,7 @@ clean:
 # doublons d'index (warnings `ref.python` en `-W`).
 apidoc:
 	@sphinx-apidoc -f -e -o api ../../Glaneur
-	@for f in api/Glaneur.rst api/Glaneur.sources.rst api/Glaneur.updater.rst; do \
+	@for f in api/Glaneur.rst api/Glaneur.engine.rst api/Glaneur.sources.rst api/Glaneur.updater.rst; do \
 	    python3 -c "import sys,re,pathlib;p=pathlib.Path(sys.argv[1]);t=p.read_text(encoding='utf-8');p.write_text(re.sub(r'\nModule contents\n-+\n\n\.\. automodule::[^\n]*\n(?:   :[^\n]*\n)+','\n',t),encoding='utf-8')" $$f; \
 	done
 

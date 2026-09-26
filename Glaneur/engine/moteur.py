@@ -1,446 +1,37 @@
-"""Moteur de téléchargement générique.
+"""Classe :class:`Moteur` — orchestration d'un run.
 
-Ce module ne connaît rien de l'interface : il communique par callbacks
-(`journal`, `progression`) et s'interrompt proprement via un threading.Event.
-Il peut donc servir aussi bien à l'UI PySide6 qu'à un script en ligne de commande.
+Ce module est le seul du paquet à dépendre de Qt : il utilise
+``QCoreApplication.translate`` pour localiser les messages remontés à
+l'utilisateur. Le reste du paquet reste indépendant de Qt.
 
-Il ne connaît pas non plus WordPress ni Djangoplicity. Il consomme des
-`Element` produits par un adaptateur de `Glaneur.sources`.
-
-Seule dépendance Qt : `QCoreApplication.translate` pour localiser les
-messages remontés au journal et à `res.message` — pas de widget, pas de
-thread introduit, et `.translate()` retombe sur la source FR quand aucune
-QCoreApplication n'existe (cas de la CLI et des tests unitaires).
+lupdate only extracts QCoreApplication.translate("Ctx", "src") when
+context and source are literals: we inline rather than aliasing a _tr().
 """
 
 from __future__ import annotations
 
-import html
-import json
-import os
-import re
 import threading
-import time
-import unicodedata
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable
 from urllib.parse import urlparse
 
 import requests
 from PySide6.QtCore import QCoreApplication
 
-from .sources import SOURCES, Element, Interrompu, Transport
+from ..sources import SOURCES, Element, Interrompu, Transport
+from ._fusion import _fusionner_marques_ui
+from ._verrous import _MANIFESTE_LOCK
+from .chemin_manifeste import chemin_manifeste
+from .ecrire_cache import ecrire_cache
+from .ecrire_manifeste import ecrire_manifeste
+from .format_octets import format_octets
+from .lire_cache import lire_cache
+from .lire_manifeste import lire_manifeste
+from .nettoyer import nettoyer
+from .options import Options
+from .resultat import Resultat
 
-# lupdate only extracts QCoreApplication.translate("Ctx", "src") when context
-# and source are literals: we inline rather than aliasing a _tr().
-
-# Re-export of `Interrompu` for callers that import it via `engine`.
-Interrompu = Interrompu   # noqa: PLW0127 — explicit alias
-
-UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
-
-
-@dataclass
-class Options:
-    """Paramètres d'un run du moteur.
-
-    Chaque champ est documenté par un commentaire ``#:`` inline pour
-    éviter la duplication d'index entre autodoc et Napoleon.
-    """
-
-    #: Target directory where manifest, cache and files land.
-    dossier: Path
-    #: Source site origin (for example ``https://example.com``).
-    site: str = "https://example.com"
-    #: ``galerie`` (by parent title), ``date`` (by month) or ``plat``
-    #: (everything at the same level).
-    classement: str = "galerie"
-    #: Skips resources narrower than this, in pixels.
-    largeur_min: int = 800
-    #: Floor of the pause between two network requests, in seconds.
-    delai: float = 0.5
-    #: Revalidates files already present via ``If-None-Match`` and
-    #: ``If-Modified-Since``.
-    verifier: bool = False
-    #: Fully ignores the existing manifest.
-    force: bool = False
-    #: Lower bound in ``YYYY-MM-DD`` format.
-    depuis: str | None = None
-    #: Upper bound in ``YYYY-MM-DD`` format.
-    jusqua: str | None = None
-    #: Enables the disk cache (max date seen, gallery titles).
-    utiliser_cache: bool = True
-    #: Key of ``Glaneur.sources.SOURCES`` (for example ``wordpress`` or
-    #: ``djangoplicity``).
-    type_source: str = "wordpress"
-    #: Image variant requested from sources that expose several
-    #: formats (used by Djangoplicity).
-    format_image: str = "Large"
-
-
-@dataclass
-class Resultat:
-    """Compteurs et message renvoyés par un run du moteur."""
-
-    #: New files actually downloaded.
-    telechargees: int = 0
-    #: Files resumed from a partial ``.part``.
-    reprises: int = 0
-    #: 304 responses (ETag/Last-Modified unchanged).
-    inchangees: int = 0
-    #: Files already up to date in the manifest and on disk.
-    deja_presentes: int = 0
-    #: Files missing from disk on this pass — marked as
-    #: deleted in the manifest.
-    supprimees: int = 0
-    #: Files known as deleted or without a usable URL, not
-    #: re-downloaded.
-    ignorees: int = 0
-    #: Files whose download failed.
-    echecs: int = 0
-    #: Total volume downloaded, in bytes.
-    octets: int = 0
-    #: True if the user requested a stop mid-run.
-    interrompu: bool = False
-    #: Summary ready to display to the user (localized).
-    message: str = ""
-    #: Free-form bag for extra information.
-    details: dict = field(default_factory=dict)
-
-
-# --------------------------------------------------------------------------- #
-# Utilities
-# --------------------------------------------------------------------------- #
-
-SIZE_SUFFIX = re.compile(r"-\d{2,5}x\d{2,5}(?=\.[A-Za-z]{3,4}$)")
-
-
-def nettoyer(titre: str, defaut: str = "divers") -> str:
-    """Transforme un titre HTML en nom de dossier sûr sur tous les systèmes.
-
-    Décode les entités HTML, translittère en ASCII, remplace les espaces
-    par des tirets, borne à 80 caractères et retire les caractères refusés
-    par Windows.
-
-    Args:
-        titre: Titre source, éventuellement avec entités HTML ou accents.
-        defaut: Valeur renvoyée si le titre nettoyé est vide.
-
-    Returns:
-        Une chaîne utilisable comme nom de dossier sur Windows, macOS et
-        Linux.
-    """
-    texte = html.unescape(titre or "").strip()
-    texte = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode("ascii")
-    texte = re.sub(r"[^\w\s-]", "", texte).strip()
-    texte = re.sub(r"[\s_]+", "-", texte).lower()
-    texte = texte.strip(".-")            # Windows rejects names ending with a dot
-    return texte[:80] or defaut
-
-
-def format_octets(n: int) -> str:
-    """Formate un nombre d'octets en unité lisible.
-
-    Args:
-        n: Nombre d'octets.
-
-    Returns:
-        Une chaîne du type ``"1024 o"``, ``"1.5 Mo"`` ou ``"2.3 Go"``,
-        arrondie à un chiffre après la virgule au-delà de l'octet.
-    """
-    for unite in ("o", "Ko", "Mo", "Go"):
-        if n < 1024 or unite == "Go":
-            return f"{n:.0f} {unite}" if unite == "o" else f"{n:.1f} {unite}"
-        n /= 1024
-    return f"{n:.1f} Go"
-
-
-# --------------------------------------------------------------------------- #
-# Manifest — free functions, so the UI can inspect it without instantiating an engine
-# --------------------------------------------------------------------------- #
-
-def chemin_manifeste(dossier: Path) -> Path:
-    """Chemin du fichier manifeste (``.etat.json``) à l'intérieur de ``dossier``.
-
-    Args:
-        dossier: Répertoire cible du run.
-
-    Returns:
-        Le chemin absolu du manifeste. Le fichier peut ne pas exister.
-    """
-    return dossier / ".etat.json"
-
-
-def lire_manifeste(dossier: Path) -> dict:
-    """Charge le manifeste JSON s'il existe, dictionnaire vide sinon.
-
-    Un manifeste corrompu ou illisible est traité comme absent : le
-    prochain run repartira d'un état vide plutôt que de planter.
-
-    Args:
-        dossier: Répertoire cible du run.
-
-    Returns:
-        Le contenu désérialisé, ou ``{}`` si le fichier est absent ou
-        illisible.
-    """
-    chemin = chemin_manifeste(dossier)
-    if not chemin.exists():
-        return {}
-    try:
-        with open(chemin, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
-    """Écrit le manifeste de façon atomique (fichier temporaire + rename).
-
-    Le manifeste est sauvegardé toutes les 25 images pendant un run :
-    l'écriture atomique évite qu'une interruption ne laisse un fichier
-    tronqué en place.
-
-    Args:
-        dossier: Répertoire cible du run. Créé s'il n'existe pas.
-        manifeste: Dictionnaire sérialisable en JSON à persister.
-    """
-    chemin = chemin_manifeste(dossier)
-    chemin.parent.mkdir(parents=True, exist_ok=True)
-    tmp = chemin.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(manifeste, f, ensure_ascii=False, indent=1)
-    tmp.replace(chemin)
-
-
-# Serialize every read-modify-write on the manifest: UI-side supprimer_image /
-# restaurer must not race with the engine's periodic and final saves during a
-# run. UI and engine live in the same process, so a threading.Lock suffices.
-_MANIFESTE_LOCK = threading.Lock()
-
-
-def _fusionner_marques_ui(memoire: dict, disque: dict) -> dict:
-    """Fusionne les marques UI (``supprime``/``restaure``) du disque avec le manifeste du moteur.
-
-    Règle : pour un identifiant présent dans les deux versions, la
-    version mémoire du moteur l'emporte — c'est elle qui vient d'être
-    mise à jour par le run — sauf pour les marques ``supprime`` et
-    ``restaure``. Si le disque porte une de ces marques que la mémoire
-    n'a pas, elle provient d'un geste utilisateur postérieur au
-    chargement du manifeste par le moteur : elle est réinjectée dans le
-    résultat, et la marque opposée éventuellement présente en mémoire
-    est écartée (les deux marques sont mutuellement exclusives).
-
-    Les entrées présentes uniquement sur disque (identifiants hors
-    inventaire du run courant, par exemple hors filtre de date)
-    survivent inchangées. Les entrées présentes uniquement en mémoire
-    (nouveaux téléchargements) sont écrites telles quelles.
-
-    Args:
-        memoire: Manifeste tel que le moteur l'a en mémoire.
-        disque: Manifeste tel qu'il se trouve sur disque au moment
-            de la fusion.
-
-    Returns:
-        Dictionnaire fusionné, prêt à être écrit atomiquement.
-    """
-    fusionne = dict(memoire)
-    for ident, etat_disque in disque.items():
-        etat_mem = fusionne.get(ident)
-        if etat_mem is None:
-            # UI touched an ident that was not part of this run's inventory
-            fusionne[ident] = etat_disque
-            continue
-        marque_disque = ("supprime" if "supprime" in etat_disque
-                         else "restaure" if "restaure" in etat_disque
-                         else None)
-        marque_mem = ("supprime" if "supprime" in etat_mem
-                      else "restaure" if "restaure" in etat_mem
-                      else None)
-        if marque_disque and marque_disque != marque_mem:
-            # UI acted after the engine loaded this ident: disk mark wins,
-            # opposite mark on the memory side is cleared
-            resultat = {**etat_mem, marque_disque: etat_disque[marque_disque]}
-            autre = "restaure" if marque_disque == "supprime" else "supprime"
-            resultat.pop(autre, None)
-            fusionne[ident] = resultat
-    return fusionne
-
-
-# --------------------------------------------------------------------------- #
-# API cache: max date of media seen, titles of resolved galleries.
-# Speeds up subsequent runs — the manifest says what has been downloaded,
-# the cache says what has been asked of the API to avoid asking again.
-# --------------------------------------------------------------------------- #
-
-def chemin_cache(dossier: Path) -> Path:
-    """Chemin du fichier cache (``.cache.json``) à l'intérieur de ``dossier``.
-
-    Args:
-        dossier: Répertoire cible du run.
-
-    Returns:
-        Le chemin absolu du cache. Le fichier peut ne pas exister.
-    """
-    return dossier / ".cache.json"
-
-
-def lire_cache(dossier: Path) -> dict:
-    """Charge le cache JSON s'il existe, dictionnaire vide sinon.
-
-    Comme :func:`lire_manifeste`, tolère un cache absent ou corrompu.
-
-    Args:
-        dossier: Répertoire cible du run.
-
-    Returns:
-        Le contenu désérialisé, ou ``{}`` si le fichier est absent ou
-        illisible.
-    """
-    chemin = chemin_cache(dossier)
-    if not chemin.exists():
-        return {}
-    try:
-        with open(chemin, encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
-
-
-def ecrire_cache(dossier: Path, cache: dict) -> None:
-    """Écrit le cache de façon atomique (fichier temporaire + rename).
-
-    Args:
-        dossier: Répertoire cible du run. Créé s'il n'existe pas.
-        cache: Dictionnaire sérialisable en JSON à persister.
-    """
-    chemin = chemin_cache(dossier)
-    chemin.parent.mkdir(parents=True, exist_ok=True)
-    tmp = chemin.with_suffix(".json.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cache, f, ensure_ascii=False, indent=1)
-    tmp.replace(chemin)
-
-
-def lister_supprimees(dossier: Path) -> list[dict]:
-    """Images téléchargées puis effacées du disque par l'utilisateur.
-
-    Args:
-        dossier: Répertoire cible du run.
-
-    Returns:
-        Les entrées du manifeste portant la marque ``supprime``, triées
-        par date de suppression puis par nom de fichier.
-    """
-    manifeste = lire_manifeste(dossier)
-    entrees = [{"id": ident, **etat} for ident, etat in manifeste.items()
-               if etat.get("supprime")]
-    entrees.sort(key=lambda e: (e.get("supprime", ""), e.get("fichier", "")))
-    return entrees
-
-
-def restaurer(dossier: Path, ids: Iterable) -> int:
-    """Lève la marque de suppression : ces images repasseront dans la file.
-
-    La marque ``restaure`` reste posée jusqu'au prochain téléchargement
-    réussi, pour qu'un échec réseau ne reclasse pas immédiatement l'image
-    en « supprimée ».
-
-    Args:
-        dossier: Répertoire cible du run.
-        ids: Identifiants (au sens de la source) à restaurer.
-
-    Returns:
-        Le nombre d'entrées effectivement rétablies.
-    """
-    with _MANIFESTE_LOCK:
-        manifeste = lire_manifeste(dossier)
-        retablies = 0
-        for ident in ids:
-            etat = manifeste.get(str(ident))
-            if etat and etat.pop("supprime", None):
-                # the mark only clears on a successful download, which rewrites
-                # the entry: a network failure will not reclassify the image as "deleted"
-                etat["restaure"] = True
-                retablies += 1
-        if retablies:
-            ecrire_manifeste(dossier, manifeste)
-    return retablies
-
-
-def supprimer_image(dossier: Path, fichier: Path) -> bool:
-    """Efface ``fichier`` du disque et pose la marque ``supprime`` dans le manifeste.
-
-    Sans cette marque, la mise à jour suivante verrait l'image manquante
-    et la retéléchargerait : la suppression disque seule ne suffit pas.
-
-    Refuse si ``fichier`` n'est pas à l'intérieur de ``dossier`` — une
-    fonction qui efface ne fait pas confiance à son appelant. La
-    comparaison passe par ``realpath`` + ``normcase`` puis ``commonpath``,
-    jamais par ``startswith`` qui matcherait un dossier voisin de préfixe
-    identique.
-
-    Args:
-        dossier: Répertoire cible du run (racine du run).
-        fichier: Chemin absolu du fichier à effacer.
-
-    Returns:
-        ``True`` si le fichier a été effacé (ou déjà absent) et le
-        manifeste éventuellement marqué, ``False`` si le fichier est hors
-        de ``dossier`` ou si l'unlink a échoué.
-    """
-    try:
-        base = os.path.normcase(os.path.realpath(str(dossier)))
-        cible = os.path.normcase(os.path.realpath(str(fichier)))
-    except OSError:
-        return False
-    try:
-        commun = os.path.commonpath([base, cible])
-    except ValueError:
-        return False   # different drives on Windows
-    if commun != base or cible == base:
-        return False
-
-    # Relative path to compare against manifest entries. A manifest written
-    # on Windows contains backslashes; we normalize both forms to a common
-    # separator before `normcase`.
-    try:
-        relatif = os.path.relpath(cible, base)
-    except ValueError:
-        return False
-    aiguille = os.path.normcase(relatif.replace("\\", "/"))
-
-    with _MANIFESTE_LOCK:
-        manifeste = lire_manifeste(dossier)
-        ident_trouve: str | None = None
-        for ident, etat in manifeste.items():
-            stocke = etat.get("fichier")
-            if not stocke:
-                continue
-            if os.path.normcase(str(stocke).replace("\\", "/")) == aiguille:
-                ident_trouve = ident
-                break
-
-        try:
-            Path(fichier).unlink()
-        except FileNotFoundError:
-            pass   # already gone: the mark is set anyway
-        except OSError:
-            return False
-
-        if ident_trouve is not None:
-            entree = manifeste[ident_trouve]
-            entree["supprime"] = datetime.now().isoformat(timespec="seconds")
-            entree.pop("restaure", None)
-            ecrire_manifeste(dossier, manifeste)
-    return True
-
-
-# --------------------------------------------------------------------------- #
-# Engine
-# --------------------------------------------------------------------------- #
 
 class Moteur:
     """Orchestre un run : inventaire, tri, téléchargement, manifeste, cache.
@@ -451,7 +42,7 @@ class Moteur:
     thread Qt que depuis la CLI ou un test unitaire.
 
     Il ne connaît rien non plus de WordPress ou Djangoplicity : le choix
-    de la source est fait par :attr:`Options.type_source`, résolu via
+    de la source est fait par ``Options.type_source``, résolu via
     ``Glaneur.sources.SOURCES``.
     """
 
@@ -525,13 +116,13 @@ class Moteur:
     def sauver_manifeste(self, manifeste: dict) -> None:
         """Persiste ``manifeste`` sur disque en fusionnant les gestes UI éventuels.
 
-        Prend le verrou :data:`_MANIFESTE_LOCK`, relit le manifeste
-        disque et applique la règle décrite dans
-        :func:`_fusionner_marques_ui` avant l'écriture atomique. Cette
-        lecture-fusion-écriture protège les marques
-        ``supprime``/``restaure`` que l'utilisateur peut poser via
-        :func:`supprimer_image` ou :func:`restaurer` pendant qu'un run
-        est en cours : sans elle, la sauvegarde périodique ou finale du
+        Prend le verrou ``_MANIFESTE_LOCK``, relit le manifeste disque et
+        applique la règle décrite dans ``_fusionner_marques_ui`` avant
+        l'écriture atomique. Cette lecture-fusion-écriture protège les
+        marques ``supprime``/``restaure`` que l'utilisateur peut poser
+        via :func:`Glaneur.engine.supprimer_image.supprimer_image` ou
+        :func:`Glaneur.engine.restaurer.restaurer` pendant qu'un run est
+        en cours : sans elle, la sauvegarde périodique ou finale du
         moteur écraserait la modification faite entre-temps par l'UI.
 
         Args:
@@ -576,9 +167,9 @@ class Moteur:
         repart de zéro pour ne pas mélanger deux espaces d'identifiants.
 
         Migration silencieuse : un cache écrit avant l'introduction de
-        :attr:`Options.type_source` (donc sans ce champ) est lu comme
-        s'il correspondait au type courant, pour ne pas invalider les
-        caches WordPress existants.
+        ``Options.type_source`` (donc sans ce champ) est lu comme s'il
+        correspondait au type courant, pour ne pas invalider les caches
+        WordPress existants.
 
         Returns:
             Le cache utilisable pour ce run, éventuellement vide.
@@ -738,7 +329,7 @@ class Moteur:
     # -- orchestration ------------------------------------------------------ #
 
     def executer(self) -> Resultat:
-        """Exécute le run complet et renvoie le :class:`Resultat` agrégé.
+        """Exécute le run complet et renvoie le ``Resultat`` agrégé.
 
         L'ordre est :
 
@@ -751,7 +342,7 @@ class Moteur:
         6. mise à jour du cache (date maximale, titres) en sortie normale.
 
         Une interruption coopérative renvoie un ``Resultat`` avec
-        :attr:`Resultat.interrompu` vrai. Les erreurs réseau ou disque
+        ``Resultat.interrompu`` vrai. Les erreurs réseau ou disque
         sont capturées et rapportées via ``res.message`` sans propager
         l'exception.
 

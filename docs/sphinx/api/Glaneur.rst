@@ -7,6 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   Glaneur.engine
    Glaneur.sources
    Glaneur.updater
 
@@ -18,7 +19,6 @@ Submodules
 
    Glaneur.bug_report
    Glaneur.config
-   Glaneur.engine
    Glaneur.i18n
    Glaneur.logsetup
    Glaneur.scheduler
