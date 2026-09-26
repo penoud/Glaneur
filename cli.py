@@ -19,6 +19,7 @@ from Glaneur.engine import (
     lister_supprimees,
     restaurer,
 )
+from Glaneur.scheduler import Planificateur
 
 
 def main() -> int:
@@ -33,7 +34,9 @@ def main() -> int:
     Returns:
         ``0`` si le run s'est bien terminé, ``1`` si tous les
         téléchargements ont échoué sans qu'aucun nouveau fichier ne soit
-        récupéré, ``130`` sur interruption clavier (convention shell).
+        récupéré, ``2`` si le run a été reporté par le coupe-circuit
+        réseau (serveur indisponible, quota…), ``130`` sur interruption
+        clavier (convention shell).
     """
     c = Config.charger()
     p = argparse.ArgumentParser(
@@ -110,6 +113,15 @@ def main() -> int:
     print(f"  déjà à jour  : {res.deja_presentes}   inchangées : {res.inchangees}")
     print(f"  supprimées   : {res.supprimees}   ignorées : {res.ignorees}")
     print(f"  échecs       : {res.echecs}   volume : {format_octets(res.octets)}")
+
+    if res.reporte:
+        # Persiste le report pour que la prochaine invocation (UI ou CLI)
+        # respecte le backoff. On ne fait PAS `marquer_execution` : le run
+        # est tronqué.
+        planificateur = Planificateur(c)
+        planificateur.differer(res)
+        print(f"  {planificateur.texte_prochaine()}", file=sys.stderr)
+        return 2
     return 1 if res.echecs and not res.telechargees else 0
 
 

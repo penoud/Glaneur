@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import threading
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -32,6 +33,7 @@ from Glaneur.engine import (
     supprimer_image,
 )
 from Glaneur.sources import Element
+from Glaneur.sources.base import Classification
 
 
 # --------------------------------------------------------------------------- #
@@ -470,7 +472,7 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(
             200, {"ETag": "e1", "Last-Modified": "m1"}, b"payload")
         dest = tmp_path / "out.jpg"
-        statut, infos = m.telecharger("https://x/f.jpg", dest, None)
+        statut, infos, _ = m.telecharger("https://x/f.jpg", dest, None)
         assert statut == "ok"
         assert dest.read_bytes() == b"payload"
         assert infos["taille"] == 7
@@ -483,8 +485,8 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(304)
         dest = tmp_path / "existe.jpg"
         dest.write_bytes(b"deja")
-        statut, infos = m.telecharger("https://x/f.jpg", dest,
-                                      {"etag": "e1", "taille": 4})
+        statut, infos, _ = m.telecharger("https://x/f.jpg", dest,
+                                         {"etag": "e1", "taille": 4})
         assert statut == "inchangé"
         # the returned state is the one passed in, unaltered
         assert infos == {"etag": "e1", "taille": 4}
@@ -494,7 +496,7 @@ class TestTelecharger:
         m.session = MagicMock()
         m.session.get.return_value = FakeResponse(404)
         dest = tmp_path / "sortie.jpg"
-        statut, infos = m.telecharger("https://x/f.jpg", dest, None)
+        statut, infos, _ = m.telecharger("https://x/f.jpg", dest, None)
         assert statut == "introuvable"
         assert infos is None
         assert not dest.exists()
@@ -506,7 +508,7 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(206, {}, b"XYZ")
         dest = tmp_path / "reprise.jpg"
         (dest.with_suffix(dest.suffix + ".part")).write_bytes(b"AB")
-        statut, infos = m.telecharger("https://x/f.jpg", dest, None)
+        statut, _infos, _ = m.telecharger("https://x/f.jpg", dest, None)
         assert statut == "repris"
         # the final content concatenates the .part and the downloaded remainder
         assert dest.read_bytes() == b"ABXYZ"
@@ -524,7 +526,7 @@ class TestTelecharger:
         ]
         dest = tmp_path / "r.jpg"
         (dest.with_suffix(dest.suffix + ".part")).write_bytes(b"AB")
-        statut, infos = m.telecharger("https://x/f.jpg", dest, None)
+        statut, _infos, _ = m.telecharger("https://x/f.jpg", dest, None)
         assert statut == "ok"
         assert dest.read_bytes() == b"neuf"
 
@@ -535,8 +537,9 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(304)
         dest = tmp_path / "x.jpg"
         dest.write_bytes(b"deja")
-        m.telecharger("https://x/f.jpg", dest,
-                      {"modifie": "Wed, 01 Jan 2026 00:00:00 GMT", "taille": 4})
+        _statut, _infos, _classification = m.telecharger(
+            "https://x/f.jpg", dest,
+            {"modifie": "Wed, 01 Jan 2026 00:00:00 GMT", "taille": 4})
         _, kw = m.session.get.call_args
         assert kw["headers"].get("If-Modified-Since") == \
             "Wed, 01 Jan 2026 00:00:00 GMT"
@@ -546,10 +549,12 @@ class TestTelecharger:
         m.session = MagicMock()
         m.session.get.side_effect = requests.ConnectionError("boum")
         dest = tmp_path / "s.jpg"
-        statut, infos = m.telecharger("https://x/f.jpg", dest, None)
+        statut, infos, classification = m.telecharger("https://x/f.jpg", dest, None)
         assert statut.startswith("erreur")
         assert infos is None
         assert not dest.exists()
+        assert classification is not None
+        assert classification.categorie in {"coupure", "transitoire", "definitif"}
 
     def test_interruption_conserve_part(self, tmp_path):
         # the stop mid-read must leave the .part for the resume
@@ -642,7 +647,7 @@ class TestExecuter:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 12, "etag": "e",
-                                               "modifie": "m", "url": "u"})):
+                                               "modifie": "m", "url": "u"}, None)):
             res = moteur.executer()
         assert res.telechargees == 1
         assert res.octets == 12
@@ -657,7 +662,7 @@ class TestExecuter:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("repris", {"taille": 3, "etag": "",
-                                                   "modifie": "", "url": "u"})):
+                                                   "modifie": "", "url": "u"}, None)):
             res = moteur.executer()
         assert res.reprises == 1
         assert res.octets == 3
@@ -668,7 +673,7 @@ class TestExecuter:
                       mois="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
-                          return_value=("erreur : boum", None)):
+                          return_value=("erreur : boum", None, None)):
             res = moteur.executer()
         assert res.echecs == 1
 
@@ -686,7 +691,7 @@ class TestExecuter:
         with _patch_inventaire(moteur, [petit, grand]), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             res = moteur.executer()
         assert res.telechargees == 1   # only the big one was processed
 
@@ -722,10 +727,145 @@ class TestExecuter:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})) as tel:
+                                               "modifie": "", "url": "u"}, None)) as tel:
             res = moteur.executer()
         assert res.telechargees == 1
         assert tel.call_count == 1
+
+
+# --------------------------------------------------------------------------- #
+# Moteur.executer — coupe-circuit réseau et report différé (lot 2)
+# --------------------------------------------------------------------------- #
+
+class TestCoupeCircuit:
+    """Coupe-circuit du moteur : arrêt propre sur ``coupure`` ou 5 ``transitoire``.
+
+    Ces tests mockent :meth:`Moteur.telecharger` pour injecter directement le
+    triplet ``(statut, infos, Classification)`` — pas d'accès réseau, pas
+    d'attente réelle sur les backoffs.
+    """
+
+    _OK = ("ok", {"taille": 1, "etag": "", "modifie": "", "url": "u"}, None)
+
+    @staticmethod
+    def _elements(nombre):
+        """Builds ``nombre`` Elements, all with a valid URL and month."""
+        return [
+            _element(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg",
+                     mois="2026-03", date=f"2026-03-{i:02d}T00:00:00")
+            for i in range(1, nombre + 1)
+        ]
+
+    def test_une_coupure_interrompt_le_run(self, tmp_path):
+        """Une seule erreur ``coupure`` termine le run en report et stoppe la boucle."""
+        moteur = _moteur(tmp_path, classement="date")
+        elements = self._elements(3)
+        reponses = [
+            self._OK,
+            ("erreur : coupure", None, Classification("coupure", None)),
+        ]
+        with _patch_inventaire(moteur, elements), \
+             patch.object(moteur, "telecharger", side_effect=reponses) as tel:
+            res = moteur.executer()
+        assert res.reporte is True
+        assert res.echecs == 1
+        assert res.telechargees == 1
+        assert tel.call_count == 2
+
+    def test_cinq_transitoires_consecutifs_interrompent(self, tmp_path):
+        """Cinq échecs ``transitoire`` consécutifs déclenchent le report."""
+        moteur = _moteur(tmp_path, classement="date")
+        elements = self._elements(10)
+        transitoire = ("erreur : timeout", None,
+                       Classification("transitoire", None))
+        with _patch_inventaire(moteur, elements), \
+             patch.object(moteur, "telecharger",
+                          side_effect=[transitoire] * 5) as tel:
+            res = moteur.executer()
+        assert res.reporte is True
+        assert res.echecs == 5
+        assert tel.call_count == 5
+
+    def test_succes_reinitialise_le_compteur(self, tmp_path):
+        """Un succès entre deux séries d'échecs ``transitoire`` remet le compteur à zéro."""
+        moteur = _moteur(tmp_path, classement="date")
+        elements = self._elements(10)
+        transitoire = ("erreur : timeout", None,
+                       Classification("transitoire", None))
+        reponses = [transitoire] * 4 + [self._OK] + [transitoire] * 4 + [self._OK]
+        with _patch_inventaire(moteur, elements), \
+             patch.object(moteur, "telecharger", side_effect=reponses):
+            res = moteur.executer()
+        assert res.reporte is False
+        assert res.echecs == 8
+        assert res.telechargees == 2
+
+    def test_definitif_ne_declenche_pas_le_coupe_circuit(self, tmp_path):
+        """Une erreur ``definitif`` (404) ne fait pas monter le compteur de ``transitoire``."""
+        moteur = _moteur(tmp_path, classement="date")
+        elements = self._elements(10)
+        transitoire = ("erreur : timeout", None,
+                       Classification("transitoire", None))
+        introuvable = ("introuvable", None, Classification("definitif", None))
+        reponses = ([transitoire] * 4 + [introuvable] + [transitoire] * 4
+                    + [self._OK])
+        with _patch_inventaire(moteur, elements), \
+             patch.object(moteur, "telecharger", side_effect=reponses):
+            res = moteur.executer()
+        assert res.reporte is False
+
+    def test_retry_after_alimente_retenter_apres(self, tmp_path):
+        """Un ``Retry-After`` de 3600 s produit un ISO 8601 à ~1 h dans le futur."""
+        moteur = _moteur(tmp_path, classement="date")
+        el = self._elements(1)[0]
+        reponse = ("erreur : quota", None, Classification("coupure", 3600.0))
+        avant = datetime.now(timezone.utc)
+        with _patch_inventaire(moteur, [el]), \
+             patch.object(moteur, "telecharger", return_value=reponse):
+            res = moteur.executer()
+        apres = datetime.now(timezone.utc)
+        assert res.reporte is True
+        assert res.retenter_apres
+        cible = datetime.fromisoformat(res.retenter_apres)
+        if cible.tzinfo is None:
+            cible = cible.replace(tzinfo=timezone.utc)
+        assert avant + timedelta(seconds=3540) <= cible
+        assert cible <= apres + timedelta(seconds=3660)
+
+    def test_sans_retry_after_retenter_apres_est_vide(self, tmp_path):
+        """Sans ``Retry-After``, ``res.retenter_apres`` reste vide : le planificateur décidera."""
+        moteur = _moteur(tmp_path, classement="date")
+        el = self._elements(1)[0]
+        reponse = ("erreur : boum", None, Classification("coupure", None))
+        with _patch_inventaire(moteur, [el]), \
+             patch.object(moteur, "telecharger", return_value=reponse):
+            res = moteur.executer()
+        assert res.reporte is True
+        assert res.retenter_apres == ""
+
+    def test_manifeste_sauvegarde_meme_sur_report(self, tmp_path):
+        """Le manifeste sur disque contient les entrées téléchargées avant la coupure."""
+        moteur = _moteur(tmp_path, classement="date")
+        elements = self._elements(3)
+        coupure = ("erreur : coupure", None, Classification("coupure", None))
+        with _patch_inventaire(moteur, elements), \
+             patch.object(moteur, "telecharger",
+                          side_effect=[self._OK, coupure]):
+            res = moteur.executer()
+        assert res.reporte is True
+        m = lire_manifeste(tmp_path)
+        assert "1" in m
+
+    def test_cache_non_sauvegarde_sur_report(self, tmp_path):
+        """Une coupure n'écrit pas le cache moteur (analogue à ``Interrompu``)."""
+        moteur = _moteur(tmp_path, site="https://x", classement="date")
+        elements = self._elements(3)
+        coupure = ("erreur : coupure", None, Classification("coupure", None))
+        with _patch_inventaire(moteur, elements), \
+             patch.object(moteur, "telecharger",
+                          side_effect=[self._OK, coupure]):
+            moteur.executer()
+        assert not chemin_cache(tmp_path).exists()
 
 
 # --------------------------------------------------------------------------- #
@@ -834,7 +974,7 @@ class TestExecuterExtra:
         with _patch_inventaire(moteur, [_element(1, taille=5)]), \
              patch.object(moteur, "telecharger",
                           return_value=("inchangé",
-                                        {"fichier": "ok.jpg", "taille": 5, "etag": "e"})):
+                                        {"fichier": "ok.jpg", "taille": 5, "etag": "e"}, None)):
             res = moteur.executer()
         assert res.inchangees == 1
 
@@ -846,7 +986,7 @@ class TestExecuterExtra:
                           return_value={"42": "match-42"}) as res_parents, \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             res = moteur.executer()
         assert res.telechargees == 1
         res_parents.assert_called_once()
@@ -866,7 +1006,7 @@ class TestExecuterExtra:
              patch.object(moteur.source, "resoudre_groupes") as res_g, \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             moteur.executer()
         res_g.assert_not_called()
 
@@ -898,7 +1038,7 @@ class TestExecuterExtra:
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})), \
+                                               "modifie": "", "url": "u"}, None)), \
              patch.object(moteur, "sauver_manifeste") as sauver:
             moteur.executer()
         # at least 2 calls: periodic + finally
@@ -915,7 +1055,7 @@ class TestExecuterExtra:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             moteur.executer()
         stocke = lire_manifeste(tmp_path)["7"]
         assert stocke.get("extra", {}).get("credit") == "ESO/T. Preibisch"
@@ -1019,7 +1159,7 @@ class TestCacheAPI:
         with _patch_inventaire(m, elements), \
              patch.object(m, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             m.executer()
         cache = lire_cache(tmp_path)
         assert cache["derniere_date_media"] == "2026-06-20T09:30:00"
@@ -1034,7 +1174,7 @@ class TestCacheAPI:
                           return_value={"42": "match-a"}) as res_p, \
              patch.object(m, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             m.executer()
         assert lire_cache(tmp_path)["titres_parents"] == {"42": "match-a"}
         res_p.assert_called_once()
@@ -1064,7 +1204,7 @@ class TestCacheAPI:
              patch.object(m.source, "resoudre_groupes", side_effect=faux_resoudre), \
              patch.object(m, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             m.executer()
         # the adapter received the cache: it's up to it to short-circuit.
         assert appels and appels[0][1] == {"42": "match-cache"}
@@ -1229,7 +1369,7 @@ class TestSauverManifesteFusion:
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"})), \
+                                               "modifie": "", "url": "u"}, None)), \
              patch.object(moteur, "sauver_manifeste") as sauver:
             moteur.executer()
         assert sauver.call_count >= 2

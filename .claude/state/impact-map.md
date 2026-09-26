@@ -9,89 +9,74 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Découpage de `Glaneur/engine.py` en paquet `Glaneur/engine/` avec un
-fichier par fonction/dataclass et un fichier pour la classe `Moteur`.
-But : simplifier la maintenance future en localisant chaque unité de
-comportement dans son propre fichier. Aucun changement de comportement,
-aucun changement de la surface publique — `from Glaneur.engine import …`
-continue de fonctionner à l'identique via un `__init__.py` qui
-ré-exporte l'API.
+Lot 4 du sprint « Coupe-circuit réseau et report différé ». Câble
+`Resultat.reporte` dans l'UI (`app.py`) et le CLI (`cli.py`), et met à
+jour les fichiers `.ts` avec les nouvelles chaînes traduites introduites
+par les lots 2 et 3.
 
 ## Directly modified
 
-- Glaneur/engine.py                          (supprimé)
-- Glaneur/engine/__init__.py                 (ré-exports)
-- Glaneur/engine/_verrous.py                 (`_MANIFESTE_LOCK` partagé)
-- Glaneur/engine/_constantes.py              (`UA`, `SIZE_SUFFIX`)
-- Glaneur/engine/_fusion.py                  (`_fusionner_marques_ui`)
-- Glaneur/engine/options.py                  (`Options`)
-- Glaneur/engine/resultat.py                 (`Resultat`)
-- Glaneur/engine/nettoyer.py                 (`nettoyer`)
-- Glaneur/engine/format_octets.py            (`format_octets`)
-- Glaneur/engine/chemin_manifeste.py         (`chemin_manifeste`)
-- Glaneur/engine/lire_manifeste.py           (`lire_manifeste`)
-- Glaneur/engine/ecrire_manifeste.py         (`ecrire_manifeste`)
-- Glaneur/engine/chemin_cache.py             (`chemin_cache`)
-- Glaneur/engine/lire_cache.py               (`lire_cache`)
-- Glaneur/engine/ecrire_cache.py             (`ecrire_cache`)
-- Glaneur/engine/lister_supprimees.py        (`lister_supprimees`)
-- Glaneur/engine/restaurer.py                (`restaurer`)
-- Glaneur/engine/supprimer_image.py          (`supprimer_image`)
-- Glaneur/engine/moteur.py                   (classe `Moteur`)
-- tests/test_boundaries.py                   (KNOWN_QT_IMPORTS et
-                                              _qt_cases pointent
-                                              maintenant sur les
-                                              submodules du paquet)
-- CLAUDE.md                                  (section « Écarts connus » :
-                                              l'entrée `Glaneur/engine.py`
-                                              devient `Glaneur/engine/moteur.py`)
-- docs/sphinx/api/*.rst                      (régénéré par `apidoc`)
+- app.py                                     (dans `_terminer` : si
+                                              `res.reporte`, appeler
+                                              `planificateur.differer(res)`
+                                              au lieu de
+                                              `marquer_execution()`,
+                                              adapter le message des
+                                              échecs pour éviter le
+                                              double libellé)
+- cli.py                                     (après `moteur.executer()` :
+                                              si `res.reporte`, appeler
+                                              `differer(res)` sur un
+                                              `Planificateur(c)`, imprimer
+                                              un résumé et sortir avec
+                                              exit code 2)
+- translations/glaneur_fr.ts                 (mise à jour via
+                                              `build_translations.py update`)
+- translations/glaneur_en.ts                 (idem, traductions à
+                                              compléter manuellement pour
+                                              les nouvelles chaînes)
 
 ## Direct dependencies
 
-- `cli.py`, `app.py`, `tests/test_moteur.py`,
-  `tests/test_source_djangoplicity.py` importent depuis
-  `Glaneur.engine` : imports inchangés (le paquet expose la même API que
-  l'ancien module).
-- `Glaneur/config.py` et `Glaneur/sources/base.py` référencent
-  `Glaneur.engine.*` dans les docstrings : chemins mis à jour vers le
-  chemin canonique du submodule (`Glaneur.engine.options.Options`,
-  `Glaneur.engine.resultat.Resultat`, `Glaneur.engine.moteur.Moteur`).
-  Nécessaire parce que Sphinx documente maintenant ces symboles à
-  l'endroit où ils vivent, pas au ré-export du paquet.
+- `Glaneur.scheduler.Planificateur.differer` (lot 3), consommé par
+  `app.py` et `cli.py`.
+- Nouvelles chaînes traduisibles introduites aux lots 2/3 :
+  - `Moteur` : « Serveur indisponible ou quota atteint — reprise après {heure}. »
+    et sa variante sans heure.
+  - `Planificateur` : « Reprise reportée dans {delai} ({date}) ».
+  - `Glaneur.cli` : nouvelles impressions (pas traduites, cohérent
+    avec le reste du CLI qui est en français hard-coded).
 
 ## Tests
 
-- Suite complète (changement structurel touchant l'API publique).
-- `tests/test_boundaries.py::test_no_qt_outside_ui` doit continuer à
-  passer, `xfail(strict=True)` uniquement sur `Glaneur/engine/moteur.py`
-  (les autres submodules du paquet n'importent pas Qt).
+- Pas de nouveaux tests unitaires : `app.py` est peu testé et le
+  cheminement est trivial (assignation conditionnelle). Le CLI n'a
+  pas de tests dédiés dans le dépôt.
+- La régression est couverte par la suite existante — aucun test ne
+  doit se casser.
+- Ruff ciblé sur `app.py` et `cli.py`.
 
 ## Potentially affected
 
-- `docs/sphinx/api/Glaneur.engine.rst` : remplacé par la structure de
-  paquet (page paquet + page par submodule) via `make apidoc`.
-- `packaging/**` : pas d'entrée explicite pour `engine.py`. PyInstaller
-  collecte automatiquement le paquet via `Glaneur/__init__.py`. Point
-  de contrôle `--controle-bundle` dans `app.py` importe déjà le paquet.
+- `_verifier_echeance` : quand un report est actif, `prochaine()`
+  renvoie une date future, donc `echeance_atteinte()` reste `False` —
+  pas d'auto-run intempestif. Comportement voulu, testé au lot 3
+  côté planificateur.
 
 ## Explicitly out of scope
 
-- Frontière 1 (Qt hors moteur) : `QCoreApplication` reste importé dans
-  `Glaneur/engine/moteur.py`. La dette est déplacée, pas résorbée.
-- Refactor du corps des fonctions : contenu identique, seule la
-  répartition en fichiers change.
-- Traduction (`.ts`) : le contexte `"Moteur"` des `translate(...)` reste
-  littéral dans `moteur.py`, donc `lupdate` continue à les extraire.
-- Suppression de `UA` / `SIZE_SUFFIX` qui semblent inutilisés : hors
-  périmètre.
+- Docs Sphinx (lot 5).
+- Refactor de `_terminer` au-delà du câblage du report.
+- Tests unitaires de l'UI (le dépôt n'en a pas pour `app.py`).
 
 ## Invariants
 
-- Surface publique de `Glaneur.engine` inchangée : mêmes symboles
-  importables au même chemin de qualification.
-- Atomicité de `ecrire_manifeste` / `ecrire_cache` inchangée.
-- `_MANIFESTE_LOCK` reste un unique `threading.Lock` partagé entre
-  `restaurer`, `supprimer_image` et `Moteur.sauver_manifeste`.
-- Frontière 1 : la seule frontière Qt violée reste celle du moteur ;
-  le paquet n'introduit pas de nouvelle violation ailleurs.
+- Un run avec `res.reporte = True` :
+  - ne doit PAS appeler `marquer_execution()` (sinon le report est
+    immédiatement effacé au lot 3) ;
+  - doit appeler `planificateur.differer(res)` exactement une fois.
+- Un run avec `res.interrompu = True` conserve le comportement existant
+  (ni `marquer_execution` ni `differer`).
+- Un run normal (`not res.reporte and not res.interrompu`) reste
+  inchangé : `marquer_execution()`.
+- Le CLI ne quitte plus toujours 0/1 : 2 est réservé aux reports.

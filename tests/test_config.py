@@ -337,6 +337,52 @@ class TestConstantesSource:
 # Display labels (internal value ↔ UI label)
 # --------------------------------------------------------------------------- #
 
+# --------------------------------------------------------------------------- #
+# Deferral fields (lot 3: circuit-breaker / backoff persistence)
+# --------------------------------------------------------------------------- #
+
+class TestReportDiff:
+    def test_defauts_retenter_apres_et_backoff(self):
+        """Fresh Config exposes an empty retenter_apres and a zero backoff level."""
+        c = Config()
+        assert c.retenter_apres == ""
+        assert c.backoff_niveau == 0
+
+    def test_round_trip_retenter_apres_et_backoff(self, tmp_path):
+        """Saving then reloading preserves both deferral fields."""
+        chemin = tmp_path / "c.json"
+        c = Config.charger(chemin)
+        c.retenter_apres = "2026-09-27T10:00:00"
+        c.backoff_niveau = 2
+        c.sauver()
+
+        c2 = Config.charger(chemin)
+        assert c2.retenter_apres == "2026-09-27T10:00:00"
+        assert c2.backoff_niveau == 2
+
+    def test_config_sans_champs_defer_charge_avec_defauts(self, tmp_path):
+        """An older config.json without the deferral fields loads with defaults."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({"intervalle_heures": 6}))
+        c = Config.charger(chemin)
+        assert c.retenter_apres == ""
+        assert c.backoff_niveau == 0
+
+    def test_valider_borne_backoff_niveau_negatif(self, tmp_path):
+        """Valider clamps a negative backoff level to zero."""
+        c = Config.charger(tmp_path / "c.json")
+        c.backoff_niveau = -3
+        c.valider()
+        assert c.backoff_niveau == 0
+
+    def test_valider_borne_backoff_niveau_trop_haut(self, tmp_path):
+        """Valider clamps a backoff level above the ceiling down to 2."""
+        c = Config.charger(tmp_path / "c.json")
+        c.backoff_niveau = 5
+        c.valider()
+        assert c.backoff_niveau == 2
+
+
 class TestLibelles:
     def test_libelle_intervalle_connu(self, tmp_path):
         c = Config.charger(tmp_path / "c.json")

@@ -1172,11 +1172,15 @@ class Fenetre(QMainWindow):
             self._ecrire(self.tr(
                 "{n} image(s) que vous aviez supprimée(s), ignorée(s) — "
                 "bouton « Images supprimées… » pour en recharger.").format(n=res.ignorees))
-        if res.echecs:
+        if res.echecs and not res.reporte:
+            # Sur report, `res.message` explique déjà la coupure et donne
+            # l'échéance — pas de « seront retentés » redondant/trompeur.
             self._ecrire(self.tr("{n} échec(s) — seront retentés à la prochaine mise à jour.").format(
                 n=res.echecs))
 
-        if not res.interrompu:
+        if res.reporte:
+            self.planificateur.differer(res)
+        elif not res.interrompu:
             self.planificateur.marquer_execution()
         self._rafraichir_echeance()
 
