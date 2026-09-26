@@ -169,6 +169,14 @@ class Config:
     delai_requetes: float = 0.5
     #: ISO 8601 date of the last run, fed by the scheduler.
     derniere_execution: str = ""
+    #: ISO 8601 (naïf local) : quand redémarrer un run reporté par un
+    #: coupe-circuit réseau (voir :meth:`Glaneur.scheduler.Planificateur.differer`).
+    #: Vide = pas de report en cours.
+    retenter_apres: str = ""
+    #: Niveau de backoff exponentiel : 0 → 1 h, 1 → 2 h, 2 → 4 h.
+    #: Réinitialisé à 0 par
+    #: :meth:`Glaneur.scheduler.Planificateur.marquer_execution`.
+    backoff_niveau: int = 0
     #: Adds the application to the user session's startup items.
     lancer_au_demarrage: bool = False
     #: The close button minimizes to the notification area instead of exiting.
@@ -265,6 +273,12 @@ class Config:
             self.classement = "date"
         # too short a delay would hammer the club's server
         self.delai_requetes = max(0.2, min(float(self.delai_requetes), 10.0))
+        # Le backoff exponentiel du report ne connaît que trois paliers.
+        try:
+            niveau = int(self.backoff_niveau)
+        except (TypeError, ValueError):
+            niveau = 0
+        self.backoff_niveau = max(0, min(niveau, 2))
 
     @property
     def libelle_intervalle(self) -> str:

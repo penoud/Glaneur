@@ -295,7 +295,7 @@ class TestAfterInclusif:
                           side_effect=faux.get_json), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 42, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             res = moteur.executer()
 
         # `a` recognized as already present; only `b` downloaded.
@@ -333,7 +333,7 @@ class TestRessourceManquante:
                           side_effect=faux.get_json), \
              patch.object(moteur, "telecharger",
                           return_value=("ok", {"taille": 3_500_000, "etag": "",
-                                               "modifie": "", "url": "u"})):
+                                               "modifie": "", "url": "u"}, None)):
             res = moteur.executer()
         # good: downloaded; bad: ignored
         assert res.telechargees == 1

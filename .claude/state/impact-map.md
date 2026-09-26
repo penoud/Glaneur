@@ -9,75 +9,79 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Lot 2 du sprint « Coupe-circuit réseau et report différé ». Ajoute au
-moteur un compteur d'échecs consécutifs et une sortie propre quand
-`classer_erreur` (lot 1) classe une erreur en `coupure`. Trigger :
-1 seule erreur `coupure` OU 5 erreurs `transitoire` consécutives.
-
-Résultat exposé via deux nouveaux champs sur `Resultat` :
-`reporte: bool` et `retenter_apres: str` (ISO 8601, hint depuis un
-`Retry-After` serveur si disponible ; vide sinon → le planificateur
-appliquera son propre backoff au lot 3).
+Lot 3 du sprint « Coupe-circuit réseau et report différé ». Câble
+`Resultat.reporte`/`Resultat.retenter_apres` (lot 2) dans le
+planificateur via un nouveau champ persistant `Config.retenter_apres`
+et un `Config.backoff_niveau` (0/1/2 → 1h/2h/4h). Le planificateur
+gagne une méthode `differer(res)` que l'UI/le CLI appelleront au
+lot 4 en lieu et place de `marquer_execution()` quand `res.reporte`
+est vrai.
 
 ## Directly modified
 
-- Glaneur/engine/resultat.py                 (ajout de `reporte`
-                                              et `retenter_apres`)
-- Glaneur/engine/moteur.py                   (import de
-                                              `classer_erreur` +
-                                              coupe-circuit dans la
-                                              boucle de `executer` ;
-                                              `telecharger` renvoie
-                                              désormais un tuple à 3
-                                              éléments avec la
-                                              `Classification`)
-- tests/test_moteur.py                       (mise à jour des tests
-                                              existants pour le nouvel
-                                              unpacking ; nouveaux
-                                              tests de coupe-circuit)
+- Glaneur/config.py                          (ajout de
+                                              `retenter_apres: str`,
+                                              `backoff_niveau: int`,
+                                              validation et migration
+                                              douce)
+- Glaneur/scheduler.py                       (`differer(res)`,
+                                              `prochaine()` respecte
+                                              `retenter_apres`,
+                                              `marquer_execution()`
+                                              remet backoff à zéro,
+                                              libellé dédié dans
+                                              `texte_prochaine`)
+- tests/test_scheduler.py                    (nouvelle classe pour
+                                              `differer`, `prochaine`
+                                              avec report,
+                                              `texte_prochaine`
+                                              libellé de report)
+- tests/test_config.py                       (round-trip des deux
+                                              nouveaux champs +
+                                              validation des bornes
+                                              de `backoff_niveau`)
 
 ## Direct dependencies
 
-- `Glaneur/sources/base.py::classer_erreur` (introduit au lot 1),
-  consommé par `Moteur.telecharger`.
-- Aucun autre appelant de `Moteur.telecharger` en dehors de `executer`.
+- `Glaneur.engine.resultat.Resultat` : consommé par
+  `Planificateur.differer(res)`. Import direct depuis `scheduler.py`.
+  Pas de cycle (resultat.py n'importe rien de scheduler).
 
 ## Tests
 
-- `tests/test_moteur.py` : suite ciblée (TestTelecharger et
-  TestExecuter mis à jour + nouvelle classe TestCoupeCircuit).
-- `ruff check` sur les deux fichiers modifiés.
-- Suite complète non nécessaire à ce lot (frontière non touchée,
-  format persistant inchangé — les nouveaux champs de `Resultat`
-  sont transients, pas sérialisés sur disque).
-- `invariant-reviewer` requis : le moteur est un module « moteur »
-  au sens du tableau de validation conditionnelle de CLAUDE.md.
+- Suite ciblée : `tests/test_scheduler.py` + `tests/test_config.py`.
+- Ruff ciblé sur `Glaneur/config.py`, `Glaneur/scheduler.py`,
+  `tests/test_scheduler.py`, `tests/test_config.py`.
+- Suite complète + couverture + Sphinx en validation finale de fin de
+  lot (format persistant `config.json` modifié — cf. tableau CLAUDE.md).
+- `invariant-reviewer` requis (frontière `Config` + format persisté).
 
 ## Potentially affected
 
-- `app.py::_terminer` lit `Resultat` : les nouveaux champs ont des
-  valeurs par défaut (`False`, `""`), donc pas de casse. Le câblage
-  UI attend le lot 4.
-- `cli.py` idem.
+- `app.py` : lit `Config` mais ne consomme pas encore les nouveaux
+  champs — câblage au lot 4.
+- `cli.py` : idem.
 
 ## Explicitly out of scope
 
-- `Config.retenter_apres` et `Config.backoff_niveau` (lot 3).
-- `Planificateur.differer()` (lot 3).
-- Câblage UI et CLI (lot 4).
+- Câblage UI dans `app.py::_terminer` et exit code CLI (lot 4).
 - Traductions `.ts` (lot 4).
 - Docs Sphinx (lot 5).
 
 ## Invariants
 
-- Frontière 1 (Qt hors moteur) inchangée : le moteur importe déjà
-  `QCoreApplication`, on n'ajoute pas de nouvelle dépendance Qt.
-- Le manifeste et les `.part` restent sauvegardés en fin de run
-  même en cas de report (le `finally` sur `sauver_manifeste` est
-  conservé). Les `.part` sont préservés pour la reprise.
-- Le cache moteur n'est PAS sauvegardé en cas de report (analogue
-  au traitement d'`Interrompu`) : on ne mémorise pas
-  `derniere_date_media` à partir d'un run tronqué.
-- La surface publique de `Resultat` s'enrichit mais reste
-  rétrocompatible : les champs existants gardent leur type et
-  valeur par défaut.
+- Frontière 1 : `scheduler.py` reste dépendant de Qt (déjà écarté
+  dans CLAUDE.md), mais on n'ajoute aucune nouvelle dépendance Qt.
+- Compatibilité ascendante : un `config.json` existant sans les deux
+  nouveaux champs charge sans erreur (défauts `""` et `0`).
+- `Config.derniere_execution` reste naïf local (statu quo). Le
+  planificateur reçoit `res.retenter_apres` en ISO 8601 aware UTC
+  (lot 2) et le convertit en naïf local avant persistance dans
+  `Config.retenter_apres`, pour rester comparable à
+  `derniere_execution` (règle notée par la review du lot 2 :
+  éviter le mélange aware/naïf dans `prochaine()`).
+- `backoff_niveau` borné à `[0, 2]` par `Config.valider`, table
+  interne `[3600, 7200, 14400]` s. Réinitialisé à 0 par
+  `marquer_execution()`.
+- `marquer_execution()` remet aussi `retenter_apres = ""` : un run
+  qui réussit après un report clôt le report.
