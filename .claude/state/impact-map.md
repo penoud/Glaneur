@@ -9,89 +9,58 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Découpage de `Glaneur/engine.py` en paquet `Glaneur/engine/` avec un
-fichier par fonction/dataclass et un fichier pour la classe `Moteur`.
-But : simplifier la maintenance future en localisant chaque unité de
-comportement dans son propre fichier. Aucun changement de comportement,
-aucun changement de la surface publique — `from Glaneur.engine import …`
-continue de fonctionner à l'identique via un `__init__.py` qui
-ré-exporte l'API.
+Lot 1 du sprint « Coupe-circuit réseau et report différé ». Introduire
+dans la couche source une fonction utilitaire `classer_erreur(exc, reponse=None)`
+qui classe une exception `requests` ou un code HTTP en trois catégories :
+
+- `"transitoire"` : timeout ponctuel, un 5xx isolé.
+- `"coupure"` : le serveur nous a coupés (429, 503, `NameResolutionError`,
+  `ConnectionError` avec « Max retries exceeded »).
+- `"definitif"` : autre erreur non retryable.
+
+Extrait aussi un `Retry-After` (secondes) si l'en-tête est présent.
+Aucune modification du moteur ni du scheduler à ce lot — juste
+l'utilitaire et ses tests unitaires. Les lots suivants consommeront cette
+API.
 
 ## Directly modified
 
-- Glaneur/engine.py                          (supprimé)
-- Glaneur/engine/__init__.py                 (ré-exports)
-- Glaneur/engine/_verrous.py                 (`_MANIFESTE_LOCK` partagé)
-- Glaneur/engine/_constantes.py              (`UA`, `SIZE_SUFFIX`)
-- Glaneur/engine/_fusion.py                  (`_fusionner_marques_ui`)
-- Glaneur/engine/options.py                  (`Options`)
-- Glaneur/engine/resultat.py                 (`Resultat`)
-- Glaneur/engine/nettoyer.py                 (`nettoyer`)
-- Glaneur/engine/format_octets.py            (`format_octets`)
-- Glaneur/engine/chemin_manifeste.py         (`chemin_manifeste`)
-- Glaneur/engine/lire_manifeste.py           (`lire_manifeste`)
-- Glaneur/engine/ecrire_manifeste.py         (`ecrire_manifeste`)
-- Glaneur/engine/chemin_cache.py             (`chemin_cache`)
-- Glaneur/engine/lire_cache.py               (`lire_cache`)
-- Glaneur/engine/ecrire_cache.py             (`ecrire_cache`)
-- Glaneur/engine/lister_supprimees.py        (`lister_supprimees`)
-- Glaneur/engine/restaurer.py                (`restaurer`)
-- Glaneur/engine/supprimer_image.py          (`supprimer_image`)
-- Glaneur/engine/moteur.py                   (classe `Moteur`)
-- tests/test_boundaries.py                   (KNOWN_QT_IMPORTS et
-                                              _qt_cases pointent
-                                              maintenant sur les
-                                              submodules du paquet)
-- CLAUDE.md                                  (section « Écarts connus » :
-                                              l'entrée `Glaneur/engine.py`
-                                              devient `Glaneur/engine/moteur.py`)
-- docs/sphinx/api/*.rst                      (régénéré par `apidoc`)
+- Glaneur/sources/base.py                      (nouvelle fonction publique
+                                                `classer_erreur` + une
+                                                dataclass `Classification`
+                                                si besoin)
+- tests/test_source_base.py                    (nouveaux tests unitaires
+                                                pour `classer_erreur`)
 
 ## Direct dependencies
 
-- `cli.py`, `app.py`, `tests/test_moteur.py`,
-  `tests/test_source_djangoplicity.py` importent depuis
-  `Glaneur.engine` : imports inchangés (le paquet expose la même API que
-  l'ancien module).
-- `Glaneur/config.py` et `Glaneur/sources/base.py` référencent
-  `Glaneur.engine.*` dans les docstrings : chemins mis à jour vers le
-  chemin canonique du submodule (`Glaneur.engine.options.Options`,
-  `Glaneur.engine.resultat.Resultat`, `Glaneur.engine.moteur.Moteur`).
-  Nécessaire parce que Sphinx documente maintenant ces symboles à
-  l'endroit où ils vivent, pas au ré-export du paquet.
+- Aucun. Le module reste autonome ; ni `Transport` ni `Source` ne
+  consomment encore la nouvelle fonction à ce lot (lot 2 s'en chargera
+  dans le moteur).
 
 ## Tests
 
-- Suite complète (changement structurel touchant l'API publique).
-- `tests/test_boundaries.py::test_no_qt_outside_ui` doit continuer à
-  passer, `xfail(strict=True)` uniquement sur `Glaneur/engine/moteur.py`
-  (les autres submodules du paquet n'importent pas Qt).
+- Suite ciblée : `tests/test_source_base.py` uniquement.
+- `ruff` ciblé sur `Glaneur/sources/base.py` et `tests/test_source_base.py`.
 
 ## Potentially affected
 
-- `docs/sphinx/api/Glaneur.engine.rst` : remplacé par la structure de
-  paquet (page paquet + page par submodule) via `make apidoc`.
-- `packaging/**` : pas d'entrée explicite pour `engine.py`. PyInstaller
-  collecte automatiquement le paquet via `Glaneur/__init__.py`. Point
-  de contrôle `--controle-bundle` dans `app.py` importe déjà le paquet.
+- `tests/test_source_djangoplicity.py`, `tests/test_source_wordpress.py` :
+  aucun impact tant que le comportement de `Transport.get_json` n'est pas
+  modifié.
 
 ## Explicitly out of scope
 
-- Frontière 1 (Qt hors moteur) : `QCoreApplication` reste importé dans
-  `Glaneur/engine/moteur.py`. La dette est déplacée, pas résorbée.
-- Refactor du corps des fonctions : contenu identique, seule la
-  répartition en fichiers change.
-- Traduction (`.ts`) : le contexte `"Moteur"` des `translate(...)` reste
-  littéral dans `moteur.py`, donc `lupdate` continue à les extraire.
-- Suppression de `UA` / `SIZE_SUFFIX` qui semblent inutilisés : hors
-  périmètre.
+- Modification de `Transport.get_json`, `Moteur.telecharger`, du
+  planificateur ou de la config : lots 2 et 3.
+- Câblage UI / CLI : lot 4.
+- Frontière 1 (Qt hors moteur) : inchangée, `base.py` n'a jamais
+  dépendu de Qt.
 
 ## Invariants
 
-- Surface publique de `Glaneur.engine` inchangée : mêmes symboles
-  importables au même chemin de qualification.
-- Atomicité de `ecrire_manifeste` / `ecrire_cache` inchangée.
-- `_MANIFESTE_LOCK` reste un unique `threading.Lock` partagé entre
-  `restaurer`, `supprimer_image` et `Moteur.sauver_manifeste`.
-- Frontière 1 : la seule frontière Qt violée reste celle du moteur ;
-  le paquet n'introduit pas de nouvelle violation ailleurs.
+- Le module `Glaneur/sources/base.py` ne dépend pas de Qt.
+- Les symboles existants (`Element`, `Source`, `Transport`, `Interrompu`,
+  `UA`) restent exportés au même chemin.
+- La fonction ne fait aucun I/O : elle reçoit exception + réponse et
+  renvoie une classification pure — testable sans réseau.

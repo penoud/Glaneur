@@ -10,12 +10,135 @@ from __future__ import annotations
 import threading
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Callable, ClassVar, Iterator, Mapping
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import ClassVar, Literal
 
 import requests
 
 UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
+
+# Fragments de message qui, dans une `ConnectionError`, traduisent une
+# coupure côté serveur (DNS blackhole, pool épuisé). Le vrai cas ESO
+# du sprint « coupe-circuit réseau » remonte un `NameResolutionError`
+# sous ce type d'exception.
+_MOTS_COUPURE = (
+    "NameResolutionError",
+    "Failed to resolve",
+    "getaddrinfo failed",
+    "Max retries exceeded",
+)
+
+#: Codes HTTP « amont » qui traduisent une coupure : le serveur nous
+#: dit explicitement qu'il ne peut/veut plus répondre (429) ou qu'un
+#: intermédiaire est tombé (502/503/504).
+_STATUTS_COUPURE = frozenset({429, 502, 503, 504})
+
+#: Codes HTTP « client » définitifs : rien à retenter sans intervention.
+_STATUTS_DEFINITIFS = frozenset({400, 401, 403, 404, 405, 410})
+
+
+@dataclass(frozen=True)
+class Classification:
+    """Résultat de :func:`classer_erreur` — pure valeur, sans I/O.
+
+    Champs documentés inline par commentaires ``#:`` (même raison que
+    :class:`Element` : éviter le doublon d'index Sphinx entre autodoc
+    et Napoleon).
+    """
+
+    #: Catégorie de l'erreur : ``"transitoire"`` (à retenter tout de
+    #: suite), ``"coupure"`` (le serveur nous a fermés — le moteur
+    #: doit reporter le run) ou ``"definitif"`` (rien à retenter).
+    categorie: Literal["transitoire", "coupure", "definitif"]
+    #: Nombre de secondes à attendre avant de retenter, extrait d'un
+    #: en-tête ``Retry-After`` (entier ou HTTP-date). ``None`` si
+    #: l'information n'est pas fournie — le moteur applique alors son
+    #: propre backoff.
+    retry_after: float | None = None
+
+
+def _retry_after(reponse: requests.Response | None) -> float | None:
+    """Extrait ``Retry-After`` d'une réponse, en secondes.
+
+    Accepte les deux formes autorisées par la RFC 7231 : nombre
+    entier de secondes, ou HTTP-date. Renvoie ``None`` si l'en-tête
+    manque, est vide ou non parsable.
+    """
+    if reponse is None:
+        return None
+    brut = reponse.headers.get("Retry-After") if reponse.headers else None
+    if not brut:
+        return None
+    brut = brut.strip()
+    try:
+        return float(int(brut))
+    except ValueError:
+        pass
+    try:
+        cible = parsedate_to_datetime(brut)
+    except (TypeError, ValueError):
+        return None
+    if cible is None:
+        return None
+    if cible.tzinfo is None:
+        cible = cible.replace(tzinfo=timezone.utc)
+    delta = (cible - datetime.now(timezone.utc)).total_seconds()
+    return max(0.0, delta)
+
+
+def classer_erreur(
+    exc: BaseException | None,
+    reponse: requests.Response | None = None,
+) -> Classification:
+    """Classe une exception réseau et/ou une réponse HTTP.
+
+    L'appelant fournit ce qu'il a : une exception seule (pas de réponse
+    parce que la connexion n'a jamais abouti), une réponse seule
+    (statut HTTP à interpréter), ou les deux.
+
+    Args:
+        exc: Exception levée par ``requests``. ``None`` autorisé si on
+            n'a qu'une réponse à classer.
+        reponse: Réponse HTTP dont on lit ``status_code`` et
+            ``headers['Retry-After']``. ``None`` autorisé.
+
+    Returns:
+        Une :class:`Classification` immuable. La fonction ne fait
+        aucun I/O — elle est testable sans réseau.
+    """
+    retry_after = _retry_after(reponse)
+
+    if reponse is not None:
+        code = reponse.status_code
+        if code in _STATUTS_COUPURE:
+            return Classification("coupure", retry_after)
+        if code in _STATUTS_DEFINITIFS:
+            return Classification("definitif", retry_after)
+        if 500 <= code < 600:
+            # 5xx non listés ci-dessus : traités comme transitoires
+            # (un 500 isolé n'est pas une coupure).
+            return Classification("transitoire", retry_after)
+
+    if exc is not None:
+        if isinstance(exc, requests.exceptions.Timeout):
+            return Classification("transitoire", retry_after)
+        if isinstance(exc, requests.exceptions.ConnectionError):
+            message = str(exc)
+            if any(mot in message for mot in _MOTS_COUPURE):
+                return Classification("coupure", retry_after)
+            return Classification("transitoire", retry_after)
+        if isinstance(exc, (
+            requests.exceptions.MissingSchema,
+            requests.exceptions.InvalidSchema,
+            requests.exceptions.InvalidURL,
+            requests.exceptions.URLRequired,
+        )):
+            return Classification("definitif", retry_after)
+
+    return Classification("transitoire", retry_after)
 
 
 class Interrompu(Exception):
