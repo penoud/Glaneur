@@ -75,7 +75,7 @@ from Glaneur.engine import (
     supprimer_image,
 )
 from Glaneur.scheduler import Planificateur
-from Glaneur.systeme import (
+from Glaneur.system import (
     avancer_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,
@@ -171,7 +171,7 @@ class DialogueSupprimees(QDialog):
         Args:
             parent: Qt parent widget.
             entrees: List of entries as returned by
-                :func:`Glaneur.engine.lister_supprimees`.
+                :func:`Glaneur.engine.list_deleted`.
         """
         super().__init__(parent)
         self.setWindowTitle(self.tr("Images supprimées"))

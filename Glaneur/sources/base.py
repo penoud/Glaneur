@@ -144,7 +144,7 @@ class Interrompu(Exception):
 
     Carried by the transport and propagated up to the engine, which
     treats it as a normal end (see
-    :attr:`Glaneur.engine.resultat.Resultat.interrompu`).
+    :attr:`Glaneur.engine.result.Resultat.interrompu`).
     """
 
 
@@ -163,7 +163,7 @@ class Element:
     ident: str
     #: URL of the resource to download. ``None`` if the source did not
     #: find a resource for the requested format: the engine will count
-    #: the element in :attr:`Glaneur.engine.resultat.Resultat.ignorees`.
+    #: the element in :attr:`Glaneur.engine.result.Resultat.ignorees`.
     url: str | None
     #: File name to give the resource on disk, without directory.
     nom_fichier: str
@@ -176,7 +176,7 @@ class Element:
     #: :attr:`Glaneur.engine.options.Options.largeur_min` filter.
     largeur: int | None = None
     #: File size in bytes, if announced by the source (allows
-    #: :meth:`Glaneur.engine.moteur.Moteur.fichier_complet` to validate).
+    #: :meth:`Glaneur.engine.core.Moteur.fichier_complet` to validate).
     taille: int | None = None
     #: Parent identifier (WordPress gallery, Djangoplicity collection)
     #: for the ``galerie`` sort mode.
@@ -344,7 +344,7 @@ class Source(ABC):
 
         Returns:
             A ``{key -> cleaned title}`` table, ready to be passed to
-            :meth:`Glaneur.engine.moteur.Moteur.dossier_pour`.
+            :meth:`Glaneur.engine.core.Moteur.dossier_pour`.
         """
         return dict(connus or {})
 

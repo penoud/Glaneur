@@ -1,18 +1,18 @@
-"""Tolerant read of the API cache of a run."""
+"""Tolerant read of the manifest of a run."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from .chemin_cache import chemin_cache
+from .manifest_path import chemin_manifeste
 
 
-def lire_cache(dossier: Path) -> dict:
-    """Load the JSON cache if present, an empty dict otherwise.
+def lire_manifeste(dossier: Path) -> dict:
+    """Load the JSON manifest if present, an empty dict otherwise.
 
-    Like :func:`Glaneur.engine.lire_manifeste`, tolerates a missing or
-    corrupted cache.
+    A corrupted or unreadable manifest is treated as missing: the next run
+    starts from an empty state rather than crashing.
 
     Args:
         dossier: Target directory of the run.
@@ -21,7 +21,7 @@ def lire_cache(dossier: Path) -> dict:
         The deserialised content, or ``{}`` if the file is missing or
         unreadable.
     """
-    chemin = chemin_cache(dossier)
+    chemin = chemin_manifeste(dossier)
     if not chemin.exists():
         return {}
     try:

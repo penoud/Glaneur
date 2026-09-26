@@ -21,17 +21,17 @@ from PySide6.QtCore import QCoreApplication
 
 from ..sources import SOURCES, Element, Interrompu, Transport
 from ..sources.base import Classification, classer_erreur
-from ._fusion import _fusionner_marques_ui
-from ._verrous import _MANIFESTE_LOCK
-from .chemin_manifeste import chemin_manifeste
-from .ecrire_cache import ecrire_cache
-from .ecrire_manifeste import ecrire_manifeste
-from .format_octets import format_octets
-from .lire_cache import lire_cache
-from .lire_manifeste import lire_manifeste
-from .nettoyer import nettoyer
+from ._merge import _fusionner_marques_ui
+from ._locks import _MANIFESTE_LOCK
+from .manifest_path import chemin_manifeste
+from .write_cache import ecrire_cache
+from .write_manifest import ecrire_manifeste
+from .format_bytes import format_octets
+from .read_cache import lire_cache
+from .read_manifest import lire_manifeste
+from .sanitize import nettoyer
 from .options import Options
-from .resultat import Resultat
+from .result import Resultat
 
 
 class Moteur:
@@ -120,8 +120,8 @@ class Moteur:
         and applies the rule described in ``_fusionner_marques_ui``
         before writing atomically. This read-merge-write protects the
         ``supprime`` / ``restaure`` marks the user may set via
-        :func:`Glaneur.engine.supprimer_image.supprimer_image` or
-        :func:`Glaneur.engine.restaurer.restaurer` while a run is in
+        :func:`Glaneur.engine.delete_image.supprimer_image` or
+        :func:`Glaneur.engine.restore.restaurer` while a run is in
         progress: without it, the engine's periodic or final save would
         overwrite the change the UI made in the meantime.
 

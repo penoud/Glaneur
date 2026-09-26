@@ -9,7 +9,7 @@ tableau d'invariants et les conventions seront rédigés dans un lot dédié.
 Ce document décrit l'état visé. Tant qu'un écart figure ici, il n'est ni corrigé
 hors de son lot, ni signalé comme régression, sauf s'il s'aggrave.
 
-- `Glaneur/engine/moteur.py` importe `QCoreApplication` (PySide6) pour traduire
+- `Glaneur/engine/core.py` importe `QCoreApplication` (PySide6) pour traduire
   ses messages. La frontière 1 sera tenue quand le moteur émettra des événements
   structurés. Suivi par `xfail(strict=True)` dans `tests/test_boundaries.py`.
   Les autres submodules de `Glaneur/engine/` sont indépendants de Qt.
@@ -19,10 +19,11 @@ hors de son lot, ni signalé comme régression, sauf s'il s'aggrave.
   `Glaneur/scheduler.py` dans `KNOWN_QT_IMPORTS`) ; à retirer dès que le
   prochain lot qui touche le scheduler extrait la partie planification hors
   Qt.
-- Identifiants, docstrings, logs et chaînes source de l'interface sont encore en
-  français (`.ts` en `sourcelanguage="fr"`, libellés français en clés dans
-  `config.py`) : lot 2. (Note : depuis le sprint « Documentation Sphinx », les
-  docstrings sont en Napoleon Google-style — leur langue reste française.)
+- Les identifiants Python (noms de fonctions, classes, variables locales) et
+  les chaînes source de l'interface (`.ts` en `sourcelanguage="fr"`, libellés
+  français en clés dans `config.py`) restent en français : futur lot. Les
+  docstrings et les noms de fichiers Python sont désormais en anglais depuis
+  le lot « nettoyage et docstrings-en » (2026-09-26).
 - Le README décrit encore la signature par `WINDOWS_PFX_BASE64`, obsolète (lot 9).
 - Les métadonnées AppStream de `packaging/linux/` décrivent encore une
   application WordPress seule : en attente avec Linux.

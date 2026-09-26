@@ -1,7 +1,7 @@
-Glaneur.engine.resultat module
+Glaneur.engine.sanitize module
 ==============================
 
-.. automodule:: Glaneur.engine.resultat
+.. automodule:: Glaneur.engine.sanitize
    :members:
    :show-inheritance:
    :undoc-members:

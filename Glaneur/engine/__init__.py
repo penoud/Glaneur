@@ -10,7 +10,7 @@ It also knows nothing about WordPress or Djangoplicity. It consumes
 
 The only Qt dependency is ``QCoreApplication.translate`` used to localise
 messages routed to the journal and to ``res.message`` — confined to
-:mod:`Glaneur.engine.moteur`, with no widget and no thread introduced;
+:mod:`Glaneur.engine.core`, with no widget and no thread introduced;
 ``.translate()`` falls back to the French source string when no
 ``QCoreApplication`` exists (the CLI and unit-test case).
 
@@ -25,21 +25,21 @@ from __future__ import annotations
 
 from ..sources import Interrompu
 
-from ._constantes import SIZE_SUFFIX, UA
-from .chemin_cache import chemin_cache
-from .chemin_manifeste import chemin_manifeste
-from .ecrire_cache import ecrire_cache
-from .ecrire_manifeste import ecrire_manifeste
-from .format_octets import format_octets
-from .lire_cache import lire_cache
-from .lire_manifeste import lire_manifeste
-from .lister_supprimees import lister_supprimees
-from .moteur import Moteur
-from .nettoyer import nettoyer
+from ._constants import SIZE_SUFFIX, UA
+from .cache_path import chemin_cache
+from .manifest_path import chemin_manifeste
+from .write_cache import ecrire_cache
+from .write_manifest import ecrire_manifeste
+from .format_bytes import format_octets
+from .read_cache import lire_cache
+from .read_manifest import lire_manifeste
+from .list_deleted import lister_supprimees
+from .core import Moteur
+from .sanitize import nettoyer
 from .options import Options
-from .restaurer import restaurer
-from .resultat import Resultat
-from .supprimer_image import supprimer_image
+from .restore import restaurer
+from .result import Resultat
+from .delete_image import supprimer_image
 
 __all__ = [
     "Interrompu",

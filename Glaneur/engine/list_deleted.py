@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .lire_manifeste import lire_manifeste
+from .read_manifest import lire_manifeste
 
 
 def lister_supprimees(dossier: Path) -> list[dict]:

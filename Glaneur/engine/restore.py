@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
 
-from ._verrous import _MANIFESTE_LOCK
-from .ecrire_manifeste import ecrire_manifeste
-from .lire_manifeste import lire_manifeste
+from ._locks import _MANIFESTE_LOCK
+from .write_manifest import ecrire_manifeste
+from .read_manifest import lire_manifeste
 
 
 def restaurer(dossier: Path, ids: Iterable) -> int:

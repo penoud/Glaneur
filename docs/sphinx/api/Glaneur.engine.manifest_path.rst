@@ -1,7 +1,7 @@
-Glaneur.engine.format\_octets module
+Glaneur.engine.manifest\_path module
 ====================================
 
-.. automodule:: Glaneur.engine.format_octets
+.. automodule:: Glaneur.engine.manifest_path
    :members:
    :show-inheritance:
    :undoc-members:

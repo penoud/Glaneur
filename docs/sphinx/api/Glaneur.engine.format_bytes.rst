@@ -1,7 +1,7 @@
-Glaneur.engine.chemin\_cache module
+Glaneur.engine.format\_bytes module
 ===================================
 
-.. automodule:: Glaneur.engine.chemin_cache
+.. automodule:: Glaneur.engine.format_bytes
    :members:
    :show-inheritance:
    :undoc-members:

@@ -150,7 +150,7 @@ class Planificateur:
         8601 to remain comparable with ``Config.derniere_execution``.
 
         Args:
-            res: :class:`Glaneur.engine.resultat.Resultat` from a run
+            res: :class:`Glaneur.engine.result.Resultat` from a run
                 that finished with ``res.reporte = True``.
         """
         cible: datetime | None = None

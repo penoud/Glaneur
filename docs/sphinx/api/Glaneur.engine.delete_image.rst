@@ -1,7 +1,7 @@
-Glaneur.engine.ecrire\_cache module
+Glaneur.engine.delete\_image module
 ===================================
 
-.. automodule:: Glaneur.engine.ecrire_cache
+.. automodule:: Glaneur.engine.delete_image
    :members:
    :show-inheritance:
    :undoc-members:

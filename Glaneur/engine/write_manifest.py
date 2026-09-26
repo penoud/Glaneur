@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .chemin_manifeste import chemin_manifeste
+from .manifest_path import chemin_manifeste
 
 
 def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:

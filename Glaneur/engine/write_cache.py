@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .chemin_cache import chemin_cache
+from .cache_path import chemin_cache
 
 
 def ecrire_cache(dossier: Path, cache: dict) -> None:

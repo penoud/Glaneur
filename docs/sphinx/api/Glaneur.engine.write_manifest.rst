@@ -1,7 +1,7 @@
-Glaneur.engine.lire\_manifeste module
+Glaneur.engine.write\_manifest module
 =====================================
 
-.. automodule:: Glaneur.engine.lire_manifeste
+.. automodule:: Glaneur.engine.write_manifest
    :members:
    :show-inheritance:
    :undoc-members:

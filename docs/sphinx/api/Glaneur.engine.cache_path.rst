@@ -1,7 +1,7 @@
-Glaneur.engine.lire\_cache module
+Glaneur.engine.cache\_path module
 =================================
 
-.. automodule:: Glaneur.engine.lire_cache
+.. automodule:: Glaneur.engine.cache_path
    :members:
    :show-inheritance:
    :undoc-members:

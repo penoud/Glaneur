@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from Glaneur.config import Config
-from Glaneur.engine.resultat import Resultat
+from Glaneur.engine.result import Resultat
 from Glaneur.scheduler import Planificateur
 
 

@@ -11,8 +11,8 @@ import sys
 
 import pytest
 
-from Glaneur import systeme
-from Glaneur.systeme import (
+from Glaneur import system
+from Glaneur.system import (
     avancer_diaporama,
     commande_lancement,
     demarrage_automatique,
@@ -86,7 +86,7 @@ class TestFondEcranHorsWindows:
         avancer_diaporama()
 
     def test_instancier_bureau_renvoie_none(self):
-        ptr, uninit = systeme._instancier_bureau()
+        ptr, uninit = system._instancier_bureau()
         assert ptr is None
         assert uninit is False
 
@@ -120,19 +120,19 @@ class TestContratsWallpaper:
         # Indices must match the Microsoft vtable: SetSlideshow=12,
         # AdvanceSlideshow=16. An off-by-one called GetPosition instead
         # and corrupted memory → crash.
-        assert systeme._VT_RELEASE == 2
-        assert systeme._VT_GETWALLPAPER == 4
-        assert systeme._VT_GETMONITORDEVICEPATHAT == 5
-        assert systeme._VT_GETMONITORDEVICEPATHCOUNT == 6
-        assert systeme._VT_SET_SLIDESHOW == 12
-        assert systeme._VT_ADVANCESLIDESHOW == 16
+        assert system._VT_RELEASE == 2
+        assert system._VT_GETWALLPAPER == 4
+        assert system._VT_GETMONITORDEVICEPATHAT == 5
+        assert system._VT_GETMONITORDEVICEPATHCOUNT == 6
+        assert system._VT_SET_SLIDESHOW == 12
+        assert system._VT_ADVANCESLIDESHOW == 16
 
     def test_liberer_bureau_ignore_les_types_bizarres(self):
         # Robustness: calling _liberer_bureau with something other than a
         # c_void_p must never raise (definir_dossier_diaporama's finally relies on it).
-        systeme._liberer_bureau(None, False)
-        systeme._liberer_bureau((None, None), False)
-        systeme._liberer_bureau("pas un pointeur", False)
+        system._liberer_bureau(None, False)
+        system._liberer_bureau((None, None), False)
+        system._liberer_bureau("pas un pointeur", False)
         # no exception: success
 
 
@@ -151,7 +151,7 @@ class TestSimulationsWin:
         # on Linux, ctypes.windll does not exist: the AttributeError must
         # be caught and translated to (None, False)
         monkeypatch.setattr(sys, "platform", "win32")
-        ptr, uninit = systeme._instancier_bureau()
+        ptr, uninit = system._instancier_bureau()
         assert ptr is None
         assert uninit is False
 
@@ -178,9 +178,9 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         cible = tmp_path / "pas-encore"
         monkeypatch.setattr(sys, "platform", "linux")
-        monkeypatch.setattr("Glaneur.systeme.subprocess.Popen",
+        monkeypatch.setattr("Glaneur.system.subprocess.Popen",
                             MagicMock(return_value=None))
-        systeme.ouvrir_dossier(cible)
+        system.ouvrir_dossier(cible)
         assert cible.is_dir()
 
     def test_choisit_startfile_sous_windows(self, tmp_path, monkeypatch):
@@ -190,15 +190,15 @@ class TestOuvrirDossier:
         # os.startfile does not exist on Linux: install it for the test
         import os
         monkeypatch.setattr(os, "startfile", faux, raising=False)
-        systeme.ouvrir_dossier(tmp_path)
+        system.ouvrir_dossier(tmp_path)
         assert faux.called
 
     def test_choisit_open_sous_macos(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "darwin")
         popen = MagicMock()
-        monkeypatch.setattr("Glaneur.systeme.subprocess.Popen", popen)
-        systeme.ouvrir_dossier(tmp_path)
+        monkeypatch.setattr("Glaneur.system.subprocess.Popen", popen)
+        system.ouvrir_dossier(tmp_path)
         args = popen.call_args.args[0]
         assert args[0] == "open"
 
@@ -206,7 +206,7 @@ class TestOuvrirDossier:
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "linux")
         popen = MagicMock()
-        monkeypatch.setattr("Glaneur.systeme.subprocess.Popen", popen)
-        systeme.ouvrir_dossier(tmp_path)
+        monkeypatch.setattr("Glaneur.system.subprocess.Popen", popen)
+        system.ouvrir_dossier(tmp_path)
         args = popen.call_args.args[0]
         assert args[0] == "xdg-open"

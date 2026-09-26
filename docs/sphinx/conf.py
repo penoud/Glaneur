@@ -51,7 +51,7 @@ autodoc_default_options = {
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 
-# Le moteur importe PySide6.QtCore ; le mock permet à autodoc de charger
+# The engine imports PySide6.QtCore; the mock lets autodoc load
 # les modules concernés sans exiger Qt sur l'environnement de build.
 autodoc_mock_imports = ["PySide6"]
 
