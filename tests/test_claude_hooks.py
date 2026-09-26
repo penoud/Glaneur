@@ -27,21 +27,24 @@ def _run(script: str, payload: dict, *args: str) -> int:
 
 
 @pytest.mark.parametrize(("command", "code"), [
-    ("git push origin main", 2),
-    ("git -C . push", 2),
-    ("cd sub && git push", 2),
-    ("git tag v9.9.9", 2),
     ("gh release create v9.9.9", 2),
     ("gh pr merge 12", 2),
     ("pip install httpx", 2),
     ("python -m pip install httpx", 2),
     ("git status", 0),
     ("git tag --list", 0),
+    # `git push` and `git tag` are no longer hard-blocked by the hook —
+    # they go through the `ask` permission in .claude/settings.json instead,
+    # so the user confirms each call.
+    ("git push origin main", 0),
+    ("git -C . push", 0),
+    ("cd sub && git push", 0),
+    ("git tag v9.9.9", 0),
     ('git commit -m "réglage : do not push yet"', 0),
     ("python -m pip install -r requirements-dev.txt", 0),
 ])
 def test_guard_shell(command: str, code: int) -> None:
-    """Publishing and new dependencies are blocked; everyday git is not."""
+    """GitHub releases and new dependencies are blocked; everyday git is not."""
     payload = {"tool_name": "Bash", "tool_input": {"command": command}}
     assert _run("guard_shell.py", payload) == code
 
