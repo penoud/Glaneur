@@ -194,7 +194,7 @@ class Config:
     # -- load / save ------------------------------------------------------- #
 
     @classmethod
-    def charger(cls, chemin: Path | None = None) -> "Config":
+    def charger(cls, chemin: Path | None = None) -> Config:
         """Load the config from ``chemin`` or fall back to default values.
 
         Missing or unknown keys are ignored, and an unreadable file

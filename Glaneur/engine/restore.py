@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 from ._locks import _MANIFESTE_LOCK
-from .write_manifest import ecrire_manifeste
 from .read_manifest import lire_manifeste
+from .write_manifest import ecrire_manifeste
 
 
 def restaurer(dossier: Path, ids: Iterable) -> int:

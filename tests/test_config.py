@@ -18,7 +18,6 @@ from Glaneur.config import (
     migrer_depuis_ancien_nom,
 )
 
-
 # --------------------------------------------------------------------------- #
 # Default location of the configuration file
 # --------------------------------------------------------------------------- #

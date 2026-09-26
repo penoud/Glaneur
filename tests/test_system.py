@@ -15,13 +15,12 @@ from Glaneur import system
 from Glaneur.system import (
     avancer_diaporama,
     commande_lancement,
+    definir_dossier_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,
-    definir_dossier_diaporama,
     est_gele,
     fond_ecran_actuel,
 )
-
 
 # --------------------------------------------------------------------------- #
 # est_gele / commande_lancement

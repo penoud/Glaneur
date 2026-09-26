@@ -52,7 +52,7 @@ class VerificationMiseAJour(QThread):
                 self.disponible.emit(info)
             else:
                 self.aucune_maj.emit(info)
-        except Exception as error:   # noqa: BLE001 - surfaced to the UI via a signal
+        except Exception as error:
             logger.exception("Update check failed")
             self.erreur.emit(QCoreApplication.translate(
                 "Updater", "Vérification de mise à jour impossible : {erreur}").format(erreur=error))
@@ -97,7 +97,7 @@ class TelechargementMiseAJour(QThread):
                 raise RuntimeError(QCoreApplication.translate(
                     "Updater", "Vérification SHA-256 échouée"))
             self.termine.emit(fichier, str(dossier))
-        except Exception as error:   # noqa: BLE001 - surfaced to the UI via a signal
+        except Exception as error:
             logger.exception("Update download failed")
             self.erreur.emit(QCoreApplication.translate(
                 "Updater", "Téléchargement de la mise à jour impossible : {erreur}").format(erreur=error))

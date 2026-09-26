@@ -15,7 +15,6 @@ from Glaneur.engine import Moteur, Options, lire_manifeste
 from Glaneur.sources import Transport
 from Glaneur.sources.djangoplicity import Djangoplicity
 
-
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #

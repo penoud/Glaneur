@@ -1,0 +1,10 @@
+# Configuration Ruff. Voir https://docs.astral.sh/ruff/settings/
+#
+# `extend-select` ajoute des règles au socle par défaut sans le remplacer :
+# - `ARG` : arguments de fonction, méthode ou lambda jamais utilisés
+#   (indice de code mort résiduel après ce que capte déjà `F401`/`F841`).
+# - `RUF` : règles propres à Ruff (dont `RUF022` __all__ non trié,
+#   `RUF100` noqa inutile).
+
+[lint]
+extend-select = ["ARG", "RUF"]

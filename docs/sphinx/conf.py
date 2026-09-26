@@ -15,7 +15,7 @@ from pathlib import Path
 _RACINE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_RACINE))
 
-from Glaneur import __version__ as _version  # noqa: E402  (path setup)
+from Glaneur import __version__ as _version
 
 project = "Glaneur"
 author = "Glaneur contributors"

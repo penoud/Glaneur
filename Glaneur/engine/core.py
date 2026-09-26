@@ -11,9 +11,9 @@ context and source are literals: we inline rather than aliasing a _tr().
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Callable
 from urllib.parse import urlparse
 
 import requests
@@ -21,17 +21,17 @@ from PySide6.QtCore import QCoreApplication
 
 from ..sources import SOURCES, Element, Interrompu, Transport
 from ..sources.base import Classification, classer_erreur
-from ._merge import _fusionner_marques_ui
 from ._locks import _MANIFESTE_LOCK
-from .manifest_path import chemin_manifeste
-from .write_cache import ecrire_cache
-from .write_manifest import ecrire_manifeste
+from ._merge import _fusionner_marques_ui
 from .format_bytes import format_octets
+from .manifest_path import chemin_manifeste
+from .options import Options
 from .read_cache import lire_cache
 from .read_manifest import lire_manifeste
-from .sanitize import nettoyer
-from .options import Options
 from .result import Resultat
+from .sanitize import nettoyer
+from .write_cache import ecrire_cache
+from .write_manifest import ecrire_manifeste
 
 
 class Moteur:
