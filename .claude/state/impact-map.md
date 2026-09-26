@@ -9,58 +9,75 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Lot 1 du sprint « Coupe-circuit réseau et report différé ». Introduire
-dans la couche source une fonction utilitaire `classer_erreur(exc, reponse=None)`
-qui classe une exception `requests` ou un code HTTP en trois catégories :
+Lot 2 du sprint « Coupe-circuit réseau et report différé ». Ajoute au
+moteur un compteur d'échecs consécutifs et une sortie propre quand
+`classer_erreur` (lot 1) classe une erreur en `coupure`. Trigger :
+1 seule erreur `coupure` OU 5 erreurs `transitoire` consécutives.
 
-- `"transitoire"` : timeout ponctuel, un 5xx isolé.
-- `"coupure"` : le serveur nous a coupés (429, 503, `NameResolutionError`,
-  `ConnectionError` avec « Max retries exceeded »).
-- `"definitif"` : autre erreur non retryable.
-
-Extrait aussi un `Retry-After` (secondes) si l'en-tête est présent.
-Aucune modification du moteur ni du scheduler à ce lot — juste
-l'utilitaire et ses tests unitaires. Les lots suivants consommeront cette
-API.
+Résultat exposé via deux nouveaux champs sur `Resultat` :
+`reporte: bool` et `retenter_apres: str` (ISO 8601, hint depuis un
+`Retry-After` serveur si disponible ; vide sinon → le planificateur
+appliquera son propre backoff au lot 3).
 
 ## Directly modified
 
-- Glaneur/sources/base.py                      (nouvelle fonction publique
-                                                `classer_erreur` + une
-                                                dataclass `Classification`
-                                                si besoin)
-- tests/test_source_base.py                    (nouveaux tests unitaires
-                                                pour `classer_erreur`)
+- Glaneur/engine/resultat.py                 (ajout de `reporte`
+                                              et `retenter_apres`)
+- Glaneur/engine/moteur.py                   (import de
+                                              `classer_erreur` +
+                                              coupe-circuit dans la
+                                              boucle de `executer` ;
+                                              `telecharger` renvoie
+                                              désormais un tuple à 3
+                                              éléments avec la
+                                              `Classification`)
+- tests/test_moteur.py                       (mise à jour des tests
+                                              existants pour le nouvel
+                                              unpacking ; nouveaux
+                                              tests de coupe-circuit)
 
 ## Direct dependencies
 
-- Aucun. Le module reste autonome ; ni `Transport` ni `Source` ne
-  consomment encore la nouvelle fonction à ce lot (lot 2 s'en chargera
-  dans le moteur).
+- `Glaneur/sources/base.py::classer_erreur` (introduit au lot 1),
+  consommé par `Moteur.telecharger`.
+- Aucun autre appelant de `Moteur.telecharger` en dehors de `executer`.
 
 ## Tests
 
-- Suite ciblée : `tests/test_source_base.py` uniquement.
-- `ruff` ciblé sur `Glaneur/sources/base.py` et `tests/test_source_base.py`.
+- `tests/test_moteur.py` : suite ciblée (TestTelecharger et
+  TestExecuter mis à jour + nouvelle classe TestCoupeCircuit).
+- `ruff check` sur les deux fichiers modifiés.
+- Suite complète non nécessaire à ce lot (frontière non touchée,
+  format persistant inchangé — les nouveaux champs de `Resultat`
+  sont transients, pas sérialisés sur disque).
+- `invariant-reviewer` requis : le moteur est un module « moteur »
+  au sens du tableau de validation conditionnelle de CLAUDE.md.
 
 ## Potentially affected
 
-- `tests/test_source_djangoplicity.py`, `tests/test_source_wordpress.py` :
-  aucun impact tant que le comportement de `Transport.get_json` n'est pas
-  modifié.
+- `app.py::_terminer` lit `Resultat` : les nouveaux champs ont des
+  valeurs par défaut (`False`, `""`), donc pas de casse. Le câblage
+  UI attend le lot 4.
+- `cli.py` idem.
 
 ## Explicitly out of scope
 
-- Modification de `Transport.get_json`, `Moteur.telecharger`, du
-  planificateur ou de la config : lots 2 et 3.
-- Câblage UI / CLI : lot 4.
-- Frontière 1 (Qt hors moteur) : inchangée, `base.py` n'a jamais
-  dépendu de Qt.
+- `Config.retenter_apres` et `Config.backoff_niveau` (lot 3).
+- `Planificateur.differer()` (lot 3).
+- Câblage UI et CLI (lot 4).
+- Traductions `.ts` (lot 4).
+- Docs Sphinx (lot 5).
 
 ## Invariants
 
-- Le module `Glaneur/sources/base.py` ne dépend pas de Qt.
-- Les symboles existants (`Element`, `Source`, `Transport`, `Interrompu`,
-  `UA`) restent exportés au même chemin.
-- La fonction ne fait aucun I/O : elle reçoit exception + réponse et
-  renvoie une classification pure — testable sans réseau.
+- Frontière 1 (Qt hors moteur) inchangée : le moteur importe déjà
+  `QCoreApplication`, on n'ajoute pas de nouvelle dépendance Qt.
+- Le manifeste et les `.part` restent sauvegardés en fin de run
+  même en cas de report (le `finally` sur `sauver_manifeste` est
+  conservé). Les `.part` sont préservés pour la reprise.
+- Le cache moteur n'est PAS sauvegardé en cas de report (analogue
+  au traitement d'`Interrompu`) : on ne mémorise pas
+  `derniere_date_media` à partir d'un run tronqué.
+- La surface publique de `Resultat` s'enrichit mais reste
+  rétrocompatible : les champs existants gardent leur type et
+  valeur par défaut.

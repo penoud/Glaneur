@@ -11,7 +11,7 @@ context and source are literals: we inline rather than aliasing a _tr().
 from __future__ import annotations
 
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable
 from urllib.parse import urlparse
@@ -20,6 +20,7 @@ import requests
 from PySide6.QtCore import QCoreApplication
 
 from ..sources import SOURCES, Element, Interrompu, Transport
+from ..sources.base import Classification, classer_erreur
 from ._fusion import _fusionner_marques_ui
 from ._verrous import _MANIFESTE_LOCK
 from .chemin_manifeste import chemin_manifeste
@@ -250,7 +251,9 @@ class Moteur:
 
     # -- download ----------------------------------------------------------- #
 
-    def telecharger(self, url: str, dest: Path, etat: dict | None) -> tuple[str, dict | None]:
+    def telecharger(
+        self, url: str, dest: Path, etat: dict | None,
+    ) -> tuple[str, dict | None, Classification | None]:
         """Télécharge ``url`` vers ``dest`` avec reprise et revalidation.
 
         Gère :
@@ -269,10 +272,15 @@ class Moteur:
                 taille…) ou ``None``.
 
         Returns:
-            Un tuple ``(statut, infos)`` où ``statut`` est ``"ok"``,
-            ``"repris"``, ``"inchangé"``, ``"introuvable"`` ou un
-            message d'erreur localisé, et ``infos`` est le nouvel état
-            à écrire au manifeste (ou ``None`` si aucun contenu).
+            Un tuple ``(statut, infos, classification)`` où
+            ``statut`` est ``"ok"``, ``"repris"``, ``"inchangé"``,
+            ``"introuvable"`` ou un message d'erreur localisé,
+            ``infos`` est le nouvel état à écrire au manifeste
+            (ou ``None`` si aucun contenu), et ``classification``
+            est la :class:`Glaneur.sources.base.Classification` de
+            l'erreur (``None`` en cas de succès). Le moteur consomme
+            la ``classification`` dans :meth:`executer` pour décider
+            d'un coupe-circuit.
 
         Raises:
             Interrompu: Propagé si ``self.arret`` est positionné pendant
@@ -296,9 +304,9 @@ class Moteur:
         try:
             r = self.session.get(url, timeout=60, stream=True, headers=entetes)
             if r.status_code == 304:
-                return "inchangé", etat
+                return "inchangé", etat, None
             if r.status_code == 404:
-                return "introuvable", None
+                return "introuvable", None, Classification("definitif", None)
             if r.status_code == 416:
                 tmp.unlink(missing_ok=True)
                 depuis = 0
@@ -321,10 +329,50 @@ class Moteur:
                 "url": url,
             }
             self._pause(self.o.delai)
-            return ("repris" if reprise else "ok"), infos
+            return ("repris" if reprise else "ok"), infos, None
 
         except requests.RequestException as e:
-            return QCoreApplication.translate("Moteur", "erreur : {erreur}").format(erreur=e), None
+            reponse = getattr(e, "response", None)
+            classification = classer_erreur(e, reponse)
+            return (
+                QCoreApplication.translate("Moteur", "erreur : {erreur}").format(erreur=e),
+                None,
+                classification,
+            )
+
+    def _declencher_report(
+        self,
+        res: Resultat,
+        classification: Classification | None,
+        fait: int,
+        total: int,
+    ) -> None:
+        """Marque ``res`` comme reporté et journalise un message actionnable.
+
+        Renseigne ``res.retenter_apres`` (ISO 8601) uniquement si le
+        serveur a fourni un ``Retry-After`` via ``classification``.
+        Sans indication, on laisse le champ vide : c'est au
+        planificateur d'appliquer son propre backoff (lot 3).
+        """
+        res.reporte = True
+        cible: datetime | None = None
+        if classification is not None and classification.retry_after:
+            cible = datetime.now(timezone.utc) + timedelta(
+                seconds=classification.retry_after)
+            res.retenter_apres = cible.isoformat(timespec="seconds")
+        if cible is not None:
+            message = QCoreApplication.translate(
+                "Moteur",
+                "Serveur indisponible ou quota atteint — reprise après {heure}.",
+            ).format(heure=cible.astimezone().strftime("%H:%M"))
+        else:
+            message = QCoreApplication.translate(
+                "Moteur",
+                "Serveur indisponible ou quota atteint — reprise différée.",
+            )
+        res.message = message
+        self._journal(message)
+        self._progression(fait, total, message)
 
     # -- orchestration ------------------------------------------------------ #
 
@@ -442,6 +490,7 @@ class Moteur:
                 titres = self.source.resoudre_groupes(
                     inconnus, connus=titres_caches)
 
+            echecs_consecutifs = 0
             for i, (e, connu) in enumerate(a_faire, 1):
                 self._verifier_arret()
                 url = e.url
@@ -455,7 +504,7 @@ class Moteur:
                     nom = e.nom_fichier or Path(urlparse(url).path).name
                     fichier = self.chemin_libre(dossier / nom, e.ident, pris)
 
-                statut, infos = self.telecharger(url, fichier, etat)
+                statut, infos, classification = self.telecharger(url, fichier, etat)
 
                 if infos:
                     infos["fichier"] = str(fichier.relative_to(self.o.dossier))
@@ -468,11 +517,14 @@ class Moteur:
                 if statut == "ok":
                     res.telechargees += 1
                     res.octets += infos["taille"]
+                    echecs_consecutifs = 0
                 elif statut == "repris":
                     res.reprises += 1
                     res.octets += infos["taille"]
+                    echecs_consecutifs = 0
                 elif statut == "inchangé":
                     res.inchangees += 1
+                    echecs_consecutifs = 0
                 else:
                     res.echecs += 1
                     # `statut` can be an internal code ("introuvable") or an
@@ -480,25 +532,38 @@ class Moteur:
                     affiche = QCoreApplication.translate("Moteur", "introuvable") if statut == "introuvable" else statut
                     self._journal(f"{fichier.name} : {affiche}")
 
+                    categorie = classification.categorie if classification else "transitoire"
+                    if categorie == "coupure":
+                        self._declencher_report(res, classification, i, len(a_faire))
+                        break
+                    if categorie == "transitoire":
+                        echecs_consecutifs += 1
+                        if echecs_consecutifs >= 5:
+                            self._declencher_report(res, None, i, len(a_faire))
+                            break
+                    else:  # "definitif" — a single 404/URL error stays local
+                        echecs_consecutifs = 0
+
                 self._progression(i, len(a_faire), f"{fichier.parent.name}/{fichier.name}")
                 if i % 25 == 0:
                     self.sauver_manifeste(manifeste)
 
-            res.message = QCoreApplication.translate("Moteur", "{n} nouvelle(s) image(s), {taille} téléchargés.").format(
-                n=res.telechargees, taille=format_octets(res.octets))
+            if not res.reporte:
+                res.message = QCoreApplication.translate("Moteur", "{n} nouvelle(s) image(s), {taille} téléchargés.").format(
+                    n=res.telechargees, taille=format_octets(res.octets))
 
-            # Cache update: max date and newly resolved titles.
-            # Only written on normal exit, never after an interruption
-            # or an error, to avoid remembering an incomplete state.
-            dates = [e.date for e in elements if e.date]
-            if dates:
-                ancienne = cache.get("derniere_date_media") or ""
-                cache["derniere_date_media"] = max(ancienne, max(dates))
-            if titres:
-                cache.setdefault("titres_parents", {})
-                cache["titres_parents"].update(
-                    {str(k): v for k, v in titres.items() if v})
-            self.sauver_cache(cache)
+                # Cache update: max date and newly resolved titles.
+                # Only written on normal exit, never after an interruption,
+                # a report, or an error, to avoid remembering an incomplete state.
+                dates = [e.date for e in elements if e.date]
+                if dates:
+                    ancienne = cache.get("derniere_date_media") or ""
+                    cache["derniere_date_media"] = max(ancienne, max(dates))
+                if titres:
+                    cache.setdefault("titres_parents", {})
+                    cache["titres_parents"].update(
+                        {str(k): v for k, v in titres.items() if v})
+                self.sauver_cache(cache)
 
         except Interrompu:
             res.interrompu = True
