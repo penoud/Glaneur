@@ -1,4 +1,4 @@
-"""Accès à l'API officielle GitHub Releases."""
+"""Access to the official GitHub Releases API."""
 
 from __future__ import annotations
 
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 
 
 class GitHubReleaseProvider:
-    """Fournisseur de releases via l'API REST ``/repos/{owner}/{repo}/releases``.
+    """Release provider via the REST API ``/repos/{owner}/{repo}/releases``.
 
-    Filtre les releases marquées ``draft`` ou ``prerelease`` et renvoie
-    la plus récente comparée à la version en cours.
+    Filters out releases marked ``draft`` or ``prerelease`` and returns
+    the newest one compared with the current version.
     """
 
     def __init__(
@@ -29,14 +29,14 @@ class GitHubReleaseProvider:
         timeout: float = 8.0,
         session: requests.Session | None = None,
     ) -> None:
-        """Configure le fournisseur.
+        """Configure the provider.
 
         Args:
-            owner: Propriétaire du dépôt GitHub.
-            repository: Nom du dépôt.
-            timeout: Timeout HTTP en secondes.
-            session: Session ``requests`` à réutiliser (une nouvelle
-                est créée si ``None``).
+            owner: GitHub repository owner.
+            repository: Repository name.
+            timeout: HTTP timeout in seconds.
+            session: ``requests`` session to reuse (a new one is created
+                if ``None``).
         """
         self.owner = owner
         self.repository = repository
@@ -45,20 +45,19 @@ class GitHubReleaseProvider:
         self.url = f"https://api.github.com/repos/{owner}/{repository}/releases"
 
     def check(self, current: Version) -> UpdateInfo:
-        """Interroge GitHub et compare à ``current``.
+        """Query GitHub and compare with ``current``.
 
         Args:
-            current: Version en cours d'exécution.
+            current: Currently running version.
 
         Returns:
-            Un :class:`Glaneur.updater.models.UpdateInfo` avec la meilleure
-            release stable trouvée (``latest = None`` si aucune n'est
-            utilisable).
+            A :class:`Glaneur.updater.models.UpdateInfo` with the best
+            stable release found (``latest = None`` when none is usable).
 
         Raises:
-            requests.HTTPError: Si l'API répond avec un code d'erreur.
-            ValueError: Si la réponse n'a pas la forme attendue (pas
-                une liste JSON).
+            requests.HTTPError: If the API responds with an error code.
+            ValueError: If the response has an unexpected shape (not a
+                JSON list).
         """
         logger.info("Checking for updates: current=%s repo=%s/%s",
                     current, self.owner, self.repository)

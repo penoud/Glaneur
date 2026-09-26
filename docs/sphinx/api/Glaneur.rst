@@ -22,5 +22,5 @@ Submodules
    Glaneur.i18n
    Glaneur.logsetup
    Glaneur.scheduler
-   Glaneur.systeme
+   Glaneur.system
 

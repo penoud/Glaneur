@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Interface PySide6 du téléchargeur d'images WordPress.
+"""PySide6 interface for the WordPress image downloader.
 
-L'UI ne contient aucune logique réseau : elle construit un Options, lance un
-Moteur dans un QThread et reçoit ses messages par signaux Qt — qui sont
-automatiquement marshalés vers le thread principal, donc aucun widget n'est
-touché depuis le thread de travail.
+The UI contains no network logic: it builds an ``Options``, runs a
+``Moteur`` in a ``QThread`` and receives its messages through Qt
+signals — which are automatically marshalled to the main thread, so no
+widget is ever touched from the worker thread.
 
-Les paramètres sont regroupés dans un dialogue « Préférences » accessible
-par la barre de menus ; la fenêtre principale ne montre que les actions,
-la progression et le journal.
+Parameters are grouped in a "Préférences" dialog reachable from the
+menu bar; the main window shows only the actions, the progression and
+the journal.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ from Glaneur.engine import (
     supprimer_image,
 )
 from Glaneur.scheduler import Planificateur
-from Glaneur.systeme import (
+from Glaneur.system import (
     avancer_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,
@@ -100,7 +100,7 @@ DEPOT_URL = "https://github.com/penoud/Glaneur"
 # --------------------------------------------------------------------------- #
 
 def icone_application() -> QIcon:
-    """Charge build/Glaneur.ico si présent, sinon dessine un repli grenat."""
+    """Load ``build/Glaneur.ico`` if present, otherwise draw a garnet fallback."""
     for base in (Path(__file__).resolve().parent, Path(getattr(sys, "_MEIPASS", "."))):
         fichier = base / "build" / "Glaneur.ico"
         if fichier.exists():
@@ -129,26 +129,26 @@ def icone_application() -> QIcon:
 # --------------------------------------------------------------------------- #
 
 class Travailleur(QThread):
-    """Exécute le moteur hors du thread d'interface."""
+    """Run the engine off the UI thread."""
 
     journal = Signal(str)
     progres = Signal(int, int, str)
     fini = Signal(object)
 
     def __init__(self, options: Options, arret: threading.Event) -> None:
-        """Prépare le thread avec ses ``options`` et son event d'arrêt partagé.
+        """Prepare the thread with its ``options`` and shared stop event.
 
         Args:
-            options: Paramètres du moteur (dossier, site, filtres…).
-            arret: ``threading.Event`` positionné depuis l'UI pour
-                interrompre le run coopérativement.
+            options: Engine parameters (folder, site, filters, ...).
+            arret: ``threading.Event`` set from the UI to interrupt the
+                run cooperatively.
         """
         super().__init__()
         self.options = options
         self.arret = arret
 
     def run(self) -> None:
-        """Instancie le moteur et lance le run ; émet ``fini(Resultat)`` en sortie."""
+        """Instantiate the engine and start the run; emit ``fini(Resultat)`` on exit."""
         moteur = Moteur(
             self.options,
             journal=self.journal.emit,
@@ -163,15 +163,15 @@ class Travailleur(QThread):
 # --------------------------------------------------------------------------- #
 
 class DialogueSupprimees(QDialog):
-    """Liste les images effacées du disque et propose de les remettre en file."""
+    """List the images erased from disk and offer to re-queue them."""
 
     def __init__(self, parent, entrees: list[dict]) -> None:
-        """Construit le dialogue à partir de la liste d'entrées supprimées.
+        """Build the dialog from the list of deleted entries.
 
         Args:
-            parent: Widget parent Qt.
-            entrees: Liste d'entrées telle que renvoyée par
-                :func:`Glaneur.engine.lister_supprimees`.
+            parent: Qt parent widget.
+            entrees: List of entries as returned by
+                :func:`Glaneur.engine.list_deleted`.
         """
         super().__init__(parent)
         self.setWindowTitle(self.tr("Images supprimées"))
@@ -205,10 +205,10 @@ class DialogueSupprimees(QDialog):
             self.liste.item(i).setCheckState(Qt.Checked)
 
     def choix(self) -> list[str]:
-        """Renvoie les identifiants des lignes cochées par l'utilisateur.
+        """Return the identifiers of the rows the user has ticked.
 
         Returns:
-            Les ``id`` (au sens du manifeste) des entrées à restaurer.
+            The ``id`` (in the manifest sense) of the entries to restore.
         """
         return [self.entrees[i]["id"] for i in range(self.liste.count())
                 if self.liste.item(i).checkState() == Qt.Checked]
@@ -219,16 +219,16 @@ class DialogueSupprimees(QDialog):
 # --------------------------------------------------------------------------- #
 
 class DialoguePreferences(QDialog):
-    """Édite la configuration. Les valeurs sont écrites sur `cfg` uniquement
-    quand l'utilisateur valide, via `appliquer()`. Cancel = tout est jeté."""
+    """Edit the configuration. Values are only written to ``cfg`` when the
+    user validates, through ``appliquer()``. Cancel = everything is discarded."""
 
     def __init__(self, parent, cfg: Config) -> None:
-        """Construit le dialogue et initialise les champs depuis ``cfg``.
+        """Build the dialog and initialise fields from ``cfg``.
 
         Args:
-            parent: Widget parent Qt.
-            cfg: Instance :class:`Glaneur.config.Config` à éditer. Ne
-                sera modifiée qu'à l'appel de :meth:`appliquer`.
+            parent: Qt parent widget.
+            cfg: :class:`Glaneur.config.Config` instance to edit. Will
+                only be modified on the call to :meth:`appliquer`.
         """
         super().__init__(parent)
         self.setWindowTitle(self.tr("Préférences"))
@@ -388,10 +388,10 @@ class DialoguePreferences(QDialog):
             self.champ_dossier.setText(choix)
 
     def _sur_changement_type(self, libelle: str) -> None:
-        """Le format n'a de sens que pour Djangoplicity ; les classements
-        non supportés par la source choisie sont grisés dans le combo (et si
-        celui qui était sélectionné vient d'être grisé, on retombe sur
-        « Par date »)."""
+        """The format only matters for Djangoplicity; sort modes not
+        supported by the chosen source are greyed out in the combo (and if
+        the one selected was just greyed out, we fall back to
+        "Par date")."""
         type_courant = TYPES_SOURCE.get(libelle, "wordpress")
         est_djangoplicity = type_courant == "djangoplicity"
         # To avoid importing the adapters in the UI, the engine exposes
@@ -421,9 +421,9 @@ class DialoguePreferences(QDialog):
                     break
 
     def appliquer(self) -> str | None:
-        """Reporte les valeurs saisies sur la config, les valide, les sauve, et
-        propage aux intégrations système. Renvoie un message d'erreur non
-        bloquant ou None."""
+        """Push entered values onto the config, validate them, save them,
+        and propagate to system integrations. Returns a non-blocking
+        error message or None."""
         c = self.cfg
         c.site = self.champ_site.text().strip()
         c.dossier = self.champ_dossier.text()
@@ -477,20 +477,20 @@ class DialoguePreferences(QDialog):
 # --------------------------------------------------------------------------- #
 
 class DialogueSignalerBug(QDialog):
-    """Formulaire minimal qui compose une URL GitHub d'ouverture d'issue.
+    """Minimal form that composes a GitHub issue-opening URL.
 
-    On n'embarque pas de token GitHub (sprint §38) : à la validation,
-    l'utilisateur est redirigé vers son navigateur avec titre et corps
-    déjà remplis, il n'a plus qu'à cliquer « Submit new issue ».
+    No GitHub token is embedded (sprint §38): on validation, the user
+    is redirected to their browser with title and body already filled
+    in — they only need to click "Submit new issue".
     """
 
     def __init__(self, parent, chemin_log: Path | None) -> None:
-        """Construit le formulaire, en pré-remplissant le contexte technique.
+        """Build the form, pre-filling the technical context.
 
         Args:
-            parent: Widget parent Qt.
-            chemin_log: Chemin du fichier de log à joindre au bug
-                report, ou ``None`` pour ne rien joindre.
+            parent: Qt parent widget.
+            chemin_log: Path of the log file to attach to the bug
+                report, or ``None`` to attach nothing.
         """
         super().__init__(parent)
         self.setWindowTitle(self.tr("Signaler un bug"))
@@ -567,13 +567,13 @@ class DialogueSignalerBug(QDialog):
 
 
 class DialogueAPropos(QDialog):
-    """Fenêtre d'information sur l'application."""
+    """Application information window."""
 
     def __init__(self, parent) -> None:
-        """Construit le dialogue « À propos » de taille fixe.
+        """Build the fixed-size "About" dialog.
 
         Args:
-            parent: Widget parent Qt.
+            parent: Qt parent widget.
         """
         super().__init__(parent)
         self.setWindowTitle(self.tr("À propos de Glaneur"))
@@ -632,17 +632,17 @@ class DialogueAPropos(QDialog):
 # --------------------------------------------------------------------------- #
 
 class Fenetre(QMainWindow):
-    """Fenêtre principale de l'application.
+    """Main application window.
 
-    Orchestre la configuration, le moteur (via :class:`Travailleur`), le
-    planificateur, l'icône de zone de notification et la vérification
-    de mises à jour au démarrage. Toute la logique métier vit ailleurs :
-    cette classe se contente d'assembler les widgets et de relayer les
-    signaux entre eux.
+    Orchestrates the configuration, the engine (through
+    :class:`Travailleur`), the scheduler, the notification-area icon
+    and the startup update check. All business logic lives elsewhere:
+    this class only assembles the widgets and relays signals between
+    them.
     """
 
     def __init__(self) -> None:
-        """Charge la configuration, monte l'UI et démarre le minuteur d'échéance."""
+        """Load the config, build the UI, and start the deadline timer."""
         super().__init__()
         self.setWindowTitle(self.tr("Glaneur — Téléchargeur d'images {version}").format(
             version=__version__))
@@ -880,14 +880,14 @@ class Fenetre(QMainWindow):
         self.tray.show()
 
     def _rafraichir_bandeau(self) -> None:
-        """Rafraîchit les labels d'affichage du site et du dossier."""
+        """Refresh the site and folder display labels."""
         self.label_site.setText(self.tr("Site : {site}").format(site=self.cfg.site or "—"))
         self.label_dossier.setText(self.tr("Dossier : {dossier}").format(
             dossier=self.cfg.dossier or "—"))
 
     def _appliquer_diaporama_au_demarrage(self) -> None:
-        """Reconfigure le diaporama à chaque lancement si l'option est active
-        — le contenu du dossier peut avoir changé depuis la dernière fois."""
+        """Reconfigure the slideshow on every launch when the option is on
+        — the folder contents may have changed since last time."""
         if sys.platform == "win32" and self.cfg.diaporama_dossier:
             dossier = Path(self.cfg.dossier).expanduser()
             if dossier.is_dir():
@@ -936,7 +936,7 @@ class Fenetre(QMainWindow):
 
     @staticmethod
     def _thread_maj_en_cours(thread) -> bool:
-        """True si `thread` n'est ni None ni un wrapper mort et tourne encore."""
+        """True if ``thread`` is not None, not a dead wrapper, and still running."""
         if thread is None:
             return False
         try:
@@ -1213,19 +1213,20 @@ class Fenetre(QMainWindow):
     # -------------------------------------------------------------- exit ---
 
     def closeEvent(self, event) -> None:
-        """Intercepte la fermeture pour réduire dans la barre de notification.
+        """Intercept close so we minimise to the notification area.
 
-        Comportement :
+        Behaviour:
 
-        - la croix réduit dans le tray tant que
-          :attr:`Config.fermer_dans_barre` est vrai et qu'un tray est
-          disponible ;
-        - sous Linux sans tray host, prévient une fois par session avant
-          de vraiment quitter ;
-        - si un run est en cours, demande confirmation avant d'interrompre.
+        - the close button minimises to the tray while
+          :attr:`Config.fermer_dans_barre` is true and a tray is
+          available;
+        - on Linux without a tray host, warn once per session before
+          actually quitting;
+        - if a run is in progress, ask for confirmation before
+          interrupting.
 
         Args:
-            event: :class:`QCloseEvent` fourni par Qt.
+            event: :class:`QCloseEvent` provided by Qt.
         """
         # the close button minimizes to the notification area, unless requested otherwise
         if (not self._quitter_demande and self.cfg.fermer_dans_barre
@@ -1282,21 +1283,21 @@ class Fenetre(QMainWindow):
 # --------------------------------------------------------------------------- #
 
 def main() -> int:
-    """Point d'entrée de l'application graphique.
+    """GUI application entry point.
 
-    Enchaîne :
+    Runs in order:
 
-    1. migration éventuelle d'une config héritée de ``WpImageDownloader`` ;
-    2. mise en place du logging fichier + console ;
-    3. création de la :class:`QApplication` ;
-    4. installation du traducteur Qt (avant tout widget) ;
-    5. construction de la :class:`Fenetre` principale, éventuellement
-       cachée si ``--reduit`` est passé sur la ligne de commande ;
-    6. boucle événementielle Qt.
+    1. optional migration of a ``WpImageDownloader``-era config;
+    2. file + console logging setup;
+    3. creation of the :class:`QApplication`;
+    4. installation of the Qt translator (before any widget);
+    5. construction of the main :class:`Fenetre`, possibly hidden if
+       ``--reduit`` is passed on the command line;
+    6. Qt event loop.
 
     Returns:
-        Le code de sortie renvoyé par ``QApplication.exec()``, prêt à
-        passer à ``sys.exit``.
+        The exit code returned by ``QApplication.exec()``, ready to
+        hand to ``sys.exit``.
     """
     if "--controle-bundle" in sys.argv:
         # Check of the PyInstaller bundle: import what the .spec might

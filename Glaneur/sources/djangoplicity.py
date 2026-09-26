@@ -1,14 +1,14 @@
-"""Adaptateur Djangoplicity : flux `d2d/` (ESO, ESA/Hubble, ESA/Webb…).
+"""Djangoplicity adapter: ``d2d/`` feed (ESO, ESA/Hubble, ESA/Webb, ...).
 
-Le flux paginé renvoie `{Count, Next, Previous, Collections: [...]}`. Chaque
-entrée donne un `ID` (chaîne, parfois avec suffixe de langue), un
-`PublicationDate`, un tableau `Assets[0].Resources[]` avec un `ResourceType`
-(`Original`, `Large`, `Small`, `Thumbnail`, `Icon`), une `URL`, un `FileSize`
-et des `Dimensions`.
+The paginated feed returns ``{Count, Next, Previous, Collections: [...]}``.
+Each entry provides an ``ID`` (string, sometimes with a language suffix),
+a ``PublicationDate``, an ``Assets[0].Resources[]`` array with a
+``ResourceType`` (``Original``, ``Large``, ``Small``, ``Thumbnail``,
+``Icon``), a ``URL``, a ``FileSize`` and ``Dimensions``.
 
-Choix : `ident = "<ID>:<format>"` — changer de format téléchargera les nouvelles
-versions sans effacer les anciennes, exactement comme changer de classement ne
-déplace rien.
+Choice: ``ident = "<ID>:<format>"`` — switching format downloads the new
+versions without deleting the old ones, exactly like switching sort mode
+moves nothing.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ _BYTES_REPR = re.compile(r"^b'(.*)'$|^b\"(.*)\"$")
 
 
 def _sain(texte) -> str:
-    """Désencapsule un éventuel repr de bytes et renvoie une chaîne."""
+    """Unwrap a possible bytes-repr and return a string."""
     if texte is None:
         return ""
     if isinstance(texte, bytes):
@@ -49,17 +49,17 @@ def _sain(texte) -> str:
 
 
 class Djangoplicity(Source):
-    """Adaptateur pour un site Djangoplicity exposant ``/images/d2d/``.
+    """Adapter for a Djangoplicity site exposing ``/images/d2d/``.
 
-    Fonctionne aussi bien avec ESO, ESA/Hubble ou ESA/Webb. Ne supporte
-    pas le classement ``galerie`` (le CMS n'expose pas d'album cohérent
-    en ligne — voir la note historique dans
+    Works with ESO, ESA/Hubble or ESA/Webb. Does not support the
+    ``galerie`` sort mode (the CMS does not expose a coherent album
+    online — see the historical note in
     :file:`docs/design/evolution-multi-sources.md`).
 
-    L'adaptateur propose un format d'image via ``reglages["format_image"]``
-    (par défaut ``Large``) et retombe sur ``Small`` si le format demandé
-    manque. ``Original`` n'est jamais choisi automatiquement pour éviter
-    de rapatrier des TIFF de plusieurs centaines de Mo par surprise.
+    The adapter offers an image format via ``reglages["format_image"]``
+    (default ``Large``) and falls back to ``Small`` if the requested
+    format is missing. ``Original`` is never picked automatically to
+    avoid pulling down surprise TIFFs of several hundred MB.
     """
 
     #: Key used in ``Glaneur.sources.SOURCES``.
@@ -70,14 +70,14 @@ class Djangoplicity(Source):
     classements = frozenset({"date", "plat"})
 
     def __init__(self, base, transport, reglages, journal=None, progression=None):
-        """Instancie l'adaptateur et calcule l'endpoint ``d2d``.
+        """Instantiate the adapter and compute the ``d2d`` endpoint.
 
-        Le point d'entrée est ``<base>/images/d2d/``. Sur ``eso.org`` la
-        base inclut souvent déjà ``/public``, donc on ne rajoute que
-        ``/images/d2d/``. Le format d'image effectif est lu dans
-        ``reglages["format_image"]`` (défaut : ``Large``).
+        The entry point is ``<base>/images/d2d/``. On ``eso.org`` the base
+        often already includes ``/public``, so we only append
+        ``/images/d2d/``. The effective image format is read from
+        ``reglages["format_image"]`` (default: ``Large``).
 
-        Arguments identiques à :meth:`Glaneur.sources.base.Source.__init__`.
+        Arguments identical to :meth:`Glaneur.sources.base.Source.__init__`.
         """
         super().__init__(base, transport, reglages, journal, progression)
         # Feed entry point: `<base>/images/d2d/`. On eso.org the base
@@ -88,19 +88,19 @@ class Djangoplicity(Source):
     # -- utilities -------------------------------------------------------- #
 
     def convertir_depuis(self, iso: str | None) -> str | None:
-        """Convertit ``AAAA-MM-JJThh:mm:ss`` en ``AAAAMMJJhhmmss``.
+        """Convert ``YYYY-MM-DDThh:mm:ss`` into ``YYYYMMDDhhmmss``.
 
-        Le champ ``after`` de Djangoplicity est **inclusif** (``>=``) :
-        l'élément frontière reviendra donc à chaque passage. Le manifeste
-        s'en charge, seuls les tests doivent en tenir compte.
+        Djangoplicity's ``after`` field is **inclusive** (``>=``): the
+        boundary element therefore comes back on every pass. The manifest
+        handles that; only the tests must account for it.
 
         Args:
-            iso: Date au format ISO 8601, éventuellement partielle.
-                Tolère ``AAAA-MM-JJ`` seul.
+            iso: Date in ISO 8601 format, possibly partial. Tolerates
+                ``YYYY-MM-DD`` alone.
 
         Returns:
-            La date compactée sur 14 caractères, ou ``None`` si ``iso``
-            est vide.
+            The date compacted to 14 characters, or ``None`` if ``iso``
+            is empty.
         """
         if not iso:
             return None
@@ -109,8 +109,8 @@ class Djangoplicity(Source):
         return s[:14].ljust(14, "0")
 
     def _choisir_ressource(self, ressources: list[dict]) -> tuple[dict | None, str]:
-        """Renvoie (ressource, format_effectif). Repli sur Small si le format
-        demandé n'est pas là ; (None, "") si aucun format n'est disponible."""
+        """Return ``(resource, effective_format)``. Fall back to Small if the
+        requested format is missing; ``(None, "")`` if no format is available."""
         par_type = {r.get("ResourceType"): r for r in ressources or []}
         for fmt in (self.format_image, *REPLIS):
             if fmt in par_type:
@@ -186,21 +186,21 @@ class Djangoplicity(Source):
     def inventaire(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
-        """Parcourt le flux ``d2d`` en suivant les URL ``Next`` renvoyées.
+        """Walk the ``d2d`` feed by following the ``Next`` URLs returned.
 
-        La pagination Djangoplicity donne son curseur dans le champ
-        ``Next`` de la réponse : on l'utilise tel quel plutôt que de
-        recalculer un numéro de page. La déduplication par ``ID`` protège
-        contre d'éventuels doublons entre pages.
+        Djangoplicity's pagination provides its cursor in the response's
+        ``Next`` field: we use it as-is rather than recomputing a page
+        number. Deduplication by ``ID`` guards against possible cross-page
+        duplicates.
 
         Args:
-            depuis: Date basse au format ``AAAAMMJJhhmmss`` (converti par
-                :meth:`convertir_depuis`), inclusive.
-            jusqua: Date haute au même format, exclusive.
+            depuis: Lower-bound date in ``YYYYMMDDhhmmss`` format
+                (converted by :meth:`convertir_depuis`), inclusive.
+            jusqua: Upper-bound date in the same format, exclusive.
 
         Yields:
-            Les :class:`Glaneur.sources.base.Element` construits à partir
-            des entrées ``Collections``.
+            The :class:`Glaneur.sources.base.Element` values built from
+            the ``Collections`` entries.
         """
         params: dict = {"count": PER_PAGE}
         if depuis:

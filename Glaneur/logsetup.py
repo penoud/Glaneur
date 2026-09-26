@@ -1,8 +1,8 @@
-"""Configuration du logging applicatif.
+"""Application logging configuration.
 
-Un handler fichier avec rotation dans le dossier de configuration, doublé
-d'un handler console (stderr) pour le développement. Idempotent : plusieurs
-appels ne dupliquent pas les handlers.
+A rotating file handler inside the configuration folder, plus a console
+(stderr) handler for development. Idempotent: several calls do not
+duplicate handlers.
 """
 
 from __future__ import annotations
@@ -17,20 +17,19 @@ _TAG = "wpid.file"
 
 
 def configure_logging(dossier: Path, debug: bool = False) -> Path:
-    """Ajoute un handler fichier tournant dans ``dossier/logs/app.log``.
+    """Attach a rotating file handler in ``dossier/logs/app.log``.
 
-    Sûr à appeler plusieurs fois : le handler fichier est identifié par
-    un tag interne et n'est jamais dupliqué.
+    Safe to call multiple times: the file handler is identified by an
+    internal tag and is never duplicated.
 
     Args:
-        dossier: Racine où créer le sous-dossier ``logs/`` et le fichier
-            ``app.log``. Créé si nécessaire.
-        debug: Force le niveau ``DEBUG``. Sans effet si la variable
-            d'environnement ``WPID_DEBUG`` est déjà positionnée
-            (même comportement).
+        dossier: Root under which the ``logs/`` sub-folder and the
+            ``app.log`` file are created. Created as needed.
+        debug: Forces the ``DEBUG`` level. No effect if the environment
+            variable ``WPID_DEBUG`` is already set (same behaviour).
 
     Returns:
-        Le chemin absolu du fichier de log courant.
+        The absolute path of the current log file.
     """
     niveau = logging.DEBUG if (debug or os.environ.get("WPID_DEBUG")) else logging.INFO
 

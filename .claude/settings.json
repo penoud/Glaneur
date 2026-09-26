@@ -20,24 +20,20 @@
       "Bash(git commit *)",
       "Bash(git merge *)",
       "Bash(git rebase *)",
-      "Edit(.github/**)",
-      "Edit(build/**)"
-    ],
-    "deny": [
       "Bash(git push *)",
       "Bash(git tag *)",
+      "Edit(.github/**)",
+      "Edit(build/**)",
+      "Edit(Glaneur/__init__.py)",
+      "Write(Glaneur/__init__.py)"
+    ],
+    "deny": [
       "Bash(gh release *)",
       "Bash(gh pr merge *)"
     ]
   },
   "hooks": {
     "PreToolUse": [
-      {
-        "matcher": "Edit|Write|MultiEdit",
-        "hooks": [
-          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_version.py\"" }
-        ]
-      },
       {
         "matcher": "Bash|PowerShell",
         "hooks": [

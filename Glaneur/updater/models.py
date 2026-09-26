@@ -1,4 +1,4 @@
-"""Modèles de données de l'updater."""
+"""Data models of the updater."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from .version import Version
 
 @dataclass(frozen=True)
 class ReleaseAsset:
-    """Un asset attaché à une release GitHub (installateur, checksum…)."""
+    """An asset attached to a GitHub release (installer, checksum, ...)."""
 
     #: File name (for example ``Glaneur-1.1.0-setup.exe``).
     name: str
@@ -21,7 +21,7 @@ class ReleaseAsset:
 
 @dataclass(frozen=True)
 class Release:
-    """Une release publiée sur GitHub avec ses assets et sa version SemVer."""
+    """A release published on GitHub with its assets and SemVer version."""
 
     #: SemVer version parsed from :attr:`tag_name`.
     version: Version
@@ -33,28 +33,28 @@ class Release:
     html_url: str = ""
 
     def windows_installer(self) -> ReleaseAsset | None:
-        """Renvoie l'installateur Windows attendu pour cette release.
+        """Return the Windows installer expected for this release.
 
-        Le nom est déterministe : ``Glaneur-<version>-setup.exe``. En
-        cas d'absence ou d'homonymie (deux candidats), renvoie ``None``
-        pour refuser de deviner.
+        The name is deterministic: ``Glaneur-<version>-setup.exe``. If
+        missing or ambiguous (two candidates), returns ``None`` to refuse
+        to guess.
 
         Returns:
-            L'unique asset correspondant, ou ``None``.
+            The single matching asset, or ``None``.
         """
         expected = f"Glaneur-{self.version}-setup.exe"
         candidates = [asset for asset in self.assets if asset.name == expected]
         return candidates[0] if len(candidates) == 1 else None
 
     def checksum_for(self, asset: ReleaseAsset) -> ReleaseAsset | None:
-        """Trouve le fichier ``.sha256`` associé à ``asset``.
+        """Find the ``.sha256`` file associated with ``asset``.
 
         Args:
-            asset: Asset dont on cherche le checksum.
+            asset: Asset whose checksum is being looked up.
 
         Returns:
-            Le :class:`ReleaseAsset` nommé ``{asset.name}.sha256``, ou
-            ``None`` s'il n'est pas dans la release.
+            The :class:`ReleaseAsset` named ``{asset.name}.sha256``, or
+            ``None`` if it is not in the release.
         """
         expected = f"{asset.name}.sha256"
         return next((item for item in self.assets if item.name == expected), None)
@@ -62,7 +62,7 @@ class Release:
 
 @dataclass(frozen=True)
 class UpdateInfo:
-    """Résultat d'un check de mise à jour."""
+    """Result of an update check."""
 
     #: Currently installed version.
     current: Version
@@ -71,9 +71,9 @@ class UpdateInfo:
 
     @property
     def is_available(self) -> bool:
-        """Indique si :attr:`latest` propose une version strictement plus récente.
+        """Report whether :attr:`latest` proposes a strictly newer version.
 
         Returns:
-            ``True`` si une mise à jour est disponible.
+            ``True`` if an update is available.
         """
         return self.latest is not None and self.latest.version > self.current

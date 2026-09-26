@@ -1,5 +1,12 @@
 # Évolution : support de plusieurs types de sites
 
+> **Note d'archivage (2026-09-26).** L'adaptateur Djangoplicity décrit ici a
+> été livré : `Glaneur/sources/djangoplicity.py` existe, le contrat
+> `sources/base.py` est en place et le moteur consomme des `Element`
+> normalisés. Ce document reste conservé comme trace de l'analyse et des
+> décisions initiales ; il n'est plus la référence à jour. Les invariants et
+> frontières applicables sont ceux de `CLAUDE.md` et du code.
+
 > Étude d'architecture. Objectif : pouvoir ajouter d'autres types de sites que
 > WordPress (premier cas : le site public de l'ESO) sans casser le moteur actuel,
 > ses invariants ni ses frontières. Rien n'est implémenté ici.

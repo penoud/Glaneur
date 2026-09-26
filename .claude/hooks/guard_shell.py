@@ -1,7 +1,10 @@
-"""PreToolUse guard: block publishing and unrequested dependencies from any shell.
+"""PreToolUse guard: block operations that must never run without maintainer approval.
 
-A push on ``main`` publishes a release and Windows has no Claude Code sandbox,
-so this hook backs the ``permissions.deny`` rules for both Bash and PowerShell.
+``git push`` and ``git tag`` go through the ``permissions.ask`` mechanism in
+``.claude/settings.json`` — the user confirms each call — so this hook only
+blocks what has no confirmation path: GitHub release creation, PR merge, and
+unrequested dependency installs. Windows has no Claude Code sandbox, so the
+hook applies equally to Bash and PowerShell.
 """
 
 from __future__ import annotations
@@ -63,14 +66,7 @@ def reason(command: str) -> str | None:
         if prog in ("python", "python3", "py") and args[:2] == ["-m", "pip"]:
             prog, args = "pip", args[2:]
 
-        if prog == "git":
-            rest = _skip_options(args, _GIT_OPTIONS_WITH_VALUE)
-            sub, sub_args = (rest[0], rest[1:]) if rest else ("", [])
-            if sub == "push":
-                return "git push is reserved to the maintainer: a push on main publishes a release."
-            if sub == "tag" and sub_args and sub_args[0] not in ("-l", "--list"):
-                return "tags are created by the release workflow, not by hand."
-        elif prog == "gh" and args[:1] == ["release"] and args[1:2] not in (["list"], ["view"]):
+        if prog == "gh" and args[:1] == ["release"] and args[1:2] not in (["list"], ["view"]):
             return "GitHub releases are created by the release workflow."
         elif prog == "gh" and args[:2] == ["pr", "merge"]:
             return "merging into main publishes; the maintainer merges."

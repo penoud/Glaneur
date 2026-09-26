@@ -1,8 +1,8 @@
-"""Configuration persistante de l'application.
+"""Persistent application configuration.
 
-Le fichier vit dans %APPDATA%\\Glaneur\\config.json sous Windows,
-dans ~/.config/glaneur/ ailleurs. Il est écrit de façon atomique
-pour ne jamais se retrouver tronqué si l'application est tuée.
+The file lives in ``%APPDATA%\\Glaneur\\config.json`` on Windows and in
+``~/.config/glaneur/`` elsewhere. It is written atomically so that it
+never gets truncated if the application is killed.
 """
 
 from __future__ import annotations
@@ -48,14 +48,14 @@ FORMATS_DJANGOPLICITY: dict[str, str] = {
 
 
 def dossier_config() -> Path:
-    """Renvoie le dossier où vit la config, selon la plateforme.
+    """Return the folder where the config lives, per platform.
 
-    - Windows : ``%APPDATA%\\Glaneur``.
-    - macOS : ``~/Library/Application Support/Glaneur``.
-    - Ailleurs : ``$XDG_CONFIG_HOME/glaneur`` (défaut : ``~/.config/glaneur``).
+    - Windows: ``%APPDATA%\\Glaneur``.
+    - macOS: ``~/Library/Application Support/Glaneur``.
+    - Elsewhere: ``$XDG_CONFIG_HOME/glaneur`` (default: ``~/.config/glaneur``).
 
     Returns:
-        Le chemin absolu du dossier. Le dossier n'est pas créé.
+        The absolute folder path. The folder is not created.
     """
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
@@ -74,8 +74,7 @@ _ANCIENS_NOMS_XDG: tuple[str, ...] = ("wp-image-downloader",)
 
 
 def _anciens_dossiers_config() -> list[Path]:
-    """Emplacements possibles de la config héritée de l'ancien nom, dans
-    l'ordre de préférence (le plus récent d'abord)."""
+    """Possible locations of the legacy-named config, most preferred first."""
     dossiers: list[Path] = []
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
@@ -90,19 +89,20 @@ def _anciens_dossiers_config() -> list[Path]:
 
 
 def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
-    """Copie la config d'un ancien nom (``WpImageDownloader``) vers Glaneur.
+    """Copy the config from a legacy name (``WpImageDownloader``) to Glaneur.
 
-    Ne fait rien si un dossier Glaneur non vide existe déjà. Volontairement
-    copié plutôt que déplacé : l'ancien install peut encore tourner en
-    parallèle pendant la transition, on ne casse pas sa config.
+    Does nothing if a non-empty Glaneur folder already exists.
+    Deliberately copied rather than moved: the old install may still be
+    running in parallel during the transition, and we do not want to
+    break its config.
 
     Args:
-        cible: Dossier de destination. Utilise :func:`dossier_config` si
+        cible: Destination folder. Uses :func:`dossier_config` when
             ``None``.
 
     Returns:
-        Le chemin source effectivement utilisé, ou ``None`` si rien à
-        migrer (cible non vide ou aucun dossier legacy trouvé).
+        The source path actually used, or ``None`` if there is nothing to
+        migrate (target non-empty or no legacy folder found).
     """
     import logging
     import shutil
@@ -112,7 +112,7 @@ def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
     for source in _anciens_dossiers_config():
         if source.is_dir() and any(source.iterdir()):
             logger = logging.getLogger(__name__)
-            logger.info("Migration config : %s -> %s", source, cible)
+            logger.info("Config migration: %s -> %s", source, cible)
             cible.mkdir(parents=True, exist_ok=True)
             shutil.copytree(source, cible, dirs_exist_ok=True)
             return source
@@ -120,14 +120,14 @@ def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
 
 
 def dossier_images_defaut() -> Path:
-    """Sous-dossier ``Glaneur`` d'un répertoire d'images de l'utilisateur.
+    """Return the ``Glaneur`` sub-folder of one of the user's picture folders.
 
-    Tente ``~/Pictures/Glaneur`` puis ``~/Images/Glaneur`` (nom localisé
-    Windows/GNOME), sinon ``~/Glaneur``.
+    Tries ``~/Pictures/Glaneur`` then ``~/Images/Glaneur`` (localised
+    Windows/GNOME name), falling back to ``~/Glaneur``.
 
     Returns:
-        Le chemin proposé par défaut à l'utilisateur au premier lancement.
-        Le dossier n'est pas créé.
+        The default path proposed to the user on first launch. The
+        folder is not created.
     """
     for nom in ("Pictures", "Images"):
         candidat = Path.home() / nom
@@ -138,10 +138,10 @@ def dossier_images_defaut() -> Path:
 
 @dataclass
 class Config:
-    """Configuration persistante sérialisée en JSON.
+    """Persistent configuration serialised as JSON.
 
-    Champs documentés inline par ``#:`` pour éviter le doublon d'index
-    entre autodoc et Napoleon (même motif que
+    Fields documented inline with ``#:`` to avoid the index duplication
+    between autodoc and Napoleon (same pattern as
     :class:`Glaneur.engine.options.Options`).
     """
 
@@ -169,13 +169,13 @@ class Config:
     delai_requetes: float = 0.5
     #: ISO 8601 date of the last run, fed by the scheduler.
     derniere_execution: str = ""
-    #: Date ISO 8601 (naïve locale) du prochain run reporté par un
-    #: coupe-circuit réseau — voir
+    #: ISO 8601 date (naive local) of the next run deferred by a network
+    #: circuit-breaker — see
     #: :meth:`Glaneur.scheduler.Planificateur.differer`.
-    #: Vide = pas de report en cours.
+    #: Empty = no defer in progress.
     retenter_apres: str = ""
-    #: Palier de backoff exponentiel — 0 → 1 h, 1 → 2 h, 2 → 4 h.
-    #: Réinitialisé à 0 par
+    #: Exponential-backoff level — 0 -> 1 h, 1 -> 2 h, 2 -> 4 h.
+    #: Reset to 0 by
     #: :meth:`Glaneur.scheduler.Planificateur.marquer_execution`.
     backoff_niveau: int = 0
     #: Adds the application to the user session's startup items.
@@ -186,7 +186,7 @@ class Config:
     notifications: bool = True
     #: Queries GitHub Releases at launch to offer an update.
     verifier_maj_demarrage: bool = True
-    #: Language code (``fr``, ``en``…). Empty = system locale.
+    #: Language code (``fr``, ``en``, ...). Empty = system locale.
     langue: str = ""
 
     _chemin: Path | None = field(default=None, repr=False, compare=False)
@@ -195,20 +195,20 @@ class Config:
 
     @classmethod
     def charger(cls, chemin: Path | None = None) -> "Config":
-        """Charge la config depuis ``chemin`` ou la retombe sur les valeurs par défaut.
+        """Load the config from ``chemin`` or fall back to default values.
 
-        Les clés absentes ou inconnues sont ignorées, et un fichier illisible
-        (JSON invalide, erreur OS) est traité comme une config absente : on
-        repart des valeurs par défaut plutôt que de planter.
-        :meth:`valider` est toujours appelée avant de rendre l'objet.
+        Missing or unknown keys are ignored, and an unreadable file
+        (invalid JSON, OS error) is treated as an absent config: we
+        start over from default values rather than crashing.
+        :meth:`valider` is always called before returning the object.
 
         Args:
-            chemin: Chemin du fichier ``config.json``. Utilise
-                :func:`dossier_config` si ``None``.
+            chemin: Path of the ``config.json`` file. Uses
+                :func:`dossier_config` when ``None``.
 
         Returns:
-            Une :class:`Config` prête à l'emploi, avec son chemin
-            mémorisé pour :meth:`sauver`.
+            A :class:`Config` ready to use, with its path stored for
+            :meth:`sauver`.
         """
         chemin = chemin or (dossier_config() / "config.json")
         cfg = cls()
@@ -229,11 +229,11 @@ class Config:
         return cfg
 
     def sauver(self) -> None:
-        """Écrit la config sur disque de façon atomique.
+        """Write the config to disk atomically.
 
-        Utilise le chemin mémorisé par :meth:`charger` s'il existe,
-        sinon ``<dossier_config()>/config.json``. Les champs privés
-        (préfixés ``_``) ne sont pas sérialisés.
+        Uses the path stored by :meth:`charger` if any, otherwise
+        ``<dossier_config()>/config.json``. Private fields (prefixed
+        with ``_``) are not serialised.
         """
         chemin = self._chemin or (dossier_config() / "config.json")
         chemin.parent.mkdir(parents=True, exist_ok=True)
@@ -247,15 +247,14 @@ class Config:
     # -- guardrails --------------------------------------------------------- #
 
     def valider(self) -> None:
-        """Ramène les valeurs aberrantes dans des bornes raisonnables.
+        """Coerce out-of-range values back into reasonable bounds.
 
-        Force un intervalle connu, borne la largeur minimale entre 0 et
-        10 000 px, retombe sur les valeurs par défaut si le classement,
-        le type de source ou le format d'image sont inconnus, et
-        s'assure que le classement est supporté par le type de source
-        (import différé pour éviter le cycle
-        ``config → sources → engine → config``). Le délai est borné
-        entre 0.2 et 10 secondes.
+        Forces a known interval, clamps the minimum width between 0 and
+        10 000 px, falls back to the default values when the sort mode,
+        the source type or the image format is unknown, and makes sure
+        the sort mode is supported by the source type (deferred import
+        to avoid the ``config → sources → engine → config`` cycle). The
+        request delay is clamped between 0.2 and 10 seconds.
         """
         if self.intervalle_heures not in INTERVALLES.values():
             self.intervalle_heures = 24
@@ -274,7 +273,7 @@ class Config:
             self.classement = "date"
         # too short a delay would hammer the club's server
         self.delai_requetes = max(0.2, min(float(self.delai_requetes), 10.0))
-        # Le backoff exponentiel du report ne connaît que trois paliers.
+        # The exponential defer backoff only knows three tiers.
         try:
             niveau = int(self.backoff_niveau)
         except (TypeError, ValueError):
@@ -283,11 +282,11 @@ class Config:
 
     @property
     def libelle_intervalle(self) -> str:
-        """Libellé UI de :attr:`intervalle_heures` (clé de ``INTERVALLES``).
+        """UI label of :attr:`intervalle_heures` (key of ``INTERVALLES``).
 
         Returns:
-            Le libellé associé à la valeur numérique, ou le libellé par
-            défaut ``"Une fois par jour"`` si la valeur n'est pas listée.
+            The label associated with the numeric value, or the default
+            label ``"Une fois par jour"`` when the value is not listed.
         """
         for libelle, heures in INTERVALLES.items():
             if heures == self.intervalle_heures:
@@ -296,11 +295,11 @@ class Config:
 
     @property
     def libelle_classement(self) -> str:
-        """Libellé UI de :attr:`classement` (clé de ``CLASSEMENTS``).
+        """UI label of :attr:`classement` (key of ``CLASSEMENTS``).
 
         Returns:
-            Le libellé associé à la valeur stockée, ou ``"Par galerie"``
-            par défaut.
+            The label associated with the stored value, or
+            ``"Par galerie"`` by default.
         """
         for libelle, valeur in CLASSEMENTS.items():
             if valeur == self.classement:
