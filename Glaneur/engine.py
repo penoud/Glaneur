@@ -215,6 +215,60 @@ def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
     tmp.replace(chemin)
 
 
+# Serialize every read-modify-write on the manifest: UI-side supprimer_image /
+# restaurer must not race with the engine's periodic and final saves during a
+# run. UI and engine live in the same process, so a threading.Lock suffices.
+_MANIFESTE_LOCK = threading.Lock()
+
+
+def _fusionner_marques_ui(memoire: dict, disque: dict) -> dict:
+    """Fusionne les marques UI (``supprime``/``restaure``) du disque avec le manifeste du moteur.
+
+    Règle : pour un identifiant présent dans les deux versions, la
+    version mémoire du moteur l'emporte — c'est elle qui vient d'être
+    mise à jour par le run — sauf pour les marques ``supprime`` et
+    ``restaure``. Si le disque porte une de ces marques que la mémoire
+    n'a pas, elle provient d'un geste utilisateur postérieur au
+    chargement du manifeste par le moteur : elle est réinjectée dans le
+    résultat, et la marque opposée éventuellement présente en mémoire
+    est écartée (les deux marques sont mutuellement exclusives).
+
+    Les entrées présentes uniquement sur disque (identifiants hors
+    inventaire du run courant, par exemple hors filtre de date)
+    survivent inchangées. Les entrées présentes uniquement en mémoire
+    (nouveaux téléchargements) sont écrites telles quelles.
+
+    Args:
+        memoire: Manifeste tel que le moteur l'a en mémoire.
+        disque: Manifeste tel qu'il se trouve sur disque au moment
+            de la fusion.
+
+    Returns:
+        Dictionnaire fusionné, prêt à être écrit atomiquement.
+    """
+    fusionne = dict(memoire)
+    for ident, etat_disque in disque.items():
+        etat_mem = fusionne.get(ident)
+        if etat_mem is None:
+            # UI touched an ident that was not part of this run's inventory
+            fusionne[ident] = etat_disque
+            continue
+        marque_disque = ("supprime" if "supprime" in etat_disque
+                         else "restaure" if "restaure" in etat_disque
+                         else None)
+        marque_mem = ("supprime" if "supprime" in etat_mem
+                      else "restaure" if "restaure" in etat_mem
+                      else None)
+        if marque_disque and marque_disque != marque_mem:
+            # UI acted after the engine loaded this ident: disk mark wins,
+            # opposite mark on the memory side is cleared
+            resultat = {**etat_mem, marque_disque: etat_disque[marque_disque]}
+            autre = "restaure" if marque_disque == "supprime" else "supprime"
+            resultat.pop(autre, None)
+            fusionne[ident] = resultat
+    return fusionne
+
+
 # --------------------------------------------------------------------------- #
 # API cache: max date of media seen, titles of resolved galleries.
 # Speeds up subsequent runs — the manifest says what has been downloaded,
@@ -301,17 +355,18 @@ def restaurer(dossier: Path, ids: Iterable) -> int:
     Returns:
         Le nombre d'entrées effectivement rétablies.
     """
-    manifeste = lire_manifeste(dossier)
-    retablies = 0
-    for ident in ids:
-        etat = manifeste.get(str(ident))
-        if etat and etat.pop("supprime", None):
-            # the mark only clears on a successful download, which rewrites
-            # the entry: a network failure will not reclassify the image as "deleted"
-            etat["restaure"] = True
-            retablies += 1
-    if retablies:
-        ecrire_manifeste(dossier, manifeste)
+    with _MANIFESTE_LOCK:
+        manifeste = lire_manifeste(dossier)
+        retablies = 0
+        for ident in ids:
+            etat = manifeste.get(str(ident))
+            if etat and etat.pop("supprime", None):
+                # the mark only clears on a successful download, which rewrites
+                # the entry: a network failure will not reclassify the image as "deleted"
+                etat["restaure"] = True
+                retablies += 1
+        if retablies:
+            ecrire_manifeste(dossier, manifeste)
     return retablies
 
 
@@ -357,28 +412,29 @@ def supprimer_image(dossier: Path, fichier: Path) -> bool:
         return False
     aiguille = os.path.normcase(relatif.replace("\\", "/"))
 
-    manifeste = lire_manifeste(dossier)
-    ident_trouve: str | None = None
-    for ident, etat in manifeste.items():
-        stocke = etat.get("fichier")
-        if not stocke:
-            continue
-        if os.path.normcase(str(stocke).replace("\\", "/")) == aiguille:
-            ident_trouve = ident
-            break
+    with _MANIFESTE_LOCK:
+        manifeste = lire_manifeste(dossier)
+        ident_trouve: str | None = None
+        for ident, etat in manifeste.items():
+            stocke = etat.get("fichier")
+            if not stocke:
+                continue
+            if os.path.normcase(str(stocke).replace("\\", "/")) == aiguille:
+                ident_trouve = ident
+                break
 
-    try:
-        Path(fichier).unlink()
-    except FileNotFoundError:
-        pass   # already gone: the mark is set anyway
-    except OSError:
-        return False
+        try:
+            Path(fichier).unlink()
+        except FileNotFoundError:
+            pass   # already gone: the mark is set anyway
+        except OSError:
+            return False
 
-    if ident_trouve is not None:
-        entree = manifeste[ident_trouve]
-        entree["supprime"] = datetime.now().isoformat(timespec="seconds")
-        entree.pop("restaure", None)
-        ecrire_manifeste(dossier, manifeste)
+        if ident_trouve is not None:
+            entree = manifeste[ident_trouve]
+            entree["supprime"] = datetime.now().isoformat(timespec="seconds")
+            entree.pop("restaure", None)
+            ecrire_manifeste(dossier, manifeste)
     return True
 
 
@@ -467,12 +523,24 @@ class Moteur:
         return manifeste
 
     def sauver_manifeste(self, manifeste: dict) -> None:
-        """Persiste ``manifeste`` sur disque de façon atomique.
+        """Persiste ``manifeste`` sur disque en fusionnant les gestes UI éventuels.
+
+        Prend le verrou :data:`_MANIFESTE_LOCK`, relit le manifeste
+        disque et applique la règle décrite dans
+        :func:`_fusionner_marques_ui` avant l'écriture atomique. Cette
+        lecture-fusion-écriture protège les marques
+        ``supprime``/``restaure`` que l'utilisateur peut poser via
+        :func:`supprimer_image` ou :func:`restaurer` pendant qu'un run
+        est en cours : sans elle, la sauvegarde périodique ou finale du
+        moteur écraserait la modification faite entre-temps par l'UI.
 
         Args:
-            manifeste: État à sérialiser.
+            manifeste: État en mémoire à persister.
         """
-        ecrire_manifeste(self.o.dossier, manifeste)
+        with _MANIFESTE_LOCK:
+            disque = lire_manifeste(self.o.dossier)
+            ecrire_manifeste(
+                self.o.dossier, _fusionner_marques_ui(manifeste, disque))
 
     @staticmethod
     def fichier_complet(dest: Path, etat: dict | None, taille_api: int | None) -> bool:

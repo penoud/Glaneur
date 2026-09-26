@@ -1105,12 +1105,6 @@ class Fenetre(QMainWindow):
         self.bouton_lancer.setEnabled(False)
         self.action_maj.setEnabled(False)
         self.action_maj_tray.setEnabled(False)
-        # the engine rewrites the manifest at the end of the run: restoring or
-        # deleting while it runs would lose the modification
-        self.bouton_supprimees.setEnabled(False)
-        self.bouton_supprimer_fond.setEnabled(False)
-        self.action_supprimer_fond.setEnabled(False)
-        self.action_supprimer_fond_tray.setEnabled(False)
         self.bouton_arreter.setEnabled(True)
         self.action_arreter_menu.setEnabled(True)
         self.barre.setRange(0, 0)          # indeterminate during inventory
@@ -1164,10 +1158,6 @@ class Fenetre(QMainWindow):
         self.bouton_lancer.setEnabled(True)
         self.action_maj.setEnabled(True)
         self.action_maj_tray.setEnabled(True)
-        self.bouton_supprimees.setEnabled(True)
-        self.bouton_supprimer_fond.setEnabled(sys.platform == "win32")
-        self.action_supprimer_fond.setEnabled(sys.platform == "win32")
-        self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
         self.bouton_arreter.setEnabled(False)
         self.action_arreter_menu.setEnabled(False)
         self.barre.setRange(0, 100)
