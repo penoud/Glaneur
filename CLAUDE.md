@@ -9,9 +9,10 @@ tableau d'invariants et les conventions seront rédigés dans un lot dédié.
 Ce document décrit l'état visé. Tant qu'un écart figure ici, il n'est ni corrigé
 hors de son lot, ni signalé comme régression, sauf s'il s'aggrave.
 
-- `Glaneur/engine.py` importe `QCoreApplication` (PySide6) pour traduire ses
-  messages. La frontière 1 sera tenue quand le moteur émettra des événements
+- `Glaneur/engine/moteur.py` importe `QCoreApplication` (PySide6) pour traduire
+  ses messages. La frontière 1 sera tenue quand le moteur émettra des événements
   structurés. Suivi par `xfail(strict=True)` dans `tests/test_boundaries.py`.
+  Les autres submodules de `Glaneur/engine/` sont indépendants de Qt.
 - `Glaneur/scheduler.py` importe `PySide6.QtCore`. Même frontière 1 à tenir,
   probablement par extraction de la partie « planification » hors Qt. Suivi
   par `xfail(strict=True)` dans `tests/test_boundaries.py` (entrée

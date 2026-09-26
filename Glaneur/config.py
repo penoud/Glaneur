@@ -142,10 +142,10 @@ class Config:
 
     Champs documentés inline par ``#:`` pour éviter le doublon d'index
     entre autodoc et Napoleon (même motif que
-    :class:`Glaneur.engine.Options`).
+    :class:`Glaneur.engine.options.Options`).
     """
 
-    #: Source site origin, propagated to :attr:`Glaneur.engine.Options.site`.
+    #: Source site origin, propagated to :attr:`Glaneur.engine.options.Options.site`.
     site: str = "https://example.com"
     #: Target sync directory; empty = value returned by
     #: :func:`dossier_images_defaut`.

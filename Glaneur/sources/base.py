@@ -22,7 +22,7 @@ class Interrompu(Exception):
     """Levée quand l'utilisateur demande l'arrêt coopératif.
 
     Portée par le transport et propagée jusqu'au moteur, qui la traite
-    comme une fin normale (voir :attr:`Glaneur.engine.Resultat.interrompu`).
+    comme une fin normale (voir :attr:`Glaneur.engine.resultat.Resultat.interrompu`).
     """
 
 
@@ -31,7 +31,7 @@ class Element:
     """Une image à synchroniser, telle que le moteur la comprend.
 
     Champs documentés inline par commentaires ``#:`` — voir
-    :class:`Glaneur.engine.Options` pour la raison (éviter le doublon
+    :class:`Glaneur.engine.options.Options` pour la raison (éviter le doublon
     d'index entre autodoc et Napoleon).
     """
 
@@ -41,7 +41,7 @@ class Element:
     ident: str
     #: URL of the resource to download. ``None`` if the source did not
     #: find a resource for the requested format: the engine will count
-    #: the element in :attr:`Glaneur.engine.Resultat.ignorees`.
+    #: the element in :attr:`Glaneur.engine.resultat.Resultat.ignorees`.
     url: str | None
     #: File name to give the resource on disk, without directory.
     nom_fichier: str
@@ -51,10 +51,10 @@ class Element:
     #: by-date sort.
     mois: str | None = None
     #: Width in pixels, when the source provides it — used by the
-    #: :attr:`Glaneur.engine.Options.largeur_min` filter.
+    #: :attr:`Glaneur.engine.options.Options.largeur_min` filter.
     largeur: int | None = None
     #: File size in bytes, if announced by the source (allows
-    #: :meth:`Glaneur.engine.Moteur.fichier_complet` to validate).
+    #: :meth:`Glaneur.engine.moteur.Moteur.fichier_complet` to validate).
     taille: int | None = None
     #: Parent identifier (WordPress gallery, Djangoplicity collection)
     #: for the ``galerie`` sort mode.
@@ -223,7 +223,7 @@ class Source(ABC):
 
         Returns:
             Table ``{clé -> titre nettoyé}``, prête à être passée à
-            :meth:`Glaneur.engine.Moteur.dossier_pour`.
+            :meth:`Glaneur.engine.moteur.Moteur.dossier_pour`.
         """
         return dict(connus or {})
 
