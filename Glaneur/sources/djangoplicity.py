@@ -14,7 +14,7 @@ moves nothing.
 from __future__ import annotations
 
 import re
-from typing import Iterator
+from collections.abc import Iterator
 from urllib.parse import urlparse
 
 from .base import Element, Source

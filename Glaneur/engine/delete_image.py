@@ -7,8 +7,8 @@ from datetime import datetime
 from pathlib import Path
 
 from ._locks import _MANIFESTE_LOCK
-from .write_manifest import ecrire_manifeste
 from .read_manifest import lire_manifeste
+from .write_manifest import ecrire_manifeste
 
 
 def supprimer_image(dossier: Path, fichier: Path) -> bool:

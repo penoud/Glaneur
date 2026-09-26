@@ -14,7 +14,7 @@ from .wordpress import WordPress
 
 #: Registry of available source adapters. Key: the label carried by
 #: the class (:attr:`Source.type`), value: the class itself.
-SOURCES: dict[str, Type[Source]] = {
+SOURCES: dict[str, type[Source]] = {
     WordPress.type: WordPress,
     Djangoplicity.type: Djangoplicity,
 }
@@ -39,10 +39,10 @@ def classements_pour(type_source: str) -> frozenset[str]:
 
 
 __all__ = [
+    "SOURCES",
     "Element",
     "Interrompu",
     "Source",
     "Transport",
-    "SOURCES",
     "classements_pour",
 ]

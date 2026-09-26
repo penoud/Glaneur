@@ -11,7 +11,6 @@ fini de terminer le QThread C++, ce qui déclenche
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest

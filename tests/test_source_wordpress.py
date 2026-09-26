@@ -16,7 +16,6 @@ import requests
 from Glaneur.sources import Transport
 from Glaneur.sources.wordpress import WordPress
 
-
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #

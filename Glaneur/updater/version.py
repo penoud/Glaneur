@@ -34,7 +34,7 @@ class Version:
     prerelease: tuple[str, ...] = ()
 
     @classmethod
-    def parse(cls, value: str) -> "Version":
+    def parse(cls, value: str) -> Version:
         """Parse a SemVer string (optional ``v`` prefix, build metadata ignored).
 
         Args:

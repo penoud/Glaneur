@@ -1,0 +1,17 @@
+# Configuration Ruff. Voir https://docs.astral.sh/ruff/settings/
+#
+# `extend-select` ajoute des règles au socle par défaut sans le remplacer :
+# - `ARG` : arguments de fonction, méthode ou lambda jamais utilisés
+#   (indice de code mort résiduel après ce que capte déjà `F401`/`F841`).
+# - `RUF` : règles propres à Ruff (dont `RUF022` __all__ non trié,
+#   `RUF100` noqa inutile).
+
+[lint]
+extend-select = ["ARG", "RUF"]
+
+[lint.per-file-ignores]
+# Les doublures de test (stubs de callbacks, faux clients, patchs
+# monkeypatch) reproduisent la signature de ce qu'elles remplacent :
+# le paramètre existe pour respecter l'appelant, pas parce qu'il est
+# lu. `ARG` n'apporte rien ici et produit surtout des faux positifs.
+"tests/**" = ["ARG"]

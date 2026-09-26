@@ -15,7 +15,6 @@ from Glaneur.engine import Moteur, Options, lire_manifeste
 from Glaneur.sources import Transport
 from Glaneur.sources.djangoplicity import Djangoplicity
 
-
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
@@ -244,7 +243,7 @@ class TestInventaire:
         s = _source(base="https://x.example")
         capture = {}
 
-        def faux_get_json(url, params=None, essais=3, fin_si=frozenset()):
+        def faux_get_json(_url, params=None, essais=3, fin_si=frozenset()):
             capture["params"] = params
             return {"Count": 0, "Collections": []}, {}
 

@@ -128,7 +128,7 @@ def ouvrir_dossier(chemin: Path) -> None:
     """
     chemin.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
-        os.startfile(chemin)  # noqa: S606
+        os.startfile(chemin)
     elif sys.platform == "darwin":
         subprocess.Popen(["open", str(chemin)])
     else:

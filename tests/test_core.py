@@ -8,9 +8,7 @@ via `unittest.mock`. Les tests créent leur propre dossier temporaire avec
 from __future__ import annotations
 
 import json
-import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -34,7 +32,6 @@ from Glaneur.engine import (
 )
 from Glaneur.sources import Element
 from Glaneur.sources.base import Classification
-
 
 # --------------------------------------------------------------------------- #
 # Free-standing utilities
@@ -1125,7 +1122,7 @@ class TestCacheAPI:
         m = _moteur(tmp_path, site="https://x.example", classement="date")
         capture = {}
 
-        def faux_inventaire(depuis, jusqua):
+        def faux_inventaire(depuis, _jusqua):
             capture["depuis"] = depuis
             return iter([])
 
@@ -1139,7 +1136,7 @@ class TestCacheAPI:
                     classement="date")
         capture = {}
 
-        def faux_inventaire(depuis, jusqua):
+        def faux_inventaire(depuis, _jusqua):
             capture["depuis"] = depuis
             return iter([])
 

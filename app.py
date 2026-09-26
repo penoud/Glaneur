@@ -20,7 +20,16 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QKeySequence, QPainter, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QColor,
+    QDesktopServices,
+    QFont,
+    QIcon,
+    QKeySequence,
+    QPainter,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -64,7 +73,6 @@ from Glaneur.config import (
     TYPES_SOURCE,
     Config,
 )
-from Glaneur.sources import classements_pour
 from Glaneur.engine import (
     Moteur,
     Options,
@@ -75,11 +83,12 @@ from Glaneur.engine import (
     supprimer_image,
 )
 from Glaneur.scheduler import Planificateur
+from Glaneur.sources import classements_pour
 from Glaneur.system import (
     avancer_diaporama,
+    definir_dossier_diaporama,
     demarrage_automatique,
     demarrage_automatique_actif,
-    definir_dossier_diaporama,
     fond_ecran_actuel,
     ouvrir_dossier,
 )
@@ -982,7 +991,7 @@ class Fenetre(QMainWindow):
             self.telechargement_mise_a_jour.deleteLater)
         self.telechargement_mise_a_jour.start()
 
-    def _mise_a_jour_telechargee(self, installer: Path, dossier: str) -> None:
+    def _mise_a_jour_telechargee(self, installer: Path, _dossier: str) -> None:
         import logging
         import subprocess
         log = logging.getLogger("Glaneur.app.update")
@@ -1304,9 +1313,9 @@ def main() -> int:
         # forget, without opening a window. The exe is windowed
         # (`console=False`), so `sys.stdout` can be None and a `print`
         # would raise — we signal the result via the exit code alone.
-        import Glaneur.engine  # noqa: F401
-        import Glaneur.sources  # noqa: F401
-        import Glaneur.updater  # noqa: F401
+        import Glaneur.engine
+        import Glaneur.sources
+        import Glaneur.updater
         sys.exit(0)
 
     from Glaneur.config import dossier_config, migrer_depuis_ancien_nom

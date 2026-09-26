@@ -24,30 +24,29 @@ remains importable at the same path.
 from __future__ import annotations
 
 from ..sources import Interrompu
-
 from ._constants import SIZE_SUFFIX, UA
 from .cache_path import chemin_cache
-from .manifest_path import chemin_manifeste
-from .write_cache import ecrire_cache
-from .write_manifest import ecrire_manifeste
+from .core import Moteur
+from .delete_image import supprimer_image
 from .format_bytes import format_octets
+from .list_deleted import lister_supprimees
+from .manifest_path import chemin_manifeste
+from .options import Options
 from .read_cache import lire_cache
 from .read_manifest import lire_manifeste
-from .list_deleted import lister_supprimees
-from .core import Moteur
-from .sanitize import nettoyer
-from .options import Options
 from .restore import restaurer
 from .result import Resultat
-from .delete_image import supprimer_image
+from .sanitize import nettoyer
+from .write_cache import ecrire_cache
+from .write_manifest import ecrire_manifeste
 
 __all__ = [
+    "SIZE_SUFFIX",
+    "UA",
     "Interrompu",
     "Moteur",
     "Options",
     "Resultat",
-    "SIZE_SUFFIX",
-    "UA",
     "chemin_cache",
     "chemin_manifeste",
     "ecrire_cache",
