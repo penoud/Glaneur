@@ -1,4 +1,4 @@
-"""Liste des images marquées ``supprime`` dans le manifeste."""
+"""List of images marked ``supprime`` in the manifest."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ from .lire_manifeste import lire_manifeste
 
 
 def lister_supprimees(dossier: Path) -> list[dict]:
-    """Images téléchargées puis effacées du disque par l'utilisateur.
+    """Images downloaded then deleted from disk by the user.
 
     Args:
-        dossier: Répertoire cible du run.
+        dossier: Target directory of the run.
 
     Returns:
-        Les entrées du manifeste portant la marque ``supprime``, triées
-        par date de suppression puis par nom de fichier.
+        The manifest entries carrying the ``supprime`` mark, sorted by
+        deletion timestamp then by file name.
     """
     manifeste = lire_manifeste(dossier)
     entrees = [{"id": ident, **etat} for ident, etat in manifeste.items()

@@ -1,17 +1,17 @@
-"""Formatage d'un nombre d'octets en unité lisible."""
+"""Format a byte count into a human-readable string."""
 
 from __future__ import annotations
 
 
 def format_octets(n: int) -> str:
-    """Formate un nombre d'octets en unité lisible.
+    """Format a byte count into a human-readable string.
 
     Args:
-        n: Nombre d'octets.
+        n: Number of bytes.
 
     Returns:
-        Une chaîne du type ``"1024 o"``, ``"1.5 Mo"`` ou ``"2.3 Go"``,
-        arrondie à un chiffre après la virgule au-delà de l'octet.
+        A string such as ``"1024 o"``, ``"1.5 Mo"`` or ``"2.3 Go"``,
+        rounded to one decimal place above the byte unit.
     """
     for unite in ("o", "Ko", "Mo", "Go"):
         if n < 1024 or unite == "Go":

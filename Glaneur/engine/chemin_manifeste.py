@@ -1,4 +1,4 @@
-"""Chemin du fichier manifeste d'un run."""
+"""Path to the manifest file of a run."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ from pathlib import Path
 
 
 def chemin_manifeste(dossier: Path) -> Path:
-    """Chemin du fichier manifeste (``.etat.json``) à l'intérieur de ``dossier``.
+    """Path to the manifest file (``.etat.json``) inside ``dossier``.
 
     Args:
-        dossier: Répertoire cible du run.
+        dossier: Target directory of the run.
 
     Returns:
-        Le chemin absolu du manifeste. Le fichier peut ne pas exister.
+        The absolute manifest path. The file may not exist yet.
     """
     return dossier / ".etat.json"

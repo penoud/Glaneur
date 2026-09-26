@@ -1,8 +1,8 @@
-"""Classe :class:`Moteur` — orchestration d'un run.
+"""Class :class:`Moteur` — orchestration of a run.
 
-Ce module est le seul du paquet à dépendre de Qt : il utilise
-``QCoreApplication.translate`` pour localiser les messages remontés à
-l'utilisateur. Le reste du paquet reste indépendant de Qt.
+This module is the only one in the package that depends on Qt: it uses
+``QCoreApplication.translate`` to localise messages surfaced to the
+user. The rest of the package stays Qt-independent.
 
 lupdate only extracts QCoreApplication.translate("Ctx", "src") when
 context and source are literals: we inline rather than aliasing a _tr().
@@ -35,15 +35,15 @@ from .resultat import Resultat
 
 
 class Moteur:
-    """Orchestre un run : inventaire, tri, téléchargement, manifeste, cache.
+    """Orchestrate a run: inventory, sort, download, manifest, cache.
 
-    Le moteur ne connaît rien de l'UI. Il expose deux callbacks
-    (``journal`` et ``progression``) et un :class:`threading.Event` pour
-    l'interruption coopérative, si bien qu'il tourne aussi bien depuis un
-    thread Qt que depuis la CLI ou un test unitaire.
+    The engine knows nothing about the UI. It exposes two callbacks
+    (``journal`` and ``progression``) and a :class:`threading.Event` for
+    cooperative interruption, so it runs equally well from a Qt thread,
+    from the CLI, or from a unit test.
 
-    Il ne connaît rien non plus de WordPress ou Djangoplicity : le choix
-    de la source est fait par ``Options.type_source``, résolu via
+    It also knows nothing about WordPress or Djangoplicity: the source
+    choice is driven by ``Options.type_source``, resolved through
     ``Glaneur.sources.SOURCES``.
     """
 
@@ -54,18 +54,18 @@ class Moteur:
         progression: Callable[[int, int, str], None] | None = None,
         arret: threading.Event | None = None,
     ) -> None:
-        """Instancie le moteur avec ses callbacks.
+        """Instantiate the engine with its callbacks.
 
         Args:
-            options: Paramètres du run (dossier, site, filtres, etc.).
-            journal: Callback appelé pour chaque message texte destiné à
-                l'utilisateur. Reçoit une chaîne déjà localisée. Peut être
-                ``None`` (aucun affichage).
-            progression: Callback appelé à chaque avancement du run.
-                Reçoit ``(fait, total, etiquette)``. Peut être ``None``.
-            arret: Event partagé qui coupe le run quand il est positionné.
-                Créé à la demande si non fourni ; l'appelant peut le
-                réutiliser pour synchroniser plusieurs moteurs.
+            options: Run parameters (folder, site, filters, etc.).
+            journal: Callback invoked for each user-facing text message.
+                Receives an already-localised string. May be ``None`` (no
+                display).
+            progression: Callback invoked at each step of the run.
+                Receives ``(done, total, label)``. May be ``None``.
+            arret: Shared event that cuts the run when set. Created on
+                demand if not provided; the caller may reuse it to
+                synchronise several engines.
         """
         self.o = options
         self.base = options.site.rstrip("/")
@@ -92,20 +92,19 @@ class Moteur:
             raise Interrompu()
 
     def _pause(self, secondes: float) -> None:
-        """Attente fractionnée, pour réagir vite à une demande d'arrêt."""
+        """Fragmented wait so we can react quickly to a stop request."""
         self.transport.pause(secondes)
 
     # -- manifest ----------------------------------------------------------- #
 
     def charger_manifeste(self) -> dict:
-        """Charge le manifeste du run précédent, ou ``{}`` en mode force.
+        """Load the previous run's manifest, or ``{}`` in force mode.
 
-        Journalise un avertissement si le fichier existe mais est
-        illisible : le run repartira alors d'un état vide et refera un
-        inventaire complet.
+        Journals a warning if the file exists but is unreadable: the run
+        then starts from an empty state and redoes a full inventory.
 
         Returns:
-            Le manifeste courant, éventuellement vide.
+            The current manifest, possibly empty.
         """
         if self.o.force or not chemin_manifeste(self.o.dossier).exists():
             return {}
@@ -115,19 +114,19 @@ class Moteur:
         return manifeste
 
     def sauver_manifeste(self, manifeste: dict) -> None:
-        """Persiste ``manifeste`` sur disque en fusionnant les gestes UI éventuels.
+        """Persist ``manifeste`` on disk merging any UI actions.
 
-        Prend le verrou ``_MANIFESTE_LOCK``, relit le manifeste disque et
-        applique la règle décrite dans ``_fusionner_marques_ui`` avant
-        l'écriture atomique. Cette lecture-fusion-écriture protège les
-        marques ``supprime``/``restaure`` que l'utilisateur peut poser
-        via :func:`Glaneur.engine.supprimer_image.supprimer_image` ou
-        :func:`Glaneur.engine.restaurer.restaurer` pendant qu'un run est
-        en cours : sans elle, la sauvegarde périodique ou finale du
-        moteur écraserait la modification faite entre-temps par l'UI.
+        Takes the ``_MANIFESTE_LOCK``, re-reads the manifest from disk
+        and applies the rule described in ``_fusionner_marques_ui``
+        before writing atomically. This read-merge-write protects the
+        ``supprime`` / ``restaure`` marks the user may set via
+        :func:`Glaneur.engine.supprimer_image.supprimer_image` or
+        :func:`Glaneur.engine.restaurer.restaurer` while a run is in
+        progress: without it, the engine's periodic or final save would
+        overwrite the change the UI made in the meantime.
 
         Args:
-            manifeste: État en mémoire à persister.
+            manifeste: In-memory state to persist.
         """
         with _MANIFESTE_LOCK:
             disque = lire_manifeste(self.o.dossier)
@@ -136,18 +135,18 @@ class Moteur:
 
     @staticmethod
     def fichier_complet(dest: Path, etat: dict | None, taille_api: int | None) -> bool:
-        """Indique si ``dest`` est un téléchargement complet, à la taille près.
+        """Report whether ``dest`` is a complete download, size-wise.
 
         Args:
-            dest: Chemin du fichier à vérifier.
-            etat: Entrée manifeste correspondante, ou ``None`` si aucune.
-            taille_api: Taille annoncée par la source, ou ``None`` si
-                elle n'est pas connue à cette étape.
+            dest: Path of the file to check.
+            etat: Matching manifest entry, or ``None`` if none.
+            taille_api: Size announced by the source, or ``None`` if not
+                known at this step.
 
         Returns:
-            ``True`` si le fichier existe, n'est pas vide, et sa taille
-            correspond à celle attendue (manifeste ou API). ``False`` si
-            l'une de ces conditions manque.
+            ``True`` if the file exists, is non-empty and its size matches
+            the expected one (manifest or API). ``False`` if any of these
+            conditions is missing.
         """
         if not dest.exists():
             return False
@@ -160,20 +159,20 @@ class Moteur:
     # -- API cache ---------------------------------------------------------- #
 
     def charger_cache(self) -> dict:
-        """Lit le cache disque, en le vidant si le contexte a changé.
+        """Read the on-disk cache, wiping it when the context has changed.
 
-        Le cache est ignoré en mode force ou si l'utilisation en est
-        désactivée. Si le site enregistré diffère du site courant, ou si
-        le type de source change (ex. WordPress → Djangoplicity), on
-        repart de zéro pour ne pas mélanger deux espaces d'identifiants.
+        The cache is ignored in force mode or when its use is disabled.
+        If the recorded site differs from the current site, or if the
+        source type changes (e.g. WordPress → Djangoplicity), we start
+        from scratch so as not to mix two identifier spaces.
 
-        Migration silencieuse : un cache écrit avant l'introduction de
-        ``Options.type_source`` (donc sans ce champ) est lu comme s'il
-        correspondait au type courant, pour ne pas invalider les caches
-        WordPress existants.
+        Silent migration: a cache written before ``Options.type_source``
+        was introduced (i.e. without that field) is read as if it
+        matched the current type, so existing WordPress caches remain
+        valid.
 
         Returns:
-            Le cache utilisable pour ce run, éventuellement vide.
+            The cache usable for this run, possibly empty.
         """
         if self.o.force or not self.o.utiliser_cache:
             return {}
@@ -186,15 +185,14 @@ class Moteur:
         return cache
 
     def sauver_cache(self, cache: dict) -> None:
-        """Persiste ``cache`` sur disque, sauf en mode force/cache désactivé.
+        """Persist ``cache`` on disk, except in force / cache-disabled mode.
 
-        L'origine et le type de source du run courant sont réinjectés
-        dans ``cache`` avant écriture pour que :meth:`charger_cache`
-        puisse invalider automatiquement au run suivant si l'un ou
-        l'autre change.
+        The current run's origin and source type are re-injected into
+        ``cache`` before writing so that :meth:`charger_cache` can
+        automatically invalidate the next run when either changes.
 
         Args:
-            cache: État à sérialiser (peut être partiellement rempli).
+            cache: State to serialise (may be partially populated).
         """
         if self.o.force or not self.o.utiliser_cache:
             return
@@ -205,16 +203,16 @@ class Moteur:
     # -- paths -------------------------------------------------------------- #
 
     def dossier_pour(self, element: Element, titres: dict[str, str]) -> str:
-        """Sous-dossier relatif où ranger ``element`` selon le classement retenu.
+        """Relative sub-folder where ``element`` should land under the chosen sort.
 
         Args:
-            element: Élément à ranger.
-            titres: Table {id_parent -> titre nettoyé} résolue en amont
-                par la source, utilisée pour ``classement="galerie"``.
+            element: Element to place.
+            titres: ``{parent_id -> cleaned title}`` table resolved
+                upstream by the source, used for ``classement="galerie"``.
 
         Returns:
-            Un nom de sous-dossier relatif, ou une chaîne vide en
-            classement ``plat`` (tout au niveau racine).
+            A relative sub-folder name, or an empty string in ``plat``
+            mode (everything at the root level).
         """
         if self.o.classement == "plat":
             return ""
@@ -223,24 +221,24 @@ class Moteur:
         return titres.get(element.groupe) or f"contenu-{element.groupe}"
 
     def chemin_libre(self, dest: Path, ident: str, pris: set[str]) -> Path:
-        """Choisit un chemin de destination qui n'écrase aucun autre élément.
+        """Pick a destination path that does not overwrite another element.
 
-        Un même nom de fichier peut apparaître dans deux mois différents
-        (WordPress ne dédoublonne que par dossier d'upload) ou dans deux
-        entrées Djangoplicity (variantes de langue) : on suffixe par
-        ``ident`` pour ne pas écraser.
+        The same file name can appear in two different months (WordPress
+        only deduplicates per upload folder) or in two Djangoplicity
+        entries (language variants): we suffix with ``ident`` to avoid
+        overwriting.
 
         Args:
-            dest: Chemin candidat, tel que déduit du sous-dossier et du
-                nom de fichier de la source.
-            ident: Identifiant de l'élément, utilisé comme suffixe si
-                ``dest`` est déjà pris.
-            pris: Ensemble des chemins relatifs déjà attribués pendant
-                ce run. La méthode y ajoute le chemin choisi avant de
-                le renvoyer.
+            dest: Candidate path, as derived from the sub-folder and
+                the file name coming from the source.
+            ident: Element identifier, used as a suffix when ``dest``
+                is already taken.
+            pris: Set of relative paths already assigned during this
+                run. The method adds the chosen path to it before
+                returning.
 
         Returns:
-            Un chemin absolu unique dans ``pris``.
+            An absolute path unique within ``pris``.
         """
         relatif = str(dest.relative_to(self.o.dossier))
         if relatif in pris:
@@ -254,37 +252,37 @@ class Moteur:
     def telecharger(
         self, url: str, dest: Path, etat: dict | None,
     ) -> tuple[str, dict | None, Classification | None]:
-        """Télécharge ``url`` vers ``dest`` avec reprise et revalidation.
+        """Download ``url`` to ``dest`` with resume and revalidation.
 
-        Gère :
+        Handles:
 
-        - ``If-None-Match`` / ``If-Modified-Since`` en mode ``verifier`` ;
-        - reprise via ``Range: bytes=...-`` sur un ``.part`` partiel ;
-        - repli sur téléchargement complet en cas de ``416`` ;
-        - interruption coopérative en cours de flux (préserve le ``.part``
-          pour la reprise suivante).
+        - ``If-None-Match`` / ``If-Modified-Since`` in ``verifier`` mode;
+        - resume through ``Range: bytes=...-`` on a partial ``.part``;
+        - fallback to a full download on ``416``;
+        - cooperative interruption mid-stream (preserves the ``.part``
+          for the next resume).
 
         Args:
-            url: URL à télécharger.
-            dest: Chemin absolu du fichier final. Le dossier parent est
-                créé si nécessaire.
-            etat: Entrée manifeste précédente (ETag, Last-Modified,
-                taille…) ou ``None``.
+            url: URL to download.
+            dest: Absolute path of the final file. The parent directory
+                is created if needed.
+            etat: Previous manifest entry (ETag, Last-Modified,
+                size, ...) or ``None``.
 
         Returns:
-            Un tuple ``(statut, infos, classification)`` où
-            ``statut`` est ``"ok"``, ``"repris"``, ``"inchangé"``,
-            ``"introuvable"`` ou un message d'erreur localisé,
-            ``infos`` est le nouvel état à écrire au manifeste
-            (ou ``None`` si aucun contenu), et ``classification``
-            est la :class:`Glaneur.sources.base.Classification` de
-            l'erreur (``None`` en cas de succès). Le moteur consomme
-            la ``classification`` dans :meth:`executer` pour décider
-            d'un coupe-circuit.
+            A tuple ``(status, infos, classification)`` where ``status``
+            is ``"ok"``, ``"repris"``, ``"inchangé"``, ``"introuvable"``
+            or a localised error message, ``infos`` is the new state to
+            write to the manifest (or ``None`` if nothing was fetched),
+            and ``classification`` is the
+            :class:`Glaneur.sources.base.Classification` of the error
+            (``None`` on success). The engine consumes
+            ``classification`` in :meth:`executer` to decide on a
+            circuit-breaker trip.
 
         Raises:
-            Interrompu: Propagé si ``self.arret`` est positionné pendant
-                l'écriture du flux.
+            Interrompu: Propagated if ``self.arret`` is set while the
+                stream is being written.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".part")
@@ -347,12 +345,12 @@ class Moteur:
         fait: int,
         total: int,
     ) -> None:
-        """Marque ``res`` comme reporté et journalise un message actionnable.
+        """Mark ``res`` as deferred and journal an actionable message.
 
-        Renseigne ``res.retenter_apres`` (ISO 8601) uniquement si le
-        serveur a fourni un ``Retry-After`` via ``classification``.
-        Sans indication, on laisse le champ vide : c'est au
-        planificateur d'appliquer son propre backoff (lot 3).
+        Fills ``res.retenter_apres`` (ISO 8601) only when the server
+        provided a ``Retry-After`` via ``classification``. Without a
+        hint, the field stays empty: it is up to the scheduler to apply
+        its own backoff (lot 3).
         """
         res.reporte = True
         cible: datetime | None = None
@@ -377,25 +375,26 @@ class Moteur:
     # -- orchestration ------------------------------------------------------ #
 
     def executer(self) -> Resultat:
-        """Exécute le run complet et renvoie le ``Resultat`` agrégé.
+        """Run the whole thing and return the aggregated ``Resultat``.
 
-        L'ordre est :
+        The order is:
 
-        1. lecture du manifeste et du cache ;
-        2. inventaire via la source (filtre par date, largeur minimale) ;
-        3. tri en trois listes (déjà à jour, à télécharger, supprimées) ;
-        4. résolution des titres de galeries si nécessaire ;
-        5. téléchargement séquentiel avec sauvegarde périodique du
-           manifeste (toutes les 25 images) ;
-        6. mise à jour du cache (date maximale, titres) en sortie normale.
+        1. read the manifest and the cache;
+        2. inventory via the source (date filter, minimum width);
+        3. sort into three lists (already up to date, to download,
+           deleted);
+        4. resolve gallery titles if needed;
+        5. sequential download with periodic manifest save (every 25
+           images);
+        6. cache update (maximum date, titles) on a normal exit.
 
-        Une interruption coopérative renvoie un ``Resultat`` avec
-        ``Resultat.interrompu`` vrai. Les erreurs réseau ou disque
-        sont capturées et rapportées via ``res.message`` sans propager
-        l'exception.
+        A cooperative interruption returns a ``Resultat`` with
+        ``Resultat.interrompu`` set. Network or disk errors are caught
+        and reported through ``res.message`` without propagating the
+        exception.
 
         Returns:
-            Le résumé chiffré du run.
+            The numeric summary of the run.
         """
         res = Resultat()
         self.o.dossier.mkdir(parents=True, exist_ok=True)
@@ -508,7 +507,7 @@ class Moteur:
 
                 if infos:
                     infos["fichier"] = str(fichier.relative_to(self.o.dossier))
-                    # Source metadata (credit, checksum…): copied into the
+                    # Source metadata (credit, checksum...): copied into the
                     # manifest for the upcoming catalog export, without the
                     # engine interpreting them.
                     if e.extra:

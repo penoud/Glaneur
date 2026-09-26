@@ -1,6 +1,7 @@
-"""QThread PySide6 pour le check et le téléchargement de mise à jour.
+"""PySide6 ``QThread`` classes for the update check and download.
 
-Extraits d'app.py pour être testables sans démarrer l'UI complète.
+Extracted from ``app.py`` so they can be tested without starting the
+full UI.
 """
 
 from __future__ import annotations
@@ -18,13 +19,13 @@ logger = logging.getLogger(__name__)
 
 
 class VerificationMiseAJour(QThread):
-    """Interroge GitHub à propos d'une release plus récente que la version en cours.
+    """Ask GitHub whether a release is newer than the running version.
 
-    Signals :
+    Signals:
 
-    - ``disponible(UpdateInfo)`` : mise à jour trouvée.
-    - ``aucune_maj(UpdateInfo)`` : version courante déjà à jour.
-    - ``erreur(str)`` : message localisé prêt à afficher.
+    - ``disponible(UpdateInfo)``: an update was found.
+    - ``aucune_maj(UpdateInfo)``: the current version is already up to date.
+    - ``erreur(str)``: localised message ready to display.
     """
 
     disponible = Signal(object)
@@ -32,18 +33,18 @@ class VerificationMiseAJour(QThread):
     erreur = Signal(str)
 
     def __init__(self, parent=None, provider: GitHubReleaseProvider | None = None) -> None:
-        """Construit le thread avec un fournisseur (injectable pour les tests).
+        """Build the thread with a provider (injectable for tests).
 
         Args:
-            parent: Parent Qt éventuel.
-            provider: :class:`GitHubReleaseProvider` à utiliser. Un
-                fournisseur par défaut est créé si ``None``.
+            parent: Optional Qt parent.
+            provider: :class:`GitHubReleaseProvider` to use. A default
+                provider is created if ``None``.
         """
         super().__init__(parent)
         self._provider = provider or GitHubReleaseProvider()
 
     def run(self) -> None:
-        """Lance le check en arrière-plan et émet le signal correspondant."""
+        """Run the check in the background and emit the matching signal."""
         try:
             info = self._provider.check(Version.parse(__version__))
             if info.is_available:
@@ -51,38 +52,37 @@ class VerificationMiseAJour(QThread):
                 self.disponible.emit(info)
             else:
                 self.aucune_maj.emit(info)
-        except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
+        except Exception as error:   # noqa: BLE001 - surfaced to the UI via a signal
             logger.exception("Update check failed")
             self.erreur.emit(QCoreApplication.translate(
                 "Updater", "Vérification de mise à jour impossible : {erreur}").format(erreur=error))
 
 
 class TelechargementMiseAJour(QThread):
-    """Récupère l'installateur Windows et son SHA-256 pour la release ciblée.
+    """Fetch the Windows installer and its SHA-256 for the targeted release.
 
-    Signals :
+    Signals:
 
-    - ``termine(Path, str)`` : chemin du fichier vérifié + dossier
-      temporaire (que l'UI pourra nettoyer après installation).
-    - ``erreur(str)`` : message localisé prêt à afficher.
+    - ``termine(Path, str)``: path of the verified file + temporary
+      directory (the UI can clean it after installation).
+    - ``erreur(str)``: localised message ready to display.
     """
 
     termine = Signal(object, str)
     erreur = Signal(str)
 
     def __init__(self, release, parent=None) -> None:
-        """Prépare le téléchargement pour ``release``.
+        """Prepare the download for ``release``.
 
         Args:
-            release: :class:`Glaneur.updater.models.Release` à
-                télécharger.
-            parent: Parent Qt éventuel.
+            release: :class:`Glaneur.updater.models.Release` to download.
+            parent: Optional Qt parent.
         """
         super().__init__(parent)
         self.release = release
 
     def run(self) -> None:
-        """Télécharge, vérifie SHA-256, émet ``termine`` ou ``erreur``."""
+        """Download, verify SHA-256, emit ``termine`` or ``erreur``."""
         try:
             installer = self.release.windows_installer()
             checksum = self.release.checksum_for(installer) if installer else None
@@ -97,7 +97,7 @@ class TelechargementMiseAJour(QThread):
                 raise RuntimeError(QCoreApplication.translate(
                     "Updater", "Vérification SHA-256 échouée"))
             self.termine.emit(fichier, str(dossier))
-        except Exception as error:   # noqa: BLE001 - remontée à l'UI via signal
+        except Exception as error:   # noqa: BLE001 - surfaced to the UI via a signal
             logger.exception("Update download failed")
             self.erreur.emit(QCoreApplication.translate(
                 "Updater", "Téléchargement de la mise à jour impossible : {erreur}").format(erreur=error))

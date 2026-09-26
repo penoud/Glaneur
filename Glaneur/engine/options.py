@@ -1,4 +1,4 @@
-"""Dataclass :class:`Options` — paramètres d'un run du moteur."""
+"""Dataclass :class:`Options` — parameters of an engine run."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from pathlib import Path
 
 @dataclass
 class Options:
-    """Paramètres d'un run du moteur.
+    """Parameters of an engine run.
 
-    Chaque champ est documenté par un commentaire ``#:`` inline pour
-    éviter la duplication d'index entre autodoc et Napoleon.
+    Each field is documented by an inline ``#:`` comment to avoid the
+    index duplication between autodoc and Napoleon.
     """
 
     #: Target directory where manifest, cache and files land.

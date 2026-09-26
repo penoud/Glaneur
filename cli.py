@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Interface en ligne de commande, utile pour tester le moteur sans UI.
+"""Command-line interface, useful for testing the engine without the UI.
 
     python cli.py --dossier ./photos --dry-run
     python cli.py --dossier ./photos --verifier
@@ -23,20 +23,19 @@ from Glaneur.scheduler import Planificateur
 
 
 def main() -> int:
-    """Point d'entrée de la CLI.
+    """CLI entry point.
 
-    Parse la ligne de commande, applique les arguments par-dessus la
-    configuration persistée, exécute un run du :class:`Glaneur.engine.Moteur`
-    et imprime un résumé lisible sur stdout. Une interruption clavier
-    (``Ctrl+C``) propage un ``arret`` coopératif au moteur avant de
-    sortir.
+    Parses the command line, applies the arguments on top of the
+    persisted configuration, runs the :class:`Glaneur.engine.Moteur`
+    once and prints a readable summary on stdout. A keyboard interrupt
+    (``Ctrl+C``) propagates a cooperative ``arret`` to the engine before
+    exiting.
 
     Returns:
-        ``0`` si le run s'est bien terminé, ``1`` si tous les
-        téléchargements ont échoué sans qu'aucun nouveau fichier ne soit
-        récupéré, ``2`` si le run a été reporté par le coupe-circuit
-        réseau (serveur indisponible, quota…), ``130`` sur interruption
-        clavier (convention shell).
+        ``0`` if the run finished cleanly, ``1`` if every download
+        failed without any new file being fetched, ``2`` if the run was
+        deferred by the network circuit-breaker (server unavailable,
+        quota, ...), ``130`` on keyboard interrupt (shell convention).
     """
     c = Config.charger()
     p = argparse.ArgumentParser(
@@ -86,13 +85,13 @@ def main() -> int:
     dernier = [""]
 
     def progression(fait: int, total: int, etiquette: str) -> None:
-        """Callback de progression : réécrit une seule ligne sur stdout.
+        """Progression callback: rewrites a single line on stdout.
 
         Args:
-            fait: Nombre d'éléments traités.
-            total: Nombre d'éléments à traiter.
-            etiquette: Libellé court à afficher (tronqué à 60
-                caractères).
+            fait: Number of items processed.
+            total: Number of items to process.
+            etiquette: Short label to display (truncated to 60
+                characters).
         """
         ligne = f"\r  {fait}/{total} — {etiquette[:60]:<60}"
         if ligne != dernier[0]:
@@ -115,9 +114,9 @@ def main() -> int:
     print(f"  échecs       : {res.echecs}   volume : {format_octets(res.octets)}")
 
     if res.reporte:
-        # Persiste le report pour que la prochaine invocation (UI ou CLI)
-        # respecte le backoff. On ne fait PAS `marquer_execution` : le run
-        # est tronqué.
+        # Persist the defer so the next invocation (UI or CLI) honours
+        # the backoff. We do NOT call `marquer_execution` — the run was
+        # truncated.
         planificateur = Planificateur(c)
         planificateur.differer(res)
         print(f"  {planificateur.texte_prochaine()}", file=sys.stderr)

@@ -1,4 +1,4 @@
-"""Lecture tolérante du cache API d'un run."""
+"""Tolerant read of the API cache of a run."""
 
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ from .chemin_cache import chemin_cache
 
 
 def lire_cache(dossier: Path) -> dict:
-    """Charge le cache JSON s'il existe, dictionnaire vide sinon.
+    """Load the JSON cache if present, an empty dict otherwise.
 
-    Comme :func:`Glaneur.engine.lire_manifeste`, tolère un cache absent
-    ou corrompu.
+    Like :func:`Glaneur.engine.lire_manifeste`, tolerates a missing or
+    corrupted cache.
 
     Args:
-        dossier: Répertoire cible du run.
+        dossier: Target directory of the run.
 
     Returns:
-        Le contenu désérialisé, ou ``{}`` si le fichier est absent ou
-        illisible.
+        The deserialised content, or ``{}`` if the file is missing or
+        unreadable.
     """
     chemin = chemin_cache(dossier)
     if not chemin.exists():

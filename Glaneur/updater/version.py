@@ -1,4 +1,4 @@
-"""Comparaison stricte de versions SemVer."""
+"""Strict SemVer version comparison."""
 
 from __future__ import annotations
 
@@ -16,13 +16,12 @@ _PATTERN = re.compile(
 @total_ordering
 @dataclass(frozen=True)
 class Version:
-    """Version SemVer immuable, comparable et ordonnée totalement.
+    """Immutable, totally-ordered SemVer version.
 
-    Compare sur ``(major, minor, patch)`` puis, à égalité de triplet,
-    par les identifiants de prerelease selon la règle SemVer 2.0 : une
-    version sans prerelease est plus grande que la même avec
-    prerelease, et les identifiants sont comparés numérique-vs-numérique
-    puis lexicographiquement.
+    Compares on ``(major, minor, patch)``; on triplet ties, by the
+    prerelease identifiers following SemVer 2.0: a version without a
+    prerelease is greater than the same one with a prerelease, and
+    identifiers are compared numeric-vs-numeric then lexicographically.
     """
 
     #: Major number.
@@ -36,19 +35,18 @@ class Version:
 
     @classmethod
     def parse(cls, value: str) -> "Version":
-        """Analyse une chaîne SemVer (avec ``v`` optionnel et metadata build ignorée).
+        """Parse a SemVer string (optional ``v`` prefix, build metadata ignored).
 
         Args:
-            value: Chaîne à analyser (par exemple ``"v1.2.3"``,
+            value: String to parse (for example ``"v1.2.3"``,
                 ``"1.2.3-rc.1"``, ``"1.2.3+build.5"``).
 
         Returns:
-            La :class:`Version` correspondante. Le suffixe ``+build``
-            est reconnu mais non conservé.
+            The matching :class:`Version`. The ``+build`` suffix is
+            recognised but not kept.
 
         Raises:
-            ValueError: Si la chaîne ne correspond pas au format
-                SemVer strict.
+            ValueError: If the string does not follow strict SemVer.
         """
         match = _PATTERN.fullmatch(value.strip())
         if not match:

@@ -1,15 +1,14 @@
-"""Logique d'échéance des mises à jour automatiques.
+"""Due-date logic for automatic updates.
 
-Volontairement sans thread ni widget : la classe ne fait que répondre à
-« est-ce l'heure ? ». C'est l'interface qui l'interroge périodiquement via
-un QTimer. Seule dépendance Qt : `QCoreApplication.translate` pour les
-libellés visibles renvoyés par `texte_prochaine()` (aucun widget, aucun
-thread introduit).
+Deliberately without a thread or a widget: the class only answers "is it
+time?". The interface polls it periodically through a ``QTimer``. The
+only Qt dependency is ``QCoreApplication.translate`` for the visible
+labels returned by :meth:`Planificateur.texte_prochaine` (no widget, no
+thread introduced).
 
-L'échéance est calculée à partir de `derniere_execution` stocké dans la
-configuration, donc elle survit à une fermeture de l'application : si
-l'intervalle s'est écoulé pendant ce temps, la mise à jour part au lancement
-suivant.
+The due date is computed from ``derniere_execution`` stored in the
+configuration, so it survives an application shutdown: if the interval
+has elapsed in the meantime, the update fires on the next launch.
 """
 
 from __future__ import annotations
@@ -25,40 +24,40 @@ if TYPE_CHECKING:
 # lupdate only extracts QCoreApplication.translate("Ctx", "src") calls
 # with literals: we inline rather than aliasing (see bug_report.py).
 
-# Backoff exponentiel appliqué quand le serveur n'a pas fourni de
-# `Retry-After` : niveau 0 → 1 h, 1 → 2 h, 2 → 4 h. Le niveau est
-# incrémenté à chaque report successif et cappé à 2 ; il est remis
-# à zéro par :meth:`Planificateur.marquer_execution`.
+# Exponential backoff applied when the server did not provide a
+# ``Retry-After``: level 0 -> 1 h, 1 -> 2 h, 2 -> 4 h. The level is
+# incremented on each successive defer and capped at 2; it is reset to
+# zero by :meth:`Planificateur.marquer_execution`.
 BACKOFFS_S: tuple[int, ...] = (3600, 7200, 14400)
 
 
 class Planificateur:
-    """Calcule et affiche l'échéance des mises à jour automatiques.
+    """Compute and display the next automatic-update deadline.
 
-    L'objet est passif : il ne démarre pas de timer, il répond à la
-    question « est-ce l'heure ? ». C'est à l'UI de l'interroger
-    périodiquement (typiquement via un ``QTimer``).
+    The object is passive: it does not start a timer, it answers the
+    question "is it time?". The UI polls it periodically (typically
+    through a ``QTimer``).
     """
 
     def __init__(self, config) -> None:
-        """Attache le planificateur à un objet :class:`Glaneur.config.Config`.
+        """Attach the scheduler to a :class:`Glaneur.config.Config` instance.
 
         Args:
-            config: Instance de configuration dont
-                ``Config.derniere_execution`` et
-                ``Config.intervalle_heures`` sont lus, et dont
-                ``Config.sauver`` est appelé par :meth:`marquer_execution`.
+            config: Configuration object from which
+                ``Config.derniere_execution`` and
+                ``Config.intervalle_heures`` are read, and on which
+                ``Config.sauver`` is called by :meth:`marquer_execution`.
         """
         self.config = config
 
     # -- state --------------------------------------------------------------- #
 
     def derniere(self) -> datetime | None:
-        """Date du dernier run, désérialisée depuis la configuration.
+        """Timestamp of the last run, deserialised from the configuration.
 
         Returns:
-            La datetime lue dans ``Config.derniere_execution``, ou
-            ``None`` si le champ est vide ou mal formé.
+            The datetime read from ``Config.derniere_execution``, or
+            ``None`` if the field is empty or malformed.
         """
         try:
             return datetime.fromisoformat(self.config.derniere_execution)
@@ -66,11 +65,11 @@ class Planificateur:
             return None
 
     def _retenter_apres(self) -> datetime | None:
-        """Date de reprise après report, ou ``None`` si aucun/mal formé.
+        """Resume date after a defer, or ``None`` when missing/malformed.
 
-        Sert d'unique point de parsing de ``config.retenter_apres`` — au
-        moindre doute (chaîne vide, format cassé), on ignore le report
-        plutôt que de lever.
+        Sole parsing point for ``config.retenter_apres`` — at the slightest
+        doubt (empty string, broken format), the defer is ignored rather
+        than raising.
         """
         brut = getattr(self.config, "retenter_apres", "") or ""
         if not brut:
@@ -81,10 +80,10 @@ class Planificateur:
             return None
 
     def _nominale(self) -> datetime | None:
-        """Date de la prochaine échéance sans tenir compte d'un report.
+        """Date of the next deadline without considering any defer.
 
         Returns:
-            La date brute, ou ``None`` en mode manuel.
+            The raw date, or ``None`` in manual mode.
         """
         if not self.config.intervalle_heures:
             return None
@@ -94,17 +93,16 @@ class Planificateur:
         return derniere + timedelta(hours=self.config.intervalle_heures)
 
     def prochaine(self) -> datetime | None:
-        """Calcule la date de la prochaine mise à jour automatique.
+        """Compute the date of the next automatic update.
 
-        Si aucun run n'a jamais été enregistré, la « prochaine » est
-        l'instant présent : le premier lancement déclenche
-        immédiatement.
+        If no run has ever been recorded, the "next" is right now: the
+        first launch fires immediately.
 
-        Un report actif (``config.retenter_apres`` dans le futur)
-        repousse l'échéance nominale jusqu'à cette date.
+        An active defer (``config.retenter_apres`` in the future) pushes
+        the nominal deadline out to that date.
 
         Returns:
-            La date planifiée, ou ``None`` en mode manuel
+            The scheduled date, or ``None`` in manual mode
             (``Config.intervalle_heures`` = 0).
         """
         nominale = self._nominale()
@@ -116,22 +114,22 @@ class Planificateur:
         return nominale
 
     def echeance_atteinte(self) -> bool:
-        """Indique si un run automatique devrait démarrer maintenant.
+        """Report whether an automatic run should start right now.
 
         Returns:
-            ``True`` si :meth:`prochaine` est passée, ``False`` sinon
-            (mode manuel inclus).
+            ``True`` if :meth:`prochaine` has passed, ``False`` otherwise
+            (manual mode included).
         """
         prochaine = self.prochaine()
         return prochaine is not None and datetime.now() >= prochaine
 
     def marquer_execution(self) -> None:
-        """Enregistre l'instant courant comme dernier run et persiste la config.
+        """Record the current instant as the last run and persist the config.
 
-        Appelée par le moteur en fin de run réussi. Écrit dans
-        ``Config.derniere_execution`` au format ISO 8601 seconde. Remet
-        aussi à zéro l'éventuel report en cours (``retenter_apres`` et
-        ``backoff_niveau``) : un run qui aboutit clôt un backoff.
+        Called by the engine at the end of a successful run. Writes to
+        ``Config.derniere_execution`` in ISO 8601 with second precision.
+        Also clears any ongoing defer (``retenter_apres`` and
+        ``backoff_niveau``): a successful run closes a backoff.
         """
         self.config.derniere_execution = datetime.now().isoformat(timespec="seconds")
         self.config.retenter_apres = ""
@@ -139,21 +137,21 @@ class Planificateur:
         self.config.sauver()
 
     def differer(self, res: Resultat) -> None:
-        """Reporte le prochain run après un coupe-circuit réseau.
+        """Defer the next run after a network circuit-breaker trips.
 
-        Utilise ``res.retenter_apres`` (aware UTC, produit par le moteur
-        via ``_declencher_report``) quand le serveur a fourni un
-        ``Retry-After``. La consigne serveur prime et on ne fait pas
-        monter le niveau de backoff. Sans consigne serveur, on applique
-        le backoff exponentiel local (``BACKOFFS_S`` — 1 h → 2 h → 4 h),
-        puis on incrémente le niveau (cappé à 2).
+        Uses ``res.retenter_apres`` (aware UTC, produced by the engine via
+        ``_declencher_report``) when the server provided a
+        ``Retry-After``. The server hint wins and the backoff level does
+        not increase. Without a server hint, apply the local exponential
+        backoff (``BACKOFFS_S`` — 1 h -> 2 h -> 4 h), then increment the
+        level (capped at 2).
 
-        ``config.retenter_apres`` est toujours écrit en ISO 8601 naïf
-        local pour rester comparable à ``Config.derniere_execution``.
+        ``config.retenter_apres`` is always written in naive local ISO
+        8601 to remain comparable with ``Config.derniere_execution``.
 
         Args:
-            res: :class:`Glaneur.engine.resultat.Resultat` d'un run
-                terminé avec ``res.reporte = True``.
+            res: :class:`Glaneur.engine.resultat.Resultat` from a run
+                that finished with ``res.reporte = True``.
         """
         cible: datetime | None = None
         if res.retenter_apres:
@@ -175,17 +173,16 @@ class Planificateur:
     # -- display ------------------------------------------------------------- #
 
     def texte_prochaine(self) -> str:
-        """Libellé localisé pour l'utilisateur : « Prochaine mise à jour dans… ».
+        """Localised label for the user: "Next update in ...".
 
-        Format adapté au reste avant l'échéance : jours + heures au-delà
-        de 24 h, heures + minutes au-delà d'une heure, minutes en
-        dessous. Renvoie un message dédié en mode manuel ou quand
-        l'échéance est déjà passée.
+        Format adapted to the remaining time before the deadline: days +
+        hours above 24 h, hours + minutes above one hour, minutes below.
+        Returns a dedicated message in manual mode or when the deadline
+        is already past.
 
         Returns:
-            Un texte prêt à afficher, traduit via
-            ``QCoreApplication.translate`` (contexte
-            ``"Planificateur"``).
+            A ready-to-display text, translated through
+            ``QCoreApplication.translate`` (context ``"Planificateur"``).
         """
         if not self.config.intervalle_heures:
             return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")

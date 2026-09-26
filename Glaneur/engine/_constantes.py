@@ -1,4 +1,4 @@
-"""Constantes du moteur partagées entre plusieurs submodules."""
+"""Engine constants shared across several submodules."""
 
 from __future__ import annotations
 

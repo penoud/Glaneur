@@ -1,23 +1,24 @@
-"""Moteur de téléchargement générique.
+"""Generic download engine.
 
-Ce paquet ne connaît rien de l'interface : il communique par callbacks
-(`journal`, `progression`) et s'interrompt proprement via un threading.Event.
-Il peut donc servir aussi bien à l'UI PySide6 qu'à un script en ligne de commande.
+This package knows nothing about the user interface: it communicates through
+callbacks (``journal``, ``progression``) and interrupts cleanly via a
+``threading.Event``. It can therefore drive the PySide6 UI as well as a
+command-line script.
 
-Il ne connaît pas non plus WordPress ni Djangoplicity. Il consomme des
-`Element` produits par un adaptateur de `Glaneur.sources`.
+It also knows nothing about WordPress or Djangoplicity. It consumes
+``Element`` values produced by an adapter from :mod:`Glaneur.sources`.
 
-Seule dépendance Qt : `QCoreApplication.translate` pour localiser les
-messages remontés au journal et à `res.message` — cantonnée à
-:mod:`Glaneur.engine.moteur`, pas de widget, pas de thread introduit,
-et `.translate()` retombe sur la source FR quand aucune QCoreApplication
-n'existe (cas de la CLI et des tests unitaires).
+The only Qt dependency is ``QCoreApplication.translate`` used to localise
+messages routed to the journal and to ``res.message`` — confined to
+:mod:`Glaneur.engine.moteur`, with no widget and no thread introduced;
+``.translate()`` falls back to the French source string when no
+``QCoreApplication`` exists (the CLI and unit-test case).
 
-Le paquet est le successeur direct du module ``Glaneur/engine.py`` : chaque
-fonction et dataclass publique a été extraite dans son propre fichier pour
-simplifier la maintenance. La surface publique est ré-exportée ici : tout
-ce que l'ancien module rendait accessible via ``from Glaneur.engine import
-…`` reste importable au même chemin.
+This package is the direct successor of the former ``Glaneur/engine.py``
+module: every public function and dataclass has been extracted into its
+own file to simplify maintenance. The public surface is re-exported here:
+anything that used to be importable via ``from Glaneur.engine import ...``
+remains importable at the same path.
 """
 
 from __future__ import annotations

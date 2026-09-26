@@ -1,4 +1,4 @@
-"""Écriture atomique du manifeste d'un run."""
+"""Atomic write of the manifest of a run."""
 
 from __future__ import annotations
 
@@ -9,15 +9,14 @@ from .chemin_manifeste import chemin_manifeste
 
 
 def ecrire_manifeste(dossier: Path, manifeste: dict) -> None:
-    """Écrit le manifeste de façon atomique (fichier temporaire + rename).
+    """Write the manifest atomically (temp file + rename).
 
-    Le manifeste est sauvegardé toutes les 25 images pendant un run :
-    l'écriture atomique évite qu'une interruption ne laisse un fichier
-    tronqué en place.
+    The manifest is saved every 25 images during a run: the atomic write
+    prevents an interruption from leaving a truncated file in place.
 
     Args:
-        dossier: Répertoire cible du run. Créé s'il n'existe pas.
-        manifeste: Dictionnaire sérialisable en JSON à persister.
+        dossier: Target directory of the run. Created if it does not exist.
+        manifeste: JSON-serialisable dictionary to persist.
     """
     chemin = chemin_manifeste(dossier)
     chemin.parent.mkdir(parents=True, exist_ok=True)

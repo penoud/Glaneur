@@ -1,14 +1,13 @@
-"""Petites intégrations système, isolées ici pour garder l'UI lisible.
+"""Small OS integrations, isolated here to keep the UI readable.
 
-Ce module rassemble les points de contact avec l'OS : détection de
-l'exécutable PyInstaller, entrée de démarrage Windows, ouverture d'un
-dossier dans l'explorateur, et pilotage du diaporama Windows via l'API
-COM ``IDesktopWallpaper`` en ``ctypes`` brut (pour ne pas dépendre de
-``pywin32`` ou ``comtypes``).
+This module gathers the touch points with the OS: detection of a
+PyInstaller executable, the Windows startup entry, opening a folder in
+the explorer, and driving the Windows slideshow through the COM API
+``IDesktopWallpaper`` in raw ``ctypes`` (so we don't depend on
+``pywin32`` or ``comtypes``).
 
-Hors Windows, les fonctions liées au diaporama et au démarrage
-automatique renvoient un « rien à faire » silencieux plutôt que de
-lever.
+Off Windows, the slideshow-related and startup-related functions return
+a silent "nothing to do" rather than raising.
 """
 
 from __future__ import annotations
@@ -46,25 +45,25 @@ _DSD_FORWARD = 0
 
 
 def est_gele() -> bool:
-    """Indique si l'application tourne depuis l'exécutable PyInstaller.
+    """Report whether the application runs from the PyInstaller executable.
 
     Returns:
-        ``True`` sous PyInstaller (attribut ``sys.frozen`` positionné),
-        ``False`` en exécution Python directe.
+        ``True`` under PyInstaller (``sys.frozen`` attribute set),
+        ``False`` when running Python directly.
     """
     return getattr(sys, "frozen", False)
 
 
 def commande_lancement() -> str:
-    """Commande à inscrire dans le registre pour relancer l'application.
+    """Command to write in the registry to relaunch the application.
 
-    En build PyInstaller, la commande pointe directement sur l'exécutable ;
-    en développement, elle enchaîne ``python`` et le script racine
-    ``app.py``. L'option ``--reduit`` demande un démarrage minimisé
-    dans la zone de notification.
+    In a PyInstaller build, the command points directly at the executable;
+    in development, it chains ``python`` and the root script ``app.py``.
+    The ``--reduit`` option requests a minimised start into the notification
+    area.
 
     Returns:
-        La ligne de commande, avec chemin d'exécutable entre guillemets.
+        The command line, with the executable path quoted.
     """
     if est_gele():
         return f'"{Path(sys.executable)}" --reduit'
@@ -73,14 +72,14 @@ def commande_lancement() -> str:
 
 
 def demarrage_automatique(actif: bool) -> bool:
-    """Ajoute ou retire l'entrée de démarrage Windows.
+    """Add or remove the Windows startup entry.
 
     Args:
-        actif: ``True`` pour ajouter, ``False`` pour retirer.
+        actif: ``True`` to add, ``False`` to remove.
 
     Returns:
-        L'état obtenu (``True`` si l'entrée est en place après appel,
-        ``False`` sinon ou hors Windows).
+        The resulting state (``True`` if the entry is in place after the
+        call, ``False`` otherwise or off Windows).
     """
     if sys.platform != "win32":
         return False
@@ -101,11 +100,11 @@ def demarrage_automatique(actif: bool) -> bool:
 
 
 def demarrage_automatique_actif() -> bool:
-    """Indique si l'entrée de démarrage Windows est présente.
+    """Report whether the Windows startup entry is present.
 
     Returns:
-        ``True`` si l'entrée existe dans ``HKCU\\...\\Run``, ``False``
-        sinon ou hors Windows.
+        ``True`` if the entry exists in ``HKCU\\...\\Run``, ``False``
+        otherwise or off Windows.
     """
     if sys.platform != "win32":
         return False
@@ -119,13 +118,13 @@ def demarrage_automatique_actif() -> bool:
 
 
 def ouvrir_dossier(chemin: Path) -> None:
-    """Ouvre le dossier dans l'explorateur de fichiers du système.
+    """Open the folder in the OS file explorer.
 
-    Crée le dossier s'il n'existe pas encore (utile juste après un
-    premier lancement où le dossier cible n'a rien reçu).
+    Creates the folder if it does not exist yet (useful just after a
+    first launch when the target folder has received nothing).
 
     Args:
-        chemin: Dossier à ouvrir.
+        chemin: Folder to open.
     """
     chemin.mkdir(parents=True, exist_ok=True)
     if sys.platform == "win32":
@@ -141,13 +140,13 @@ def ouvrir_dossier(chemin: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 def _instancier_bureau():
-    """Instancie IDesktopWallpaper. Renvoie (ptr, uninit) ou (None, False).
+    """Instantiate IDesktopWallpaper. Returns ``(ptr, uninit)`` or ``(None, False)``.
 
-    `uninit` indique si l'appelant doit rappeler CoUninitialize : c'est le cas
-    quand notre CoInitializeEx a réellement fait l'initialisation (S_OK) ou
-    a été apparié à une précédente sur le même mode (S_FALSE). Un
-    RPC_E_CHANGED_MODE signifie que le thread est déjà en MTA et qu'on ne doit
-    pas défaire ce que l'application a mis en place.
+    ``uninit`` says whether the caller must call ``CoUninitialize``: that
+    is the case when our ``CoInitializeEx`` actually performed the
+    initialisation (S_OK) or was paired with an earlier one on the same
+    mode (S_FALSE). ``RPC_E_CHANGED_MODE`` means the thread is already in
+    MTA and we must not undo what the application set up.
     """
     if sys.platform != "win32":
         return None, False
@@ -191,7 +190,7 @@ def _instancier_bureau():
 
 
 def _appel_com(ptr, index: int, proto, *args):
-    """Appelle la méthode d'indice `index` de la vtable pointée par `ptr`."""
+    """Call the method at vtable ``index`` for the interface pointed by ``ptr``."""
     import ctypes
     vtable = ctypes.cast(
         ctypes.cast(ptr, ctypes.POINTER(ctypes.c_void_p))[0],
@@ -202,7 +201,7 @@ def _appel_com(ptr, index: int, proto, *args):
 
 
 def _liberer_bureau(ptr, uninit: bool) -> None:
-    """Release une interface COM et éventuellement CoUninitialize."""
+    """``Release`` a COM interface and possibly call ``CoUninitialize``."""
     import ctypes
     if isinstance(ptr, ctypes.c_void_p) and ptr.value:
         try:
@@ -218,12 +217,12 @@ def _liberer_bureau(ptr, uninit: bool) -> None:
 
 
 def _creer_tableau_images(chemin: Path):
-    """Crée un IShellItemArray contenant les images du dossier Windows.
+    """Build an ``IShellItemArray`` containing the folder's images for Windows.
 
-    Renvoie un `c_void_p` sur l'interface, ou `None` si rien n'a pu être créé
-    (dossier vide, échec de SHParseDisplayName sur toutes les images, ou
-    SHCreateShellItemArrayFromIDLists en erreur). Un unique type de retour,
-    pour que l'appelant puisse tester `is None` sans piège.
+    Returns a ``c_void_p`` on the interface, or ``None`` if nothing could
+    be created (empty folder, ``SHParseDisplayName`` failing on every
+    image, or ``SHCreateShellItemArrayFromIDLists`` erroring). A single
+    return type, so the caller can test ``is None`` without a pitfall.
     """
     import ctypes
 
@@ -268,20 +267,20 @@ def _creer_tableau_images(chemin: Path):
 
 
 def definir_dossier_diaporama(chemin: Path) -> bool:
-    """Configure le diaporama Windows pour utiliser ``chemin`` comme source.
+    """Configure the Windows slideshow to use ``chemin`` as its source.
 
-    Fait un ``IDesktopWallpaper::SetSlideshow`` avec un
-    ``IShellItemArray`` construit à partir des images du dossier.
-    Aucune erreur COM ne fuite : elles sont converties en ``False``.
+    Calls ``IDesktopWallpaper::SetSlideshow`` with an ``IShellItemArray``
+    built from the folder's images. No COM error escapes: they are
+    converted into ``False``.
 
     Args:
-        chemin: Dossier contenant les images (récursif). Extensions
-            reconnues : ``.bmp``, ``.gif``, ``.jpeg``, ``.jpg``, ``.png``,
+        chemin: Folder containing the images (recursive). Recognised
+            extensions: ``.bmp``, ``.gif``, ``.jpeg``, ``.jpg``, ``.png``,
             ``.tif``, ``.tiff``, ``.webp``.
 
     Returns:
-        ``True`` si le diaporama a été activé, ``False`` sinon (hors
-        Windows, dossier vide, ou échec COM).
+        ``True`` if the slideshow was enabled, ``False`` otherwise (off
+        Windows, empty folder, or COM failure).
     """
     if sys.platform != "win32" or not chemin.is_dir():
         return False
@@ -305,17 +304,16 @@ def definir_dossier_diaporama(chemin: Path) -> bool:
 
 
 def fond_ecran_actuel() -> Path | None:
-    """Renvoie le chemin de l'image actuellement affichée en fond d'écran.
+    """Return the path of the image currently displayed as wallpaper.
 
-    Passe par ``IDesktopWallpaper::GetWallpaper``. Sous diaporama,
-    ``SystemParametersInfo(SPI_GETDESKWALLPAPER)`` ne renverrait que le
-    cache ``TranscodedWallpaper``, qui n'indique pas de quel original il
-    provient — l'appel COM est donc nécessaire pour connaître le
-    fichier réellement projeté.
+    Goes through ``IDesktopWallpaper::GetWallpaper``. Under a slideshow,
+    ``SystemParametersInfo(SPI_GETDESKWALLPAPER)`` would only return the
+    ``TranscodedWallpaper`` cache, which does not say which original it
+    stems from — so the COM call is required to know the file actually
+    being projected.
 
     Returns:
-        Le chemin de l'image, ou ``None`` hors Windows ou si l'appel
-        COM échoue.
+        The image path, or ``None`` off Windows or if the COM call fails.
     """
     ptr, uninit = _instancier_bureau()
     if ptr is None:
@@ -364,10 +362,10 @@ def fond_ecran_actuel() -> Path | None:
 
 
 def avancer_diaporama() -> None:
-    """Passe à l'image suivante du diaporama Windows.
+    """Advance to the next image of the Windows slideshow.
 
-    Silencieux si le diaporama n'est pas configuré, si Windows refuse
-    l'appel COM, ou hors Windows.
+    Silent when the slideshow is not configured, when Windows refuses the
+    COM call, or off Windows.
     """
     ptr, uninit = _instancier_bureau()
     if ptr is None:

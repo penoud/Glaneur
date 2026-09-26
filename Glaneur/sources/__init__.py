@@ -1,7 +1,7 @@
-"""Adaptateurs de source pour le téléchargeur.
+"""Source adapters for the downloader.
 
-Le registre est un dictionnaire importé statiquement : PyInstaller voit les
-modules à l'analyse et rien n'est chargé par découverte dynamique.
+The registry is a statically imported dictionary: PyInstaller sees every
+module at analysis time and nothing is loaded through dynamic discovery.
 """
 
 from __future__ import annotations
@@ -21,18 +21,18 @@ SOURCES: dict[str, Type[Source]] = {
 
 
 def classements_pour(type_source: str) -> frozenset[str]:
-    """Renvoie l'ensemble des classements supportés par un type de source.
+    """Return the set of sort modes supported by a source type.
 
-    Renvoyer un ``frozenset`` vide plutôt que lever pour un type inconnu :
-    l'UI grise alors tout, sans planter.
+    Return an empty ``frozenset`` rather than raising for an unknown
+    type: the UI then greys everything out without crashing.
 
     Args:
-        type_source: Clé de ``Glaneur.sources.SOURCES``.
+        type_source: Key of ``Glaneur.sources.SOURCES``.
 
     Returns:
-        Les classements supportés (par exemple
-        ``frozenset({"galerie", "date", "plat"})``), ou un frozenset vide
-        si ``type_source`` n'est pas enregistré.
+        The supported sort modes (for example
+        ``frozenset({"galerie", "date", "plat"})``), or an empty frozenset
+        if ``type_source`` is not registered.
     """
     classe = SOURCES.get(type_source)
     return classe.classements if classe else frozenset()

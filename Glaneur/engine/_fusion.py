@@ -1,32 +1,30 @@
-"""Fusion des marques UI (``supprime``/``restaure``) avec le manifeste moteur."""
+"""Merge UI marks (``supprime`` / ``restaure``) with the engine manifest."""
 
 from __future__ import annotations
 
 
 def _fusionner_marques_ui(memoire: dict, disque: dict) -> dict:
-    """Fusionne les marques UI (``supprime``/``restaure``) du disque avec le manifeste du moteur.
+    """Merge UI marks (``supprime`` / ``restaure``) from disk into the engine manifest.
 
-    Règle : pour un identifiant présent dans les deux versions, la
-    version mémoire du moteur l'emporte — c'est elle qui vient d'être
-    mise à jour par le run — sauf pour les marques ``supprime`` et
-    ``restaure``. Si le disque porte une de ces marques que la mémoire
-    n'a pas, elle provient d'un geste utilisateur postérieur au
-    chargement du manifeste par le moteur : elle est réinjectée dans le
-    résultat, et la marque opposée éventuellement présente en mémoire
-    est écartée (les deux marques sont mutuellement exclusives).
+    Rule: for an identifier present in both versions, the engine's
+    in-memory version wins — it has just been updated by the run — except
+    for the ``supprime`` and ``restaure`` marks. If disk carries one of
+    these marks and memory does not, it stems from a user action that
+    happened after the engine loaded the manifest: it is re-injected into
+    the result, and the opposite mark possibly present in memory is
+    cleared (the two marks are mutually exclusive).
 
-    Les entrées présentes uniquement sur disque (identifiants hors
-    inventaire du run courant, par exemple hors filtre de date)
-    survivent inchangées. Les entrées présentes uniquement en mémoire
-    (nouveaux téléchargements) sont écrites telles quelles.
+    Entries present only on disk (identifiers outside the current run's
+    inventory, for example excluded by the date filter) survive
+    unchanged. Entries present only in memory (new downloads) are
+    written as-is.
 
     Args:
-        memoire: Manifeste tel que le moteur l'a en mémoire.
-        disque: Manifeste tel qu'il se trouve sur disque au moment
-            de la fusion.
+        memoire: Manifest as the engine holds it in memory.
+        disque: Manifest as it stands on disk at merge time.
 
     Returns:
-        Dictionnaire fusionné, prêt à être écrit atomiquement.
+        The merged dictionary, ready to be written atomically.
     """
     fusionne = dict(memoire)
     for ident, etat_disque in disque.items():

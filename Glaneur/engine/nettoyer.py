@@ -1,4 +1,4 @@
-"""Nettoyage d'un titre HTML en nom de dossier sûr."""
+"""Turn an HTML title into a safe folder name."""
 
 from __future__ import annotations
 
@@ -8,19 +8,18 @@ import unicodedata
 
 
 def nettoyer(titre: str, defaut: str = "divers") -> str:
-    """Transforme un titre HTML en nom de dossier sûr sur tous les systèmes.
+    """Turn an HTML title into a folder name safe on every OS.
 
-    Décode les entités HTML, translittère en ASCII, remplace les espaces
-    par des tirets, borne à 80 caractères et retire les caractères refusés
-    par Windows.
+    Decodes HTML entities, transliterates to ASCII, replaces spaces with
+    dashes, caps at 80 characters and strips characters rejected by
+    Windows.
 
     Args:
-        titre: Titre source, éventuellement avec entités HTML ou accents.
-        defaut: Valeur renvoyée si le titre nettoyé est vide.
+        titre: Source title, possibly with HTML entities or accents.
+        defaut: Value returned when the cleaned title is empty.
 
     Returns:
-        Une chaîne utilisable comme nom de dossier sur Windows, macOS et
-        Linux.
+        A string usable as a folder name on Windows, macOS and Linux.
     """
     texte = html.unescape(titre or "").strip()
     texte = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode("ascii")

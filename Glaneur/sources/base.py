@@ -1,8 +1,8 @@
-"""Contrat des adaptateurs de source : Element, Source, Transport.
+"""Source adapter contract: ``Element``, ``Source``, ``Transport``.
 
-Le moteur ne connaît que ces trois classes. Une source (WordPress,
-Djangoplicity…) traduit un site en `Element` normalisés que le moteur
-sait consommer sans savoir d'où ils viennent.
+The engine only knows these three classes. A source (WordPress,
+Djangoplicity, ...) translates a site into normalised ``Element``
+values the engine can consume without knowing where they came from.
 """
 
 from __future__ import annotations
@@ -20,10 +20,10 @@ import requests
 
 UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
 
-# Fragments de message qui, dans une `ConnectionError`, traduisent une
-# coupure côté serveur (DNS blackhole, pool épuisé). Le vrai cas ESO
-# du sprint « coupe-circuit réseau » remonte un `NameResolutionError`
-# sous ce type d'exception.
+# Message fragments that, in a `ConnectionError`, mean a server-side cut
+# (DNS blackhole, exhausted pool). The real ESO case from the "network
+# circuit-breaker" sprint reports a `NameResolutionError` under this
+# exception type.
 _MOTS_COUPURE = (
     "NameResolutionError",
     "Failed to resolve",
@@ -31,41 +31,39 @@ _MOTS_COUPURE = (
     "Max retries exceeded",
 )
 
-#: Codes HTTP « amont » qui traduisent une coupure : le serveur nous
-#: dit explicitement qu'il ne peut/veut plus répondre (429) ou qu'un
-#: intermédiaire est tombé (502/503/504).
+#: Upstream HTTP codes meaning a cut: the server explicitly says it
+#: cannot/will not respond (429) or an intermediary is down (502/503/504).
 _STATUTS_COUPURE = frozenset({429, 502, 503, 504})
 
-#: Codes HTTP « client » définitifs : rien à retenter sans intervention.
+#: Definitive client HTTP codes: nothing to retry without intervention.
 _STATUTS_DEFINITIFS = frozenset({400, 401, 403, 404, 405, 410})
 
 
 @dataclass(frozen=True)
 class Classification:
-    """Résultat de :func:`classer_erreur` — pure valeur, sans I/O.
+    """Result of :func:`classer_erreur` — pure value, no I/O.
 
-    Champs documentés inline par commentaires ``#:`` (même raison que
-    :class:`Element` : éviter le doublon d'index Sphinx entre autodoc
-    et Napoleon).
+    Fields documented inline with ``#:`` comments (same reason as
+    :class:`Element`: avoid Sphinx index duplication between autodoc
+    and Napoleon).
     """
 
-    #: Catégorie de l'erreur. ``"transitoire"`` = à retenter tout de
-    #: suite, ``"coupure"`` = le serveur nous a fermés (le moteur doit
-    #: reporter le run), ``"definitif"`` = rien à retenter.
+    #: Error category. ``"transitoire"`` = retry immediately,
+    #: ``"coupure"`` = the server cut us off (the engine must defer the
+    #: run), ``"definitif"`` = nothing to retry.
     categorie: Literal["transitoire", "coupure", "definitif"]
-    #: Nombre de secondes à attendre avant de retenter, extrait d'un
-    #: en-tête ``Retry-After`` (entier ou HTTP-date). ``None`` si
-    #: l'information n'est pas fournie — le moteur applique alors son
-    #: propre backoff.
+    #: Number of seconds to wait before retrying, extracted from a
+    #: ``Retry-After`` header (integer or HTTP-date). ``None`` if the
+    #: information is missing — the engine falls back on its own backoff.
     retry_after: float | None = None
 
 
 def _retry_after(reponse: requests.Response | None) -> float | None:
-    """Extrait ``Retry-After`` d'une réponse, en secondes.
+    """Extract ``Retry-After`` from a response, in seconds.
 
-    Accepte les deux formes autorisées par la RFC 7231 : nombre
-    entier de secondes, ou HTTP-date. Renvoie ``None`` si l'en-tête
-    manque, est vide ou non parsable.
+    Accepts both forms allowed by RFC 7231: integer number of seconds,
+    or HTTP-date. Returns ``None`` if the header is missing, empty or
+    unparsable.
     """
     if reponse is None:
         return None
@@ -93,21 +91,21 @@ def classer_erreur(
     exc: BaseException | None,
     reponse: requests.Response | None = None,
 ) -> Classification:
-    """Classe une exception réseau et/ou une réponse HTTP.
+    """Classify a network exception and/or an HTTP response.
 
-    L'appelant fournit ce qu'il a : une exception seule (pas de réponse
-    parce que la connexion n'a jamais abouti), une réponse seule
-    (statut HTTP à interpréter), ou les deux.
+    The caller passes what it has: an exception alone (no response
+    because the connection never landed), a response alone (HTTP status
+    to interpret), or both.
 
     Args:
-        exc: Exception levée par ``requests``. ``None`` autorisé si on
-            n'a qu'une réponse à classer.
-        reponse: Réponse HTTP dont on lit ``status_code`` et
-            ``headers['Retry-After']``. ``None`` autorisé.
+        exc: Exception raised by ``requests``. ``None`` is allowed when
+            only a response needs classifying.
+        reponse: HTTP response from which ``status_code`` and
+            ``headers['Retry-After']`` are read. ``None`` is allowed.
 
     Returns:
-        Une :class:`Classification` immuable. La fonction ne fait
-        aucun I/O — elle est testable sans réseau.
+        An immutable :class:`Classification`. The function performs no
+        I/O — it is testable without a network.
     """
     retry_after = _retry_after(reponse)
 
@@ -118,8 +116,8 @@ def classer_erreur(
         if code in _STATUTS_DEFINITIFS:
             return Classification("definitif", retry_after)
         if 500 <= code < 600:
-            # 5xx non listés ci-dessus : traités comme transitoires
-            # (un 500 isolé n'est pas une coupure).
+            # 5xx not listed above: treated as transient
+            # (an isolated 500 is not a cut).
             return Classification("transitoire", retry_after)
 
     if exc is not None:
@@ -142,20 +140,21 @@ def classer_erreur(
 
 
 class Interrompu(Exception):
-    """Levée quand l'utilisateur demande l'arrêt coopératif.
+    """Raised when the user requests a cooperative stop.
 
-    Portée par le transport et propagée jusqu'au moteur, qui la traite
-    comme une fin normale (voir :attr:`Glaneur.engine.resultat.Resultat.interrompu`).
+    Carried by the transport and propagated up to the engine, which
+    treats it as a normal end (see
+    :attr:`Glaneur.engine.resultat.Resultat.interrompu`).
     """
 
 
 @dataclass(frozen=True)
 class Element:
-    """Une image à synchroniser, telle que le moteur la comprend.
+    """An image to synchronise, as the engine understands it.
 
-    Champs documentés inline par commentaires ``#:`` — voir
-    :class:`Glaneur.engine.options.Options` pour la raison (éviter le doublon
-    d'index entre autodoc et Napoleon).
+    Fields documented inline with ``#:`` comments — see
+    :class:`Glaneur.engine.options.Options` for the reason (avoid the
+    index duplication between autodoc and Napoleon).
     """
 
     #: Unique identifier within the source, key of the manifest. String,
@@ -183,25 +182,25 @@ class Element:
     #: for the ``galerie`` sort mode.
     groupe: str | None = None
     #: Free-form metadata passed through to the manifest (credit,
-    #: checksum…). The engine does not interpret them.
+    #: checksum, ...). The engine does not interpret them.
     extra: dict = field(default_factory=dict)
 
 
 class Transport:
-    """Plomberie HTTP partagée : une session, un délai, un arrêt.
+    """Shared HTTP plumbing: one session, one delay, one stop.
 
-    Une source ne crée jamais sa propre session : elle reçoit ce transport
-    du moteur, ce qui garantit qu'un plancher de délai et l'arrêt coopératif
-    s'appliquent à toutes les sources sans qu'un adaptateur puisse l'oublier.
+    A source never creates its own session: it receives this transport
+    from the engine, which guarantees that a delay floor and cooperative
+    stop apply to every source without an adapter being able to forget.
     """
 
     def __init__(self, delai: float, arret: threading.Event | None = None) -> None:
-        """Construit le transport avec sa session et son plancher de délai.
+        """Build the transport with its session and delay floor.
 
         Args:
-            delai: Plancher de pause entre deux requêtes, en secondes.
-            arret: Event partagé qui coupe les requêtes en cours. Créé à
-                la demande si non fourni.
+            delai: Floor for the pause between two requests, in seconds.
+            arret: Shared event that cuts pending requests. Created on
+                demand if not provided.
         """
         self.delai = delai
         self.arret = arret or threading.Event()
@@ -209,23 +208,23 @@ class Transport:
         self.session.headers["User-Agent"] = UA
 
     def verifier_arret(self) -> None:
-        """Lève :class:`Interrompu` si ``self.arret`` a été positionné.
+        """Raise :class:`Interrompu` if ``self.arret`` was set.
 
         Raises:
-            Interrompu: Si l'arrêt coopératif est demandé.
+            Interrompu: If a cooperative stop was requested.
         """
         if self.arret.is_set():
             raise Interrompu()
 
     def pause(self, secondes: float | None = None) -> None:
-        """Attente fractionnée réagissant vite à une demande d'arrêt.
+        """Fragmented wait that reacts quickly to a stop request.
 
         Args:
-            secondes: Durée à attendre. Utilise ``self.delai`` si ``None``.
+            secondes: Duration to wait. Uses ``self.delai`` when ``None``.
 
         Raises:
-            Interrompu: Si l'arrêt coopératif est demandé pendant
-                l'attente.
+            Interrompu: If a cooperative stop is requested during the
+                wait.
         """
         fin = time.monotonic() + (self.delai if secondes is None else secondes)
         while time.monotonic() < fin:
@@ -239,27 +238,27 @@ class Transport:
         essais: int = 3,
         fin_si: frozenset[int] = frozenset(),
     ) -> tuple[object | None, Mapping]:
-        """GET JSON avec rejeux.
+        """GET JSON with retries.
 
-        Un code de ``fin_si`` est traité comme une fin normale : le
-        résultat est ``(None, en-têtes)`` sans lever d'exception.
-        WordPress passe ``fin_si={400}`` pour dire « page au-delà de la
-        dernière ».
+        A code listed in ``fin_si`` is treated as a normal end: the
+        result is ``(None, headers)`` without raising. WordPress passes
+        ``fin_si={400}`` to say "page beyond the last one".
 
         Args:
-            url: URL absolue à requêter.
-            params: Paramètres de la requête, passés à ``requests``.
-            essais: Nombre maximum de tentatives (backoff linéaire :
-                2s, 4s, 6s…).
-            fin_si: Codes HTTP à interpréter comme fin normale.
+            url: Absolute URL to query.
+            params: Query parameters passed to ``requests``.
+            essais: Maximum number of attempts (linear backoff:
+                2s, 4s, 6s, ...).
+            fin_si: HTTP codes interpreted as a normal end.
 
         Returns:
-            Tuple ``(données, en-têtes)``. ``données`` vaut ``None``
-            quand le code de réponse est dans ``fin_si``.
+            Tuple ``(data, headers)``. ``data`` is ``None`` when the
+            response code belongs to ``fin_si``.
 
         Raises:
-            RuntimeError: Après épuisement des ``essais`` sans succès.
-            Interrompu: Si l'arrêt coopératif est demandé.
+            RuntimeError: After the ``essais`` attempts are exhausted
+                without success.
+            Interrompu: If a cooperative stop is requested.
         """
         derniere: Exception | None = None
         for tentative in range(essais):
@@ -277,12 +276,12 @@ class Transport:
 
 
 class Source(ABC):
-    """Adaptateur d'un type de site vers des `Element`.
+    """Adapter from a site type to ``Element`` values.
 
-    Un adaptateur reçoit sa base (URL du site), le transport partagé, ses
-    réglages (dictionnaire libre — l'adaptateur y trouve par exemple le
-    format d'image choisi) et un callback de progression pour ses phases
-    d'inventaire longues.
+    An adapter receives its base (site URL), the shared transport, its
+    settings (free-form dictionary — the adapter finds for example the
+    chosen image format there) and a progression callback for its long
+    inventory phases.
     """
 
     type: ClassVar[str]
@@ -296,17 +295,17 @@ class Source(ABC):
         journal: Callable[[str], None] | None = None,
         progression: Callable[[int, int, str], None] | None = None,
     ) -> None:
-        """Instancie l'adaptateur avec son transport partagé.
+        """Instantiate the adapter with its shared transport.
 
         Args:
-            base: URL du site source, sans slash final.
-            transport: :class:`Transport` fourni par le moteur.
-            reglages: Dictionnaire libre (par exemple
-                ``{"format_image": "Large"}`` pour Djangoplicity).
-            journal: Callback texte pour messages destinés à
-                l'utilisateur. ``None`` = muet.
-            progression: Callback ``(fait, total, etiquette)`` pour les
-                phases longues d'inventaire. ``None`` = muet.
+            base: Source site URL, without trailing slash.
+            transport: :class:`Transport` provided by the engine.
+            reglages: Free-form dictionary (for example
+                ``{"format_image": "Large"}`` for Djangoplicity).
+            journal: Text callback for user-facing messages. ``None`` =
+                mute.
+            progression: ``(done, total, label)`` callback for long
+                inventory phases. ``None`` = mute.
         """
         self.base = base.rstrip("/")
         self.transport = transport
@@ -318,48 +317,47 @@ class Source(ABC):
     def inventaire(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
-        """Parcourt le catalogue dans l'ordre chronologique si possible.
+        """Iterate the catalogue in chronological order when possible.
 
         Args:
-            depuis: Borne basse au format propre à la source
-                (voir :meth:`convertir_depuis`). ``None`` = pas de borne.
-            jusqua: Borne haute. ``None`` = pas de borne.
+            depuis: Lower bound in the source's own format
+                (see :meth:`convertir_depuis`). ``None`` = no lower bound.
+            jusqua: Upper bound. ``None`` = no upper bound.
 
         Yields:
-            Les :class:`Element` inventoriés, dans l'ordre chronologique
-            quand la source le permet.
+            The :class:`Element` values, in chronological order when the
+            source allows it.
         """
 
     def resoudre_groupes(
         self, cles: set[str], connus: dict[str, str] | None = None,
     ) -> dict[str, str]:
-        """Résout les identifiants de groupe en noms de dossier.
+        """Resolve group identifiers into folder names.
 
-        Implémentation par défaut : renvoie ``connus`` tel quel — aucun
-        regroupement supplémentaire. Les sources qui exposent un
-        classement ``galerie`` (voir :attr:`classements`) surchargent
-        pour requêter les titres manquants.
+        Default implementation: return ``connus`` as-is — no additional
+        grouping. Sources that expose a ``galerie`` sort mode (see
+        :attr:`classements`) override this to query the missing titles.
 
         Args:
-            cles: Identifiants de groupe à résoudre.
-            connus: Table déjà résolue (par exemple par le cache).
+            cles: Group identifiers to resolve.
+            connus: Already-resolved table (from the cache, typically).
 
         Returns:
-            Table ``{clé -> titre nettoyé}``, prête à être passée à
+            A ``{key -> cleaned title}`` table, ready to be passed to
             :meth:`Glaneur.engine.moteur.Moteur.dossier_pour`.
         """
         return dict(connus or {})
 
     def convertir_depuis(self, iso: str | None) -> str | None:
-        """Traduit une date ISO du cache vers le format attendu par la source.
+        """Translate an ISO date from the cache into the source's format.
 
-        Par défaut, on laisse tel quel : les sources qui, comme
-        Djangoplicity, veulent ``AAAAMMJJhhmmss`` la surchargent.
+        Default: leave it as-is. Sources that want, like Djangoplicity,
+        ``YYYYMMDDhhmmss`` override this.
 
         Args:
-            iso: Date au format ISO 8601, ou ``None``.
+            iso: Date in ISO 8601 format, or ``None``.
 
         Returns:
-            La date convertie ou ``None``.
+            The converted date, or ``None``.
         """
         return iso

@@ -1,13 +1,12 @@
-"""Installation du traducteur Qt au démarrage.
+"""Install the Qt translator at startup.
 
-Politique : la langue source dans le code est le français. Les traductions
-sont compilées depuis `translations/glaneur_<code>.ts` vers
-`.qm` par `pyside6-lrelease`. Le choix se fait au lancement, avant la
-construction de la fenêtre — pas de changement à chaud (voir la décision
-d'i18n dans le README §4).
+Policy: the source language in the code is French. Translations are
+compiled from ``translations/glaneur_<code>.ts`` to ``.qm`` by
+``pyside6-lrelease``. The choice is made at launch, before the window is
+built — no hot swap (see the i18n decision in the README §4).
 
-- Aucune langue configurée -> locale système (`en_US` -> `en`, etc.).
-- Langue = "fr" ou traduction absente -> les chaînes affichent la source FR.
+- No configured language -> system locale (``en_US`` -> ``en``, etc.).
+- Language = "fr" or translation missing -> UI shows the French source.
 """
 
 from __future__ import annotations
@@ -30,16 +29,16 @@ _translator: QTranslator | None = None
 
 
 def dossier_traductions() -> Path:
-    """Localise le dossier ``translations/`` selon le mode d'exécution.
+    """Locate the ``translations/`` folder depending on the run mode.
 
-    Ordre important : dans un bundle PyInstaller, ``__file__`` pointe
-    dans le PYZ zip (``.parent.parent`` ne mène nulle part d'utile),
-    donc ``sys._MEIPASS`` doit passer en premier. En dev, ``_MEIPASS``
-    n'existe pas, on retombe sur la racine du dépôt à côté du paquet.
+    Order matters: inside a PyInstaller bundle ``__file__`` points into
+    the PYZ zip (``.parent.parent`` leads nowhere useful), so
+    ``sys._MEIPASS`` must be tried first. In dev, ``_MEIPASS`` does not
+    exist and we fall back to the repository root next to the package.
 
     Returns:
-        Le premier chemin existant, ou le chemin par défaut (racine du
-        dépôt) si aucun candidat n'existe.
+        The first existing path, or the default path (repository root)
+        if no candidate exists.
     """
     candidats = [
         Path(getattr(sys, "_MEIPASS", "")) / "translations" if hasattr(sys, "_MEIPASS") else None,
@@ -52,16 +51,16 @@ def dossier_traductions() -> Path:
 
 
 def resoudre_langue(langue_configuree: str) -> str:
-    """Renvoie le code de langue effectif à appliquer.
+    """Return the effective language code to apply.
 
     Args:
-        langue_configuree: Code stocké dans la configuration (``fr``,
-            ``en``, ``""``…).
+        langue_configuree: Code stored in the configuration (``fr``,
+            ``en``, ``""``, ...).
 
     Returns:
-        Le code configuré s'il n'est pas vide, sinon le code court de
-        la locale système (par exemple ``fr_CH`` → ``fr``), avec ``fr``
-        comme dernier repli.
+        The configured code if not empty, otherwise the short code of
+        the system locale (for example ``fr_CH`` -> ``fr``), with
+        ``fr`` as a last resort.
     """
     if langue_configuree:
         return langue_configuree
@@ -69,27 +68,27 @@ def resoudre_langue(langue_configuree: str) -> str:
 
 
 def installer_traducteur(app, langue_configuree: str = "") -> str:
-    """Charge le ``.qm`` correspondant et l'installe sur ``app``.
+    """Load the matching ``.qm`` and install it on ``app``.
 
-    L'installation est faite avant la construction de la fenêtre
-    principale : il n'y a pas de changement de langue à chaud
-    (contrainte volontaire, voir la décision d'i18n dans le README §4).
+    Installation happens before the main window is built: there is no
+    hot language change (deliberate constraint, see the i18n decision
+    in the README §4).
 
     Args:
-        app: ``QCoreApplication`` (typiquement une ``QApplication``) à
-            équiper d'un traducteur.
-        langue_configuree: Code désiré, ``""`` pour laisser
-            :func:`resoudre_langue` décider.
+        app: ``QCoreApplication`` (typically a ``QApplication``) to
+            equip with a translator.
+        langue_configuree: Desired code, ``""`` to let
+            :func:`resoudre_langue` decide.
 
     Returns:
-        Le code de langue effectivement actif après appel. Peut
-        différer de la demande si la traduction est absente : on
-        retombe alors sur la source française.
+        The language code actually active after the call. May differ
+        from the request when the translation is missing: we fall back
+        on the French source in that case.
     """
     global _translator
     langue = resoudre_langue(langue_configuree)
     dossier = dossier_traductions()
-    logger.info("i18n : langue=%s dossier=%s existe=%s",
+    logger.info("i18n: language=%s folder=%s exists=%s",
                 langue, dossier, dossier.is_dir())
     if langue == "fr":
         return "fr"
@@ -97,9 +96,9 @@ def installer_traducteur(app, langue_configuree: str = "") -> str:
     fichier = f"glaneur_{langue}"
     if _translator.load(fichier, str(dossier)):
         app.installTranslator(_translator)
-        logger.info("i18n : traduction %s chargée depuis %s", fichier, dossier)
+        logger.info("i18n: translation %s loaded from %s", fichier, dossier)
         return langue
-    logger.warning("i18n : traduction %s introuvable dans %s — retombe sur FR",
+    logger.warning("i18n: translation %s not found in %s — falling back to FR",
                    fichier, dossier)
     _translator = None
     return "fr"

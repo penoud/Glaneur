@@ -1,14 +1,14 @@
-"""Services de mise à jour depuis les GitHub Releases.
+"""Update services against GitHub Releases.
 
-Ce sous-paquet compare la version en cours à la dernière release stable
-publiée par le dépôt (voir :data:`Glaneur.config.GITHUB_OWNER` et
-:data:`Glaneur.config.GITHUB_REPOSITORY`), télécharge l'installateur
-Windows et vérifie son SHA-256 avant de proposer le remplacement à
-l'utilisateur.
+This sub-package compares the running version with the latest stable
+release published by the repository (see :data:`Glaneur.config.GITHUB_OWNER`
+and :data:`Glaneur.config.GITHUB_REPOSITORY`), downloads the Windows
+installer and verifies its SHA-256 before offering the replacement to
+the user.
 
-L'orchestration passe par deux ``QThread`` documentés dans
-:mod:`Glaneur.updater.qt_threads` pour que l'UI reste réactive
-pendant le check et le téléchargement.
+Orchestration goes through two ``QThread`` classes documented in
+:mod:`Glaneur.updater.qt_threads` so that the UI stays responsive
+during the check and the download.
 """
 
 from .github_release import GitHubReleaseProvider

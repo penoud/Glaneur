@@ -1,4 +1,4 @@
-"""Écriture atomique du cache API d'un run."""
+"""Atomic write of the API cache of a run."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from .chemin_cache import chemin_cache
 
 
 def ecrire_cache(dossier: Path, cache: dict) -> None:
-    """Écrit le cache de façon atomique (fichier temporaire + rename).
+    """Write the cache atomically (temp file + rename).
 
     Args:
-        dossier: Répertoire cible du run. Créé s'il n'existe pas.
-        cache: Dictionnaire sérialisable en JSON à persister.
+        dossier: Target directory of the run. Created if it does not exist.
+        cache: JSON-serialisable dictionary to persist.
     """
     chemin = chemin_cache(dossier)
     chemin.parent.mkdir(parents=True, exist_ok=True)

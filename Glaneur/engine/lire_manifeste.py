@@ -1,4 +1,4 @@
-"""Lecture tolérante du manifeste d'un run."""
+"""Tolerant read of the manifest of a run."""
 
 from __future__ import annotations
 
@@ -9,17 +9,17 @@ from .chemin_manifeste import chemin_manifeste
 
 
 def lire_manifeste(dossier: Path) -> dict:
-    """Charge le manifeste JSON s'il existe, dictionnaire vide sinon.
+    """Load the JSON manifest if present, an empty dict otherwise.
 
-    Un manifeste corrompu ou illisible est traité comme absent : le
-    prochain run repartira d'un état vide plutôt que de planter.
+    A corrupted or unreadable manifest is treated as missing: the next run
+    starts from an empty state rather than crashing.
 
     Args:
-        dossier: Répertoire cible du run.
+        dossier: Target directory of the run.
 
     Returns:
-        Le contenu désérialisé, ou ``{}`` si le fichier est absent ou
-        illisible.
+        The deserialised content, or ``{}`` if the file is missing or
+        unreadable.
     """
     chemin = chemin_manifeste(dossier)
     if not chemin.exists():

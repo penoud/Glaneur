@@ -1,4 +1,4 @@
-"""Restauration d'entrées marquées ``supprime``."""
+"""Restore entries marked ``supprime``."""
 
 from __future__ import annotations
 
@@ -11,18 +11,18 @@ from .lire_manifeste import lire_manifeste
 
 
 def restaurer(dossier: Path, ids: Iterable) -> int:
-    """Lève la marque de suppression : ces images repasseront dans la file.
+    """Clear the delete mark so these images re-enter the queue.
 
-    La marque ``restaure`` reste posée jusqu'au prochain téléchargement
-    réussi, pour qu'un échec réseau ne reclasse pas immédiatement l'image
-    en « supprimée ».
+    The ``restaure`` mark stays in place until the next successful
+    download, so that a network failure does not immediately reclassify
+    the image as "deleted".
 
     Args:
-        dossier: Répertoire cible du run.
-        ids: Identifiants (au sens de la source) à restaurer.
+        dossier: Target directory of the run.
+        ids: Source-side identifiers to restore.
 
     Returns:
-        Le nombre d'entrées effectivement rétablies.
+        The number of entries actually restored.
     """
     with _MANIFESTE_LOCK:
         manifeste = lire_manifeste(dossier)

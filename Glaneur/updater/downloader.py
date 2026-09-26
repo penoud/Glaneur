@@ -1,4 +1,4 @@
-"""Téléchargement et vérification d'artefacts de release."""
+"""Release-artifact download and verification."""
 
 from __future__ import annotations
 
@@ -17,28 +17,27 @@ logger = logging.getLogger(__name__)
 
 
 class DownloadError(RuntimeError):
-    """Levée quand le téléchargement d'un asset échoue ou renvoie un fichier vide."""
+    """Raised when an asset download fails or returns an empty file."""
 
 
 def download(asset: ReleaseAsset, directory: Path, session: requests.Session | None = None) -> Path:
-    """Télécharge ``asset`` vers ``directory/asset.name`` en streaming.
+    """Stream ``asset`` to ``directory/asset.name``.
 
-    Le fichier partiellement téléchargé est supprimé en cas d'échec
-    (réseau ou disque), pour ne jamais laisser un artefact tronqué qui
-    serait ensuite pris pour un fichier valide.
+    The partially-downloaded file is deleted on failure (network or
+    disk), so we never leave a truncated artifact that would later be
+    mistaken for a valid file.
 
     Args:
-        asset: Asset à récupérer.
-        directory: Répertoire de destination, créé si nécessaire.
-        session: Session ``requests`` à réutiliser (une nouvelle est
-            créée si ``None``).
+        asset: Asset to fetch.
+        directory: Destination directory, created if needed.
+        session: ``requests`` session to reuse (a new one is created
+            if ``None``).
 
     Returns:
-        Le chemin du fichier téléchargé.
+        The path of the downloaded file.
 
     Raises:
-        DownloadError: En cas d'erreur réseau, d'erreur disque ou de
-            réponse vide.
+        DownloadError: On network error, disk error, or empty response.
     """
     directory.mkdir(parents=True, exist_ok=True)
     destination = directory / asset.name
@@ -65,20 +64,20 @@ def download(asset: ReleaseAsset, directory: Path, session: requests.Session | N
 
 
 def verify_sha256(path: Path, checksum_text: str) -> bool:
-    """Vérifie que le SHA-256 de ``path`` correspond à ``checksum_text``.
+    """Verify that the SHA-256 of ``path`` matches ``checksum_text``.
 
-    Un ``.sha256`` GitHub contient typiquement ``<hex>  <nom_de_fichier>``
-    ; l'extraction regex accepte n'importe quel format tant qu'un digest
-    hex de 64 caractères y figure.
+    A GitHub ``.sha256`` typically contains ``<hex>  <filename>``; the
+    regex extraction accepts any format as long as a 64-character hex
+    digest is present.
 
     Args:
-        path: Fichier à vérifier.
-        checksum_text: Contenu du fichier ``.sha256`` (ou n'importe
-            quel texte contenant le digest hex).
+        path: File to verify.
+        checksum_text: Content of the ``.sha256`` file (or any text
+            containing the hex digest).
 
     Returns:
-        ``True`` si le digest correspond, ``False`` sinon (fichier
-        absent, digest introuvable, ou mismatch).
+        ``True`` if the digest matches, ``False`` otherwise (missing
+        file, digest not found, or mismatch).
     """
     match = re.search(r"\b([0-9a-fA-F]{64})\b", checksum_text)
     if not match or not path.is_file():
@@ -97,13 +96,13 @@ def verify_sha256(path: Path, checksum_text: str) -> bool:
 
 
 def temporary_directory() -> Path:
-    """Crée un dossier temporaire dédié au téléchargement d'une mise à jour.
+    """Create a temporary directory dedicated to an update download.
 
-    Le préfixe ``Glaneur-update-`` facilite le nettoyage manuel a
-    posteriori. Le dossier n'est pas supprimé automatiquement : l'UI
-    le fait après l'installation.
+    The ``Glaneur-update-`` prefix makes manual after-the-fact cleanup
+    easier. The directory is not deleted automatically: the UI removes
+    it after installation.
 
     Returns:
-        Le chemin absolu du dossier créé.
+        The absolute path of the created directory.
     """
     return Path(tempfile.mkdtemp(prefix="Glaneur-update-"))

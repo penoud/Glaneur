@@ -1,4 +1,4 @@
-"""Suppression disque + marque manifeste d'une image téléchargée."""
+"""Disk delete + manifest mark of a downloaded image."""
 
 from __future__ import annotations
 
@@ -12,25 +12,25 @@ from .lire_manifeste import lire_manifeste
 
 
 def supprimer_image(dossier: Path, fichier: Path) -> bool:
-    """Efface ``fichier`` du disque et pose la marque ``supprime`` dans le manifeste.
+    """Delete ``fichier`` from disk and set the ``supprime`` mark in the manifest.
 
-    Sans cette marque, la mise à jour suivante verrait l'image manquante
-    et la retéléchargerait : la suppression disque seule ne suffit pas.
+    Without this mark, the next update would see the image missing and
+    re-download it: deleting on disk alone is not enough.
 
-    Refuse si ``fichier`` n'est pas à l'intérieur de ``dossier`` — une
-    fonction qui efface ne fait pas confiance à son appelant. La
-    comparaison passe par ``realpath`` + ``normcase`` puis ``commonpath``,
-    jamais par ``startswith`` qui matcherait un dossier voisin de préfixe
-    identique.
+    Refuses if ``fichier`` is not inside ``dossier`` — a function that
+    deletes must not trust its caller. The comparison goes through
+    ``realpath`` + ``normcase`` and then ``commonpath``, never through
+    ``startswith`` which would match a sibling folder with an identical
+    prefix.
 
     Args:
-        dossier: Répertoire cible du run (racine du run).
-        fichier: Chemin absolu du fichier à effacer.
+        dossier: Target directory of the run (run root).
+        fichier: Absolute path of the file to delete.
 
     Returns:
-        ``True`` si le fichier a été effacé (ou déjà absent) et le
-        manifeste éventuellement marqué, ``False`` si le fichier est hors
-        de ``dossier`` ou si l'unlink a échoué.
+        ``True`` if the file was deleted (or already missing) and the
+        manifest possibly marked, ``False`` if the file is outside
+        ``dossier`` or if the unlink failed.
     """
     try:
         base = os.path.normcase(os.path.realpath(str(dossier)))

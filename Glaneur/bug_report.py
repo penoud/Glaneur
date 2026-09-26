@@ -1,9 +1,9 @@
-"""Composition d'une URL GitHub pour ouvrir une issue préremplie.
+"""Build a GitHub URL that opens a pre-filled issue.
 
-L'application n'embarque pas de token GitHub (cf. sprint §38) : on ne peut
-donc pas POSTer l'issue en silence. On construit une URL
-`https://github.com/OWNER/REPO/issues/new?title=…&body=…` que l'utilisateur
-soumet lui-même depuis son navigateur (déjà authentifié).
+The application does not embed a GitHub token (see sprint §38): we cannot
+POST the issue silently. Instead we build a
+``https://github.com/OWNER/REPO/issues/new?title=...&body=...`` URL that
+the user submits from their already-authenticated browser.
 """
 
 from __future__ import annotations
@@ -47,9 +47,9 @@ _PATH_SUBSTITUTIONS = [
 
 
 def _compact_line(line: str, drop_date: bool = False) -> str:
-    """Compacte une ligne de log : millisecondes, année du timestamp,
-    préfixe logger, chemins Windows. Si `drop_date`, retire aussi le
-    MM-DD (redondant quand toutes les lignes datent du même jour)."""
+    """Compact a log line: milliseconds, timestamp year, logger prefix,
+    Windows paths. If ``drop_date`` is true, also strip the ``MM-DD``
+    (redundant when every line shares the same day)."""
     line = _TS_MS_RE.sub(r"\1", line)
     line = _TS_YEAR_RE.sub(r"\1", line)
     if drop_date:
@@ -61,8 +61,7 @@ def _compact_line(line: str, drop_date: bool = False) -> str:
 
 
 def _all_same_date(lignes: list[str]) -> str | None:
-    """Renvoie la date commune YYYY-MM-DD si toutes les lignes datées la
-    partagent, sinon None."""
+    """Return the common YYYY-MM-DD if every dated line shares it, else ``None``."""
     dates = set()
     for l in lignes:
         m = re.match(r"(\d{4}-\d{2}-\d{2}) \d{2}:\d{2}:\d{2}", l)
@@ -73,8 +72,8 @@ def _all_same_date(lignes: list[str]) -> str | None:
 # GitHub returns a 500 "Whoops, something went wrong!" when the prefill
 # URL exceeds ~7000 bytes (the threshold varies depending on encoded
 # characters). We cap the *encoded* URL length, not the raw body size:
-# Windows paths (`\` → `%5C`) and French accents inflate the encoding
-# 2-3×. Above the cap we warn the user rather than silently truncating.
+# Windows paths (`\` -> `%5C`) and French accents inflate the encoding
+# 2-3x. Above the cap we warn the user rather than silently truncating.
 MAX_URL_LENGTH = 6000
 
 
@@ -83,23 +82,23 @@ def collect_context(
     chemin_log: Path | None = None,
     nb_lignes: int = 50,
 ) -> str:
-    """Assemble un bloc Markdown à joindre à un rapport de bug.
+    """Assemble a Markdown block to attach to a bug report.
 
-    Contient version, plateforme, version Python, puis (optionnellement)
-    les dernières lignes du log. Le log est compacté (préfixe logger,
-    chemins Windows, timestamps) pour laisser de la place au texte
-    utilisateur avant que l'URL GitHub ne dépasse ``MAX_URL_LENGTH``.
-    Les en-têtes Markdown passent par ``QCoreApplication.translate`` :
-    ils apparaissent dans l'issue GitHub dans la langue de l'application.
+    Contains the version, platform, Python version and (optionally) the
+    latest log lines. The log is compacted (logger prefix, Windows paths,
+    timestamps) to leave room for user text before the GitHub URL
+    exceeds ``MAX_URL_LENGTH``. Markdown headings go through
+    ``QCoreApplication.translate``: they appear in the GitHub issue in
+    the application language.
 
     Args:
-        version: Version de l'application (typiquement ``__version__``).
-        chemin_log: Chemin du fichier de log à extraire. ``None`` ou
-            fichier absent : section log omise.
-        nb_lignes: Nombre maximum de lignes de log à joindre.
+        version: Application version (typically ``__version__``).
+        chemin_log: Path of the log file to extract from. ``None`` or a
+            missing file: the log section is omitted.
+        nb_lignes: Maximum number of log lines to attach.
 
     Returns:
-        Le bloc Markdown, prêt à concaténer au body de l'issue.
+        The Markdown block, ready to append to the issue body.
     """
     lignes = [
         f"### {QCoreApplication.translate('BugReport', 'Contexte')}",
@@ -119,10 +118,11 @@ def collect_context(
 
 
 def _tail_log(chemin: Path, nb_lignes: int) -> tuple[str, str]:
-    """Renvoie (log compacté, note à afficher dans l'en-tête).
+    """Return ``(compacted log, note to display in the header)``.
 
-    La note signale les substitutions faites (date commune extraite en tête,
-    par ex.) pour que le lecteur du bug report comprenne le formatage."""
+    The note flags the substitutions performed (common date pulled to
+    the header, for instance) so the reader of the bug report understands
+    the formatting."""
     try:
         with chemin.open("r", encoding="utf-8", errors="replace") as f:
             lignes_brutes = f.readlines()
@@ -143,33 +143,33 @@ def build_issue_url(
     title: str,
     body: str,
 ) -> str:
-    """Construit l'URL GitHub d'ouverture d'issue préremplie.
+    """Build the GitHub URL that opens a pre-filled issue.
 
-    Ne tronque pas : le caller doit vérifier :func:`is_url_too_long`
-    et avertir l'utilisateur avant d'ouvrir l'URL — sinon GitHub renvoie
-    « Whoops, something went wrong! » sur les rapports trop longs.
+    Does not truncate: the caller must check :func:`is_url_too_long`
+    and warn the user before opening the URL — otherwise GitHub returns
+    "Whoops, something went wrong!" on reports that exceed the cap.
 
     Args:
-        owner: Propriétaire du dépôt GitHub.
-        repository: Nom du dépôt.
-        title: Titre suggéré pour l'issue.
-        body: Contenu Markdown du corps de l'issue.
+        owner: GitHub repository owner.
+        repository: Repository name.
+        title: Suggested issue title.
+        body: Markdown content of the issue body.
 
     Returns:
-        L'URL ``https://github.com/OWNER/REPO/issues/new?title=…&body=…``.
+        The ``https://github.com/OWNER/REPO/issues/new?title=...&body=...`` URL.
     """
     params = urlencode({"title": title, "body": body})
     return f"https://github.com/{owner}/{repository}/issues/new?{params}"
 
 
 def is_url_too_long(url: str, max_length: int = MAX_URL_LENGTH) -> bool:
-    """Indique si l'URL dépasse le plafond de préremplissage GitHub.
+    """Report whether the URL exceeds the GitHub prefill cap.
 
     Args:
-        url: URL à mesurer.
-        max_length: Plafond, en octets ; par défaut ``MAX_URL_LENGTH``.
+        url: URL to measure.
+        max_length: Cap, in bytes; defaults to ``MAX_URL_LENGTH``.
 
     Returns:
-        ``True`` si ``url`` est trop longue, ``False`` sinon.
+        ``True`` if ``url`` is too long, ``False`` otherwise.
     """
     return len(url) > max_length
