@@ -141,13 +141,12 @@ class Planificateur:
     def differer(self, res: Resultat) -> None:
         """Reporte le prochain run après un coupe-circuit réseau.
 
-        Utilise ``res.retenter_apres`` (aware UTC produit par
-        :meth:`Glaneur.engine.moteur.Moteur._declencher_report`) quand
-        le serveur a fourni un ``Retry-After`` : la consigne serveur
-        prime, et on ne fait pas monter le niveau de backoff. Sans
-        consigne serveur, on applique le backoff exponentiel local
-        (``BACKOFFS_S`` : 1 h → 2 h → 4 h), puis on incrémente le
-        niveau (cappé à 2).
+        Utilise ``res.retenter_apres`` (aware UTC, produit par le moteur
+        via ``_declencher_report``) quand le serveur a fourni un
+        ``Retry-After``. La consigne serveur prime et on ne fait pas
+        monter le niveau de backoff. Sans consigne serveur, on applique
+        le backoff exponentiel local (``BACKOFFS_S`` — 1 h → 2 h → 4 h),
+        puis on incrémente le niveau (cappé à 2).
 
         ``config.retenter_apres`` est toujours écrit en ISO 8601 naïf
         local pour rester comparable à ``Config.derniere_execution``.

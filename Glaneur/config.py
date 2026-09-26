@@ -169,11 +169,12 @@ class Config:
     delai_requetes: float = 0.5
     #: ISO 8601 date of the last run, fed by the scheduler.
     derniere_execution: str = ""
-    #: ISO 8601 (naïf local) : quand redémarrer un run reporté par un
-    #: coupe-circuit réseau (voir :meth:`Glaneur.scheduler.Planificateur.differer`).
+    #: Date ISO 8601 (naïve locale) du prochain run reporté par un
+    #: coupe-circuit réseau — voir
+    #: :meth:`Glaneur.scheduler.Planificateur.differer`.
     #: Vide = pas de report en cours.
     retenter_apres: str = ""
-    #: Niveau de backoff exponentiel : 0 → 1 h, 1 → 2 h, 2 → 4 h.
+    #: Palier de backoff exponentiel — 0 → 1 h, 1 → 2 h, 2 → 4 h.
     #: Réinitialisé à 0 par
     #: :meth:`Glaneur.scheduler.Planificateur.marquer_execution`.
     backoff_niveau: int = 0

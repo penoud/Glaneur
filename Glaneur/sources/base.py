@@ -49,9 +49,9 @@ class Classification:
     et Napoleon).
     """
 
-    #: Catégorie de l'erreur : ``"transitoire"`` (à retenter tout de
-    #: suite), ``"coupure"`` (le serveur nous a fermés — le moteur
-    #: doit reporter le run) ou ``"definitif"`` (rien à retenter).
+    #: Catégorie de l'erreur. ``"transitoire"`` = à retenter tout de
+    #: suite, ``"coupure"`` = le serveur nous a fermés (le moteur doit
+    #: reporter le run), ``"definitif"`` = rien à retenter.
     categorie: Literal["transitoire", "coupure", "definitif"]
     #: Nombre de secondes à attendre avant de retenter, extrait d'un
     #: en-tête ``Retry-After`` (entier ou HTTP-date). ``None`` si
