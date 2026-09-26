@@ -69,8 +69,8 @@ class Moteur:
         """
         self.o = options
         self.base = options.site.rstrip("/")
-        self._journal = journal or (lambda msg: None)
-        self._progression = progression or (lambda fait, total, etiquette: None)
+        self._journal = journal or (lambda _msg: None)
+        self._progression = progression or (lambda _fait, _total, _etiquette: None)
         self.arret = arret or threading.Event()
         self.transport = Transport(delai=options.delai, arret=self.arret)
         # The download session goes through the shared transport: a single

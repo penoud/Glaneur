@@ -310,8 +310,8 @@ class Source(ABC):
         self.base = base.rstrip("/")
         self.transport = transport
         self.reglages = reglages or {}
-        self._journal = journal or (lambda msg: None)
-        self._progression = progression or (lambda fait, total, etiquette: None)
+        self._journal = journal or (lambda _msg: None)
+        self._progression = progression or (lambda _fait, _total, _etiquette: None)
 
     @abstractmethod
     def inventaire(
@@ -330,7 +330,9 @@ class Source(ABC):
         """
 
     def resoudre_groupes(
-        self, cles: set[str], connus: dict[str, str] | None = None,
+        self,
+        cles: set[str],  # noqa: ARG002
+        connus: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Resolve group identifiers into folder names.
 

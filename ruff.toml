@@ -8,3 +8,10 @@
 
 [lint]
 extend-select = ["ARG", "RUF"]
+
+[lint.per-file-ignores]
+# Les doublures de test (stubs de callbacks, faux clients, patchs
+# monkeypatch) reproduisent la signature de ce qu'elles remplacent :
+# le paramètre existe pour respecter l'appelant, pas parce qu'il est
+# lu. `ARG` n'apporte rien ici et produit surtout des faux positifs.
+"tests/**" = ["ARG"]

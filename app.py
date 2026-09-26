@@ -991,7 +991,7 @@ class Fenetre(QMainWindow):
             self.telechargement_mise_a_jour.deleteLater)
         self.telechargement_mise_a_jour.start()
 
-    def _mise_a_jour_telechargee(self, installer: Path, dossier: str) -> None:
+    def _mise_a_jour_telechargee(self, installer: Path, _dossier: str) -> None:
         import logging
         import subprocess
         log = logging.getLogger("Glaneur.app.update")
@@ -1315,7 +1315,7 @@ def main() -> int:
         # would raise — we signal the result via the exit code alone.
         import Glaneur.engine
         import Glaneur.sources
-        import Glaneur.updater  # noqa: F401
+        import Glaneur.updater
         sys.exit(0)
 
     from Glaneur.config import dossier_config, migrer_depuis_ancien_nom

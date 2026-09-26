@@ -1122,7 +1122,7 @@ class TestCacheAPI:
         m = _moteur(tmp_path, site="https://x.example", classement="date")
         capture = {}
 
-        def faux_inventaire(depuis, jusqua):
+        def faux_inventaire(depuis, _jusqua):
             capture["depuis"] = depuis
             return iter([])
 
@@ -1136,7 +1136,7 @@ class TestCacheAPI:
                     classement="date")
         capture = {}
 
-        def faux_inventaire(depuis, jusqua):
+        def faux_inventaire(depuis, _jusqua):
             capture["depuis"] = depuis
             return iter([])
 

@@ -68,7 +68,7 @@ class TestEmplacements:
         # no "Pictures"/"Images" directory present -> fall back to ~/Glaneur
         vide = tmp_path / "vide-home"
         vide.mkdir()
-        monkeypatch.setattr(Path, "home", classmethod(lambda cls: vide))
+        monkeypatch.setattr(Path, "home", classmethod(lambda _cls: vide))
         d = dossier_images_defaut()
         assert d == vide / "Glaneur"
 
