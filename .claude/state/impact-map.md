@@ -9,79 +9,74 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Lot 3 du sprint « Coupe-circuit réseau et report différé ». Câble
-`Resultat.reporte`/`Resultat.retenter_apres` (lot 2) dans le
-planificateur via un nouveau champ persistant `Config.retenter_apres`
-et un `Config.backoff_niveau` (0/1/2 → 1h/2h/4h). Le planificateur
-gagne une méthode `differer(res)` que l'UI/le CLI appelleront au
-lot 4 en lieu et place de `marquer_execution()` quand `res.reporte`
-est vrai.
+Lot 4 du sprint « Coupe-circuit réseau et report différé ». Câble
+`Resultat.reporte` dans l'UI (`app.py`) et le CLI (`cli.py`), et met à
+jour les fichiers `.ts` avec les nouvelles chaînes traduites introduites
+par les lots 2 et 3.
 
 ## Directly modified
 
-- Glaneur/config.py                          (ajout de
-                                              `retenter_apres: str`,
-                                              `backoff_niveau: int`,
-                                              validation et migration
-                                              douce)
-- Glaneur/scheduler.py                       (`differer(res)`,
-                                              `prochaine()` respecte
-                                              `retenter_apres`,
-                                              `marquer_execution()`
-                                              remet backoff à zéro,
-                                              libellé dédié dans
-                                              `texte_prochaine`)
-- tests/test_scheduler.py                    (nouvelle classe pour
-                                              `differer`, `prochaine`
-                                              avec report,
-                                              `texte_prochaine`
-                                              libellé de report)
-- tests/test_config.py                       (round-trip des deux
-                                              nouveaux champs +
-                                              validation des bornes
-                                              de `backoff_niveau`)
+- app.py                                     (dans `_terminer` : si
+                                              `res.reporte`, appeler
+                                              `planificateur.differer(res)`
+                                              au lieu de
+                                              `marquer_execution()`,
+                                              adapter le message des
+                                              échecs pour éviter le
+                                              double libellé)
+- cli.py                                     (après `moteur.executer()` :
+                                              si `res.reporte`, appeler
+                                              `differer(res)` sur un
+                                              `Planificateur(c)`, imprimer
+                                              un résumé et sortir avec
+                                              exit code 2)
+- translations/glaneur_fr.ts                 (mise à jour via
+                                              `build_translations.py update`)
+- translations/glaneur_en.ts                 (idem, traductions à
+                                              compléter manuellement pour
+                                              les nouvelles chaînes)
 
 ## Direct dependencies
 
-- `Glaneur.engine.resultat.Resultat` : consommé par
-  `Planificateur.differer(res)`. Import direct depuis `scheduler.py`.
-  Pas de cycle (resultat.py n'importe rien de scheduler).
+- `Glaneur.scheduler.Planificateur.differer` (lot 3), consommé par
+  `app.py` et `cli.py`.
+- Nouvelles chaînes traduisibles introduites aux lots 2/3 :
+  - `Moteur` : « Serveur indisponible ou quota atteint — reprise après {heure}. »
+    et sa variante sans heure.
+  - `Planificateur` : « Reprise reportée dans {delai} ({date}) ».
+  - `Glaneur.cli` : nouvelles impressions (pas traduites, cohérent
+    avec le reste du CLI qui est en français hard-coded).
 
 ## Tests
 
-- Suite ciblée : `tests/test_scheduler.py` + `tests/test_config.py`.
-- Ruff ciblé sur `Glaneur/config.py`, `Glaneur/scheduler.py`,
-  `tests/test_scheduler.py`, `tests/test_config.py`.
-- Suite complète + couverture + Sphinx en validation finale de fin de
-  lot (format persistant `config.json` modifié — cf. tableau CLAUDE.md).
-- `invariant-reviewer` requis (frontière `Config` + format persisté).
+- Pas de nouveaux tests unitaires : `app.py` est peu testé et le
+  cheminement est trivial (assignation conditionnelle). Le CLI n'a
+  pas de tests dédiés dans le dépôt.
+- La régression est couverte par la suite existante — aucun test ne
+  doit se casser.
+- Ruff ciblé sur `app.py` et `cli.py`.
 
 ## Potentially affected
 
-- `app.py` : lit `Config` mais ne consomme pas encore les nouveaux
-  champs — câblage au lot 4.
-- `cli.py` : idem.
+- `_verifier_echeance` : quand un report est actif, `prochaine()`
+  renvoie une date future, donc `echeance_atteinte()` reste `False` —
+  pas d'auto-run intempestif. Comportement voulu, testé au lot 3
+  côté planificateur.
 
 ## Explicitly out of scope
 
-- Câblage UI dans `app.py::_terminer` et exit code CLI (lot 4).
-- Traductions `.ts` (lot 4).
 - Docs Sphinx (lot 5).
+- Refactor de `_terminer` au-delà du câblage du report.
+- Tests unitaires de l'UI (le dépôt n'en a pas pour `app.py`).
 
 ## Invariants
 
-- Frontière 1 : `scheduler.py` reste dépendant de Qt (déjà écarté
-  dans CLAUDE.md), mais on n'ajoute aucune nouvelle dépendance Qt.
-- Compatibilité ascendante : un `config.json` existant sans les deux
-  nouveaux champs charge sans erreur (défauts `""` et `0`).
-- `Config.derniere_execution` reste naïf local (statu quo). Le
-  planificateur reçoit `res.retenter_apres` en ISO 8601 aware UTC
-  (lot 2) et le convertit en naïf local avant persistance dans
-  `Config.retenter_apres`, pour rester comparable à
-  `derniere_execution` (règle notée par la review du lot 2 :
-  éviter le mélange aware/naïf dans `prochaine()`).
-- `backoff_niveau` borné à `[0, 2]` par `Config.valider`, table
-  interne `[3600, 7200, 14400]` s. Réinitialisé à 0 par
-  `marquer_execution()`.
-- `marquer_execution()` remet aussi `retenter_apres = ""` : un run
-  qui réussit après un report clôt le report.
+- Un run avec `res.reporte = True` :
+  - ne doit PAS appeler `marquer_execution()` (sinon le report est
+    immédiatement effacé au lot 3) ;
+  - doit appeler `planificateur.differer(res)` exactement une fois.
+- Un run avec `res.interrompu = True` conserve le comportement existant
+  (ni `marquer_execution` ni `differer`).
+- Un run normal (`not res.reporte and not res.interrompu`) reste
+  inchangé : `marquer_execution()`.
+- Le CLI ne quitte plus toujours 0/1 : 2 est réservé aux reports.
