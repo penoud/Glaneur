@@ -80,7 +80,7 @@ def _run(monkeypatch, argv, *, resultat=None, leve=None, config_kw=None,
     monkeypatch.setattr(sys, "argv", ["cli.py", *argv])
 
     # Insulate Config from the user's real settings file.
-    real_charger = cli.Config.charger
+    real_charger = cli.Config.load
     chemin = config_chemin or Path("/nonexistent-config-for-tests.json")
 
     def faux_charger(chemin_appelant=None):
@@ -89,7 +89,7 @@ def _run(monkeypatch, argv, *, resultat=None, leve=None, config_kw=None,
             setattr(c, k, v)
         return c
 
-    monkeypatch.setattr(cli.Config, "charger", staticmethod(faux_charger))
+    monkeypatch.setattr(cli.Config, "load", staticmethod(faux_charger))
 
     _FauxEngine._resultat = resultat if resultat is not None else RunResult(message="OK")
     _FauxEngine._leve = leve

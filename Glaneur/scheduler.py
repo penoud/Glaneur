@@ -40,7 +40,7 @@ class Scheduler:
             config: Configuration object from which
                 ``Config.derniere_execution`` and
                 ``Config.intervalle_heures`` are read, and on which
-                ``Config.sauver`` is called by :meth:`mark_run`.
+                ``Config.save`` is called by :meth:`mark_run`.
         """
         self.config = config
 
@@ -140,7 +140,7 @@ class Scheduler:
         self.config.derniere_execution = datetime.now().isoformat(timespec="seconds")
         self.config.retenter_apres = ""
         self.config.backoff_niveau = 0
-        self.config.sauver()
+        self.config.save()
 
     def defer(self, res: RunResult) -> None:
         """Defer the next run after a network circuit-breaker trips.
@@ -174,4 +174,4 @@ class Scheduler:
             cible = datetime.now() + timedelta(seconds=BACKOFFS_S[niveau])
             self.config.backoff_niveau = min(niveau + 1, 2)
         self.config.retenter_apres = cible.isoformat(timespec="seconds")
-        self.config.sauver()
+        self.config.save()

@@ -38,7 +38,7 @@ def main() -> int:
         deferred by the network circuit-breaker (server unavailable,
         quota, ...), ``130`` on keyboard interrupt (shell convention).
     """
-    c = Config.charger()
+    c = Config.load()
     p = argparse.ArgumentParser(
         description="Télécharge les images d'un site (WordPress ou Djangoplicity).")
     p.add_argument("-d", "--dossier", default=c.dossier, help="dossier de destination")

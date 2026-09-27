@@ -12,7 +12,7 @@ from Glaneur.scheduler_labels import next_run_text
 
 def _cfg(tmp_path, **kw):
     """Config isolated in tmp_path, overridden by kw."""
-    c = Config.charger(tmp_path / "c.json")
+    c = Config.load(tmp_path / "c.json")
     for k, v in kw.items():
         setattr(c, k, v)
     return c
@@ -78,7 +78,7 @@ class TestMarquerExecution:
         p = Scheduler(cfg)
         p.mark_run()
         # re-read from disk: the timestamp has been persisted
-        cfg2 = Config.charger(tmp_path / "c.json")
+        cfg2 = Config.load(tmp_path / "c.json")
         assert cfg2.derniere_execution
         # parses cleanly to a datetime
         datetime.fromisoformat(cfg2.derniere_execution)
@@ -175,7 +175,7 @@ class TestDifferer:
         p = Scheduler(cfg)
         p.defer(RunResult(deferred=True, retry_after=""))
 
-        cfg2 = Config.charger(tmp_path / "c.json")
+        cfg2 = Config.load(tmp_path / "c.json")
         assert cfg2.retenter_apres == cfg.retenter_apres
         assert cfg2.backoff_niveau == cfg.backoff_niveau
 

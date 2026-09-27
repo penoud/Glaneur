@@ -65,12 +65,12 @@ from Glaneur.bug_report import (
     is_url_too_long,
 )
 from Glaneur.config import (
-    CLASSEMENTS,
-    FORMATS_DJANGOPLICITY,
+    DJANGOPLICITY_FORMATS,
     GITHUB_OWNER,
     GITHUB_REPOSITORY,
-    INTERVALLES,
-    TYPES_SOURCE,
+    INTERVALS,
+    SORT_MODES,
+    SOURCE_TYPES,
     Config,
 )
 from Glaneur.engine import (
@@ -255,11 +255,11 @@ class DialoguePreferences(QDialog):
         forme_site.setLabelAlignment(Qt.AlignLeft)
 
         self.combo_type = QComboBox()
-        self.combo_type.addItems(list(TYPES_SOURCE))
+        self.combo_type.addItems(list(SOURCE_TYPES))
         libelle_type_courant = next(
-            (libelle for libelle, val in TYPES_SOURCE.items()
+            (libelle for libelle, val in SOURCE_TYPES.items()
              if val == cfg.type_source),
-            next(iter(TYPES_SOURCE)),
+            next(iter(SOURCE_TYPES)),
         )
         self.combo_type.setCurrentText(libelle_type_courant)
         self.combo_type.setToolTip(self.tr(
@@ -277,11 +277,11 @@ class DialoguePreferences(QDialog):
         # TIFFs of several hundred MB, the warning lives in the option
         # label.
         self.combo_format = QComboBox()
-        self.combo_format.addItems(list(FORMATS_DJANGOPLICITY))
+        self.combo_format.addItems(list(DJANGOPLICITY_FORMATS))
         libelle_format_courant = next(
-            (libelle for libelle, val in FORMATS_DJANGOPLICITY.items()
+            (libelle for libelle, val in DJANGOPLICITY_FORMATS.items()
              if val == cfg.format_image),
-            next(iter(FORMATS_DJANGOPLICITY)),
+            next(iter(DJANGOPLICITY_FORMATS)),
         )
         self.combo_format.setCurrentText(libelle_format_courant)
         self.combo_format.setToolTip(self.tr(
@@ -308,13 +308,13 @@ class DialoguePreferences(QDialog):
         form.setLabelAlignment(Qt.AlignLeft)
 
         self.combo_intervalle = QComboBox()
-        self.combo_intervalle.addItems(list(INTERVALLES))
-        self.combo_intervalle.setCurrentText(cfg.libelle_intervalle)
+        self.combo_intervalle.addItems(list(INTERVALS))
+        self.combo_intervalle.setCurrentText(cfg.interval_label)
         form.addRow(self.tr("Mise à jour :"), self.combo_intervalle)
 
         self.combo_classement = QComboBox()
-        self.combo_classement.addItems(list(CLASSEMENTS))
-        self.combo_classement.setCurrentText(cfg.libelle_classement)
+        self.combo_classement.addItems(list(SORT_MODES))
+        self.combo_classement.setCurrentText(cfg.sort_mode_label)
         self.combo_classement.setToolTip(self.tr(
             "Change la destination des nouvelles images. Les images déjà\n"
             "téléchargées restent là où elles sont."))
@@ -367,10 +367,10 @@ class DialoguePreferences(QDialog):
         form.addRow("", self.case_maj_demarrage)
 
         # --- language -----------------------------------------------------
-        from Glaneur.i18n import LANGUES_DISPONIBLES
+        from Glaneur.i18n import AVAILABLE_LANGUAGES
         self.combo_langue = QComboBox()
         self.combo_langue.addItem(self.tr("Langue du système"), "")
-        for code, libelle in LANGUES_DISPONIBLES.items():
+        for code, libelle in AVAILABLE_LANGUAGES.items():
             self.combo_langue.addItem(libelle, code)
         for i in range(self.combo_langue.count()):
             if self.combo_langue.itemData(i) == cfg.langue:
@@ -402,7 +402,7 @@ class DialoguePreferences(QDialog):
         supported by the chosen source are greyed out in the combo (and if
         the one selected was just greyed out, we fall back to
         "Par date")."""
-        type_courant = TYPES_SOURCE.get(libelle, "wordpress")
+        type_courant = SOURCE_TYPES.get(libelle, "wordpress")
         est_djangoplicity = type_courant == "djangoplicity"
         # To avoid importing the adapters in the UI, the engine exposes
         # `classements_pour(type)`.
@@ -416,16 +416,16 @@ class DialoguePreferences(QDialog):
         modele = self.combo_classement.model()
         for i in range(self.combo_classement.count()):
             libelle_item = self.combo_classement.itemText(i)
-            valeur = CLASSEMENTS.get(libelle_item)
+            valeur = SORT_MODES.get(libelle_item)
             item = modele.item(i)
             if item is not None:
                 item.setEnabled(valeur in supportes)
 
         # If the current selection was just disabled, fall back to
         # "By date" (consistent default across all sources).
-        valeur_courante = CLASSEMENTS.get(self.combo_classement.currentText())
+        valeur_courante = SORT_MODES.get(self.combo_classement.currentText())
         if valeur_courante not in supportes:
-            for libelle_item, valeur in CLASSEMENTS.items():
+            for libelle_item, valeur in SORT_MODES.items():
                 if valeur == "date":
                     self.combo_classement.setCurrentText(libelle_item)
                     break
@@ -437,10 +437,10 @@ class DialoguePreferences(QDialog):
         c = self.cfg
         c.site = self.champ_site.text().strip()
         c.dossier = self.champ_dossier.text()
-        c.intervalle_heures = INTERVALLES.get(self.combo_intervalle.currentText(), 24)
-        c.classement = CLASSEMENTS.get(self.combo_classement.currentText(), "galerie")
-        c.type_source = TYPES_SOURCE.get(self.combo_type.currentText(), "wordpress")
-        c.format_image = FORMATS_DJANGOPLICITY.get(
+        c.intervalle_heures = INTERVALS.get(self.combo_intervalle.currentText(), 24)
+        c.classement = SORT_MODES.get(self.combo_classement.currentText(), "galerie")
+        c.type_source = SOURCE_TYPES.get(self.combo_type.currentText(), "wordpress")
+        c.format_image = DJANGOPLICITY_FORMATS.get(
             self.combo_format.currentText(), "Large")
         c.largeur_min = self.spin_largeur.value()
         c.verifier_integrite = self.case_verifier.isChecked()
@@ -448,8 +448,8 @@ class DialoguePreferences(QDialog):
         c.fermer_dans_barre = self.case_barre.isChecked()
         c.verifier_maj_demarrage = self.case_maj_demarrage.isChecked()
         c.langue = self.combo_langue.currentData() or ""
-        c.valider()
-        c.sauver()
+        c.validate()
+        c.save()
 
         problemes: list[str] = []
         if sys.platform == "win32":
@@ -460,7 +460,7 @@ class DialoguePreferences(QDialog):
                 problemes.append(self.tr(
                     "Impossible de modifier le démarrage automatique de Windows."))
             c.lancer_au_demarrage = obtenu
-            c.sauver()
+            c.save()
 
             # slideshow: only attempt configuration if the user explicitly
             # asks for it, and create it beforehand, otherwise an empty
@@ -478,7 +478,7 @@ class DialoguePreferences(QDialog):
                             "Impossible de configurer le diaporama Windows "
                             "(dossier vide ou COM indisponible)."))
                         c.diaporama_dossier = False
-                        c.sauver()
+                        c.save()
         return "\n".join(problemes) if problemes else None
 
 
@@ -660,7 +660,7 @@ class Fenetre(QMainWindow):
         self.resize(760, 520)
         self.setMinimumSize(QSize(600, 400))
 
-        self.cfg = Config.charger()
+        self.cfg = Config.load()
         self.planificateur = Scheduler(self.cfg)
         self.arret = threading.Event()
         self.travailleur: Travailleur | None = None
@@ -919,8 +919,8 @@ class Fenetre(QMainWindow):
         DialogueAPropos(self).exec()
 
     def _ouvrir_signaler_bug(self) -> None:
-        from Glaneur.config import dossier_config
-        chemin_log = dossier_config() / "logs" / "app.log"
+        from Glaneur.config import config_dir
+        chemin_log = config_dir() / "logs" / "app.log"
         DialogueSignalerBug(self, chemin_log if chemin_log.is_file() else None).exec()
 
     def _verifier_mise_a_jour(self, manuel: bool = False) -> None:
@@ -1319,14 +1319,14 @@ def main() -> int:
         import Glaneur.updater
         sys.exit(0)
 
-    from Glaneur.config import dossier_config, migrer_depuis_ancien_nom
-    from Glaneur.i18n import installer_traducteur
+    from Glaneur.config import config_dir, migrate_from_legacy_name
+    from Glaneur.i18n import install_translator
     from Glaneur.logsetup import configure_logging
     # First: if the user has an old WpImageDownloader install and no
     # Glaneur config yet, we recover the legacy config. Runs before
     # configure_logging() so the logs also inherit the directory.
-    migrer_depuis_ancien_nom()
-    configure_logging(dossier_config())
+    migrate_from_legacy_name()
+    configure_logging(config_dir())
 
     app = QApplication(sys.argv)
     app.setApplicationName("Glaneur")
@@ -1336,7 +1336,7 @@ def main() -> int:
 
     # Translator installed BEFORE any widget construction: self.tr() calls
     # evaluated inside __init__ then pick up the correct language.
-    installer_traducteur(app, Config.charger().langue)
+    install_translator(app, Config.load().langue)
 
     fenetre = Fenetre()
     # Without a tray (Linux without AppIndicator), staying open after the

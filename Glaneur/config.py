@@ -13,12 +13,12 @@ import sys
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-NOM_APP = "Glaneur"
+APP_NAME = "Glaneur"
 GITHUB_OWNER = "penoud"
 GITHUB_REPOSITORY = "Glaneur"
 
 # intervals offered in the UI: label -> hours (0 = manual)
-INTERVALLES: dict[str, int] = {
+INTERVALS: dict[str, int] = {
     "Manuel uniquement": 0,
     "Toutes les 6 heures": 6,
     "Toutes les 12 heures": 12,
@@ -27,27 +27,27 @@ INTERVALLES: dict[str, int] = {
 }
 
 # sort modes offered in the UI: label -> stored value
-CLASSEMENTS: dict[str, str] = {
+SORT_MODES: dict[str, str] = {
     "Par galerie": "galerie",
     "Par date": "date",
     "Tout dans un dossier": "plat",
 }
 
 # supported site types: label -> key of the `sources.SOURCES` registry
-TYPES_SOURCE: dict[str, str] = {
+SOURCE_TYPES: dict[str, str] = {
     "WordPress (API REST)": "wordpress",
     "Djangoplicity (ESO, ESA/Hubble…)": "djangoplicity",
 }
 
 # Djangoplicity image formats: label -> `ResourceType` from the d2d feed
-FORMATS_DJANGOPLICITY: dict[str, str] = {
+DJANGOPLICITY_FORMATS: dict[str, str] = {
     "Grand JPEG": "Large",
     "Original (TIFF, très lourd)": "Original",
     "Écran (1280 px)": "Small",
 }
 
 
-def dossier_config() -> Path:
+def config_dir() -> Path:
     """Return the folder where the config lives, per platform.
 
     - Windows: ``%APPDATA%\\Glaneur``.
@@ -59,36 +59,36 @@ def dossier_config() -> Path:
     """
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-        return base / NOM_APP
+        return base / APP_NAME
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / NOM_APP
+        return Path.home() / "Library" / "Application Support" / APP_NAME
     base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
     return base / "glaneur"
 
 
 # Legacy names used before the WpImageDownloader → Glaneur rename.
-# `migrer_depuis_ancien_nom()` copies the contents of the first of these
-# directories that still exists to `dossier_config()` on first launch of Glaneur.
-_ANCIENS_NOMS_APP: tuple[str, ...] = ("WpImageDownloader",)
-_ANCIENS_NOMS_XDG: tuple[str, ...] = ("wp-image-downloader",)
+# `migrate_from_legacy_name()` copies the contents of the first of these
+# directories that still exists to `config_dir()` on first launch of Glaneur.
+_LEGACY_APP_NAMES: tuple[str, ...] = ("WpImageDownloader",)
+_LEGACY_XDG_NAMES: tuple[str, ...] = ("wp-image-downloader",)
 
 
-def _anciens_dossiers_config() -> list[Path]:
+def _legacy_config_dirs() -> list[Path]:
     """Possible locations of the legacy-named config, most preferred first."""
     dossiers: list[Path] = []
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-        dossiers += [base / nom for nom in _ANCIENS_NOMS_APP]
+        dossiers += [base / nom for nom in _LEGACY_APP_NAMES]
     elif sys.platform == "darwin":
         base = Path.home() / "Library" / "Application Support"
-        dossiers += [base / nom for nom in _ANCIENS_NOMS_APP]
+        dossiers += [base / nom for nom in _LEGACY_APP_NAMES]
     else:
         base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-        dossiers += [base / nom for nom in _ANCIENS_NOMS_XDG]
+        dossiers += [base / nom for nom in _LEGACY_XDG_NAMES]
     return dossiers
 
 
-def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
+def migrate_from_legacy_name(cible: Path | None = None) -> Path | None:
     """Copy the config from a legacy name (``WpImageDownloader``) to Glaneur.
 
     Does nothing if a non-empty Glaneur folder already exists.
@@ -97,7 +97,7 @@ def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
     break its config.
 
     Args:
-        cible: Destination folder. Uses :func:`dossier_config` when
+        cible: Destination folder. Uses :func:`config_dir` when
             ``None``.
 
     Returns:
@@ -106,10 +106,10 @@ def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
     """
     import logging
     import shutil
-    cible = cible or dossier_config()
+    cible = cible or config_dir()
     if cible.exists() and any(cible.iterdir()):
         return None
-    for source in _anciens_dossiers_config():
+    for source in _legacy_config_dirs():
         if source.is_dir() and any(source.iterdir()):
             logger = logging.getLogger(__name__)
             logger.info("Config migration: %s -> %s", source, cible)
@@ -119,7 +119,7 @@ def migrer_depuis_ancien_nom(cible: Path | None = None) -> Path | None:
     return None
 
 
-def dossier_images_defaut() -> Path:
+def default_images_dir() -> Path:
     """Return the ``Glaneur`` sub-folder of one of the user's picture folders.
 
     Tries ``~/Pictures/Glaneur`` then ``~/Images/Glaneur`` (localised
@@ -148,10 +148,10 @@ class Config:
     #: Source site origin, propagated to :attr:`Glaneur.engine.options.Options.site`.
     site: str = "https://example.com"
     #: Target sync directory; empty = value returned by
-    #: :func:`dossier_images_defaut`.
+    #: :func:`default_images_dir`.
     dossier: str = ""
     #: Interval between two automatic runs, in hours. Must belong to
-    #: the values of ``INTERVALLES`` (``0`` = manual only).
+    #: the values of ``INTERVALS`` (``0`` = manual only).
     intervalle_heures: int = 24
     #: Skips images narrower than this (in pixels).
     largeur_min: int = 800
@@ -159,7 +159,7 @@ class Config:
     classement: str = "galerie"
     #: Key of the ``Glaneur.sources.SOURCES`` registry.
     type_source: str = "wordpress"
-    #: Used by Djangoplicity; values in ``FORMATS_DJANGOPLICITY``.
+    #: Used by Djangoplicity; values in ``DJANGOPLICITY_FORMATS``.
     format_image: str = "Large"
     #: ETag/Last-Modified revalidation of files already present.
     verifier_integrite: bool = False
@@ -189,30 +189,30 @@ class Config:
     #: Language code (``fr``, ``en``, ...). Empty = system locale.
     langue: str = ""
 
-    _chemin: Path | None = field(default=None, repr=False, compare=False)
+    _path: Path | None = field(default=None, repr=False, compare=False)
 
     # -- load / save ------------------------------------------------------- #
 
     @classmethod
-    def charger(cls, chemin: Path | None = None) -> Config:
+    def load(cls, chemin: Path | None = None) -> Config:
         """Load the config from ``chemin`` or fall back to default values.
 
         Missing or unknown keys are ignored, and an unreadable file
         (invalid JSON, OS error) is treated as an absent config: we
         start over from default values rather than crashing.
-        :meth:`valider` is always called before returning the object.
+        :meth:`validate` is always called before returning the object.
 
         Args:
             chemin: Path of the ``config.json`` file. Uses
-                :func:`dossier_config` when ``None``.
+                :func:`config_dir` when ``None``.
 
         Returns:
             A :class:`Config` ready to use, with its path stored for
-            :meth:`sauver`.
+            :meth:`save`.
         """
-        chemin = chemin or (dossier_config() / "config.json")
+        chemin = chemin or (config_dir() / "config.json")
         cfg = cls()
-        cfg._chemin = chemin
+        cfg._path = chemin
         if chemin.exists():
             try:
                 with open(chemin, encoding="utf-8") as f:
@@ -224,29 +224,29 @@ class Config:
             except (json.JSONDecodeError, OSError, TypeError):
                 pass  # unreadable config: fall back to default values
         if not cfg.dossier:
-            cfg.dossier = str(dossier_images_defaut())
-        cfg.valider()
+            cfg.dossier = str(default_images_dir())
+        cfg.validate()
         return cfg
 
-    def sauver(self) -> None:
+    def save(self) -> None:
         """Write the config to disk atomically.
 
-        Uses the path stored by :meth:`charger` if any, otherwise
-        ``<dossier_config()>/config.json``. Private fields (prefixed
+        Uses the path stored by :meth:`load` if any, otherwise
+        ``<config_dir()>/config.json``. Private fields (prefixed
         with ``_``) are not serialised.
         """
-        chemin = self._chemin or (dossier_config() / "config.json")
+        chemin = self._path or (config_dir() / "config.json")
         chemin.parent.mkdir(parents=True, exist_ok=True)
         donnees = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
         tmp = chemin.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(donnees, f, ensure_ascii=False, indent=2)
         tmp.replace(chemin)
-        self._chemin = chemin
+        self._path = chemin
 
     # -- guardrails --------------------------------------------------------- #
 
-    def valider(self) -> None:
+    def validate(self) -> None:
         """Coerce out-of-range values back into reasonable bounds.
 
         Forces a known interval, clamps the minimum width between 0 and
@@ -256,14 +256,14 @@ class Config:
         to avoid the ``config → sources → engine → config`` cycle). The
         request delay is clamped between 0.2 and 10 seconds.
         """
-        if self.intervalle_heures not in INTERVALLES.values():
+        if self.intervalle_heures not in INTERVALS.values():
             self.intervalle_heures = 24
         self.largeur_min = max(0, min(int(self.largeur_min), 10000))
-        if self.classement not in CLASSEMENTS.values():
+        if self.classement not in SORT_MODES.values():
             self.classement = "galerie"
-        if self.type_source not in TYPES_SOURCE.values():
+        if self.type_source not in SOURCE_TYPES.values():
             self.type_source = "wordpress"
-        if self.format_image not in FORMATS_DJANGOPLICITY.values():
+        if self.format_image not in DJANGOPLICITY_FORMATS.values():
             self.format_image = "Large"
         # The sort mode must be supported by the source. Deferred import to
         # avoid the `config → sources → engine → config` cycle.
@@ -281,27 +281,27 @@ class Config:
         self.backoff_niveau = max(0, min(niveau, 2))
 
     @property
-    def libelle_intervalle(self) -> str:
-        """UI label of :attr:`intervalle_heures` (key of ``INTERVALLES``).
+    def interval_label(self) -> str:
+        """UI label of :attr:`intervalle_heures` (key of ``INTERVALS``).
 
         Returns:
             The label associated with the numeric value, or the default
             label ``"Une fois par jour"`` when the value is not listed.
         """
-        for libelle, heures in INTERVALLES.items():
+        for libelle, heures in INTERVALS.items():
             if heures == self.intervalle_heures:
                 return libelle
         return "Une fois par jour"
 
     @property
-    def libelle_classement(self) -> str:
-        """UI label of :attr:`classement` (key of ``CLASSEMENTS``).
+    def sort_mode_label(self) -> str:
+        """UI label of :attr:`classement` (key of ``SORT_MODES``).
 
         Returns:
             The label associated with the stored value, or
             ``"Par galerie"`` by default.
         """
-        for libelle, valeur in CLASSEMENTS.items():
+        for libelle, valeur in SORT_MODES.items():
             if valeur == self.classement:
                 return libelle
         return "Par galerie"
