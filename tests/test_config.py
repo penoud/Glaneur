@@ -1,4 +1,4 @@
-"""Tests de la configuration persistée."""
+"""Tests for the persisted configuration."""
 
 from __future__ import annotations
 

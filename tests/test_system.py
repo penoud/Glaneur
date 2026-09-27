@@ -1,8 +1,8 @@
-"""Tests des intégrations système.
+"""Tests for the system integrations.
 
-La partie COM (`IDesktopWallpaper`) n'est vérifiable que sous Windows ; ici on
-teste au minimum que toutes les fonctions ont un comportement silencieux hors
-Windows, sans lever d'exception ni exiger de dépendance Windows.
+The COM part (`IDesktopWallpaper`) can only be verified on Windows; here we
+check at least that every function stays silent off Windows, without raising
+an exception or requiring a Windows dependency.
 """
 
 from __future__ import annotations
@@ -111,9 +111,8 @@ class TestFondEcranSousWindows:
 # --------------------------------------------------------------------------- #
 
 class TestContratsWallpaper:
-    """Ces vérifications sont indépendantes de la plateforme : elles portent
-    sur des constantes et sur des invariants (`_liberer_bureau` doit accepter
-    n'importe quoi sans lever)."""
+    """These checks are platform-independent: they cover constants and
+    invariants (`_liberer_bureau` must accept anything without raising)."""
 
     def test_indices_vtable_conformes_a_idesktopwallpaper(self):
         # Indices must match the Microsoft vtable: SetSlideshow=12,
@@ -140,11 +139,11 @@ class TestContratsWallpaper:
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.skipif(sys.platform == "win32",
-                    reason="simulation valable uniquement hors Windows "
-                           "(sous Windows, ctypes.windll et COM sont réels)")
+                    reason="simulation only valid off Windows "
+                           "(on Windows, ctypes.windll and COM are real)")
 class TestSimulationsWin:
-    """Vérifie que le code Windows dégénère proprement quand COM/winreg
-    ne sont pas là (ce qui est le cas quand on tourne les tests sur Linux)."""
+    """Checks that the Windows code degrades gracefully when COM/winreg
+    are missing (which is the case when running the tests on Linux)."""
 
     def test_instancier_bureau_gerre_erreur_ctypes(self, monkeypatch):
         # on Linux, ctypes.windll does not exist: the AttributeError must

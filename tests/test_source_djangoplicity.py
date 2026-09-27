@@ -1,9 +1,9 @@
-"""Tests de l'adaptateur Djangoplicity : pagination sur `Next`, `after`
-inclusif (l'élément frontière n'est pas retéléchargé une deuxième fois),
-sélection du format avec repli sur Small, désencapsulation des textes
-`"b'…'"` mal encodés côté serveur.
+"""Tests for the Djangoplicity adapter: `Next` pagination, `after`
+inclusive (the boundary item is not re-downloaded a second time),
+format selection with fallback to Small, and unwrapping of `"b'…'"`
+strings mis-encoded server-side.
 
-Aucun accès réseau : `Transport.get_json` est mocké.
+No network access: `Transport.get_json` is mocked.
 """
 
 from __future__ import annotations

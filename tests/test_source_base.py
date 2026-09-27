@@ -1,9 +1,9 @@
-"""Tests unitaires de `classer_erreur` (module `Glaneur.sources.base`).
+"""Unit tests for `classer_erreur` (module `Glaneur.sources.base`).
 
-Périmètre strict : uniquement la classification d'une exception
-`requests` et/ou d'une réponse HTTP en trois catégories
-(`transitoire`, `coupure`, `definitif`) et l'extraction du
-`Retry-After` associé. Aucun accès réseau, aucun mock de transport.
+Strict scope: only the classification of a `requests` exception
+and/or an HTTP response into three categories
+(`transitoire`, `coupure`, `definitif`) and the extraction of the
+matching `Retry-After`. No network access, no transport mock.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def _reponse(status: int, retry_after: str | None = None) -> requests.Response:
 
 class TestCoupure:
     def test_dns_name_resolution_error_est_une_coupure(self):
-        """DNS blackhole (NameResolutionError) est classé `coupure`."""
+        """A DNS blackhole (NameResolutionError) is classified as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "HTTPSConnectionPool(host='www.eso.org', port=443): "
             "Max retries exceeded with url: /images/d2d/ "
@@ -49,21 +49,21 @@ class TestCoupure:
         assert c.categorie == "coupure"
 
     def test_dns_failed_to_resolve_est_une_coupure(self):
-        """Un message 'Failed to resolve' seul suffit à classer `coupure`."""
+        """A lone 'Failed to resolve' message is enough to classify as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "Failed to resolve 'example.invalid'"
         )
         assert classer_erreur(exc).categorie == "coupure"
 
     def test_dns_getaddrinfo_failed_est_une_coupure(self):
-        """Un message 'getaddrinfo failed' est classé `coupure`."""
+        """A 'getaddrinfo failed' message is classified as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "socket.gaierror: [Errno -2] getaddrinfo failed"
         )
         assert classer_erreur(exc).categorie == "coupure"
 
     def test_max_retries_exceeded_est_une_coupure(self):
-        """ConnectionError 'Max retries exceeded' est classé `coupure`."""
+        """ConnectionError 'Max retries exceeded' is classified as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "HTTPSConnectionPool(host='x', port=443): "
             "Max retries exceeded with url: /"
@@ -72,40 +72,40 @@ class TestCoupure:
 
     @pytest.mark.parametrize("status", [429, 502, 503, 504])
     def test_status_amont_est_une_coupure(self, status):
-        """429 et 5xx amont (502/503/504) sont classés `coupure`."""
+        """429 and upstream 5xx (502/503/504) are classified as `coupure`."""
         c = classer_erreur(None, _reponse(status))
         assert c.categorie == "coupure"
 
 
 # --------------------------------------------------------------------------- #
-# Transitoire : à réessayer immédiatement, pas une coupure
+# Transitoire: retry immediately, not a cut
 # --------------------------------------------------------------------------- #
 
 
 class TestTransitoire:
     def test_timeout_seul_est_transitoire(self):
-        """`requests.exceptions.Timeout` sans autre indice est `transitoire`."""
+        """`requests.exceptions.Timeout` alone is `transitoire`."""
         exc = requests.exceptions.Timeout("Read timed out.")
         assert classer_erreur(exc).categorie == "transitoire"
 
     def test_500_isole_est_transitoire(self):
-        """Un 500 isolé n'est pas une coupure : il reste `transitoire`."""
+        """An isolated 500 is not a cut: it stays `transitoire`."""
         assert classer_erreur(None, _reponse(500)).categorie == "transitoire"
 
 
 # --------------------------------------------------------------------------- #
-# Definitif : rien à réessayer côté client
+# Definitif: nothing to retry on the client side
 # --------------------------------------------------------------------------- #
 
 
 class TestDefinitif:
     @pytest.mark.parametrize("status", [401, 403, 404])
     def test_erreurs_client_sont_definitives(self, status):
-        """401/403/404 sont classés `definitif` (rien à retenter)."""
+        """401/403/404 are classified as `definitif` (nothing to retry)."""
         assert classer_erreur(None, _reponse(status)).categorie == "definitif"
 
     def test_missing_schema_est_definitif(self):
-        """URL malformée (`MissingSchema`) est `definitif`."""
+        """A malformed URL (`MissingSchema`) is `definitif`."""
         exc = requests.exceptions.MissingSchema("Invalid URL 'foo'")
         assert classer_erreur(exc).categorie == "definitif"
 
@@ -117,27 +117,27 @@ class TestDefinitif:
 
 class TestRetryAfter:
     def test_retry_after_en_secondes_entieres(self):
-        """`Retry-After: 120` est exposé comme `float(120.0)`."""
+        """`Retry-After: 120` is exposed as `float(120.0)`."""
         c = classer_erreur(None, _reponse(429, retry_after="120"))
         assert c.retry_after == 120.0
         assert isinstance(c.retry_after, float)
 
     def test_retry_after_http_date_positif(self):
-        """`Retry-After` au format HTTP-date donne un delta positif en secondes."""
+        """`Retry-After` as an HTTP-date yields a positive delta in seconds."""
         futur = datetime.now(timezone.utc) + timedelta(seconds=90)
         entete = format_datetime(futur, usegmt=True)
         c = classer_erreur(None, _reponse(503, retry_after=entete))
         assert c.retry_after is not None
-        # tolerance de quelques secondes autour de 90s
+        # a few seconds of tolerance around 90s
         assert 80.0 <= c.retry_after <= 100.0
 
     def test_retry_after_absent_donne_none(self):
-        """Sans en-tête `Retry-After`, `retry_after` vaut `None`."""
+        """Without a `Retry-After` header, `retry_after` is `None`."""
         c = classer_erreur(None, _reponse(503))
         assert c.retry_after is None
 
     def test_dns_error_pas_de_retry_after(self):
-        """Une `coupure` DNS n'expose aucun `retry_after` par défaut."""
+        """A DNS `coupure` exposes no `retry_after` by default."""
         exc = requests.exceptions.ConnectionError(
             "Failed to resolve 'example.invalid'"
         )
@@ -147,19 +147,19 @@ class TestRetryAfter:
 
 
 # --------------------------------------------------------------------------- #
-# Contrat de la dataclass Classification
+# Contract of the Classification dataclass
 # --------------------------------------------------------------------------- #
 
 
 class TestClassificationDataclass:
     def test_classification_est_gelee(self):
-        """`Classification` est immuable (dataclass gelée)."""
+        """`Classification` is immutable (frozen dataclass)."""
         c = classer_erreur(None, _reponse(429, retry_after="1"))
         with pytest.raises((AttributeError, Exception)):
             c.categorie = "definitif"  # type: ignore[misc]
 
     def test_classification_expose_categorie_et_retry_after(self):
-        """L'objet retourné expose au moins `categorie` et `retry_after`."""
+        """The returned object exposes at least `categorie` and `retry_after`."""
         c = classer_erreur(None, _reponse(500))
         assert isinstance(c, Classification)
         assert hasattr(c, "categorie")

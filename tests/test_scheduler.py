@@ -1,4 +1,4 @@
-"""Tests de la logique d'échéance (planificateur)."""
+"""Tests for the scheduler's due-time logic."""
 
 from __future__ import annotations
 
@@ -240,10 +240,9 @@ class TestMarquerExecutionReinitialise:
 
 class TestTextePresentableAvecReport:
     def test_libelle_report_actif(self, tmp_path):
-        """Report qui repousse la nominale → libellé mentionne « report »."""
-        # Dernière exécution récente : nominale ≈ maintenant + 24 h ; on pose
-        # un report qui dépasse cette nominale pour qu'il soit vraiment
-        # décisionnaire.
+        """A defer that pushes past the nominal time → label mentions "report"."""
+        # Recent last run: nominal time ≈ now + 24 h; we set a defer that
+        # goes past that nominal time so it is actually the decisive one.
         report = (datetime.now() + timedelta(hours=26)).isoformat(timespec="seconds")
         cfg = _cfg(
             tmp_path,
@@ -255,12 +254,12 @@ class TestTextePresentableAvecReport:
         assert "report" in texte_prochaine(p).lower()
 
     def test_libelle_report_avant_nominale_ignore(self, tmp_path):
-        """Report antérieur à la nominale → pas de libellé « report » trompeur.
+        """Defer earlier than the nominal time → no misleading "report" label.
 
-        Cas concret : le serveur a répondu par un `Retry-After` court (1 h)
-        mais la mise à jour automatique n'est de toute façon que dans 24 h.
-        Le report n'est pas le facteur décisif : c'est la nominale qui
-        gagne, donc le libellé doit rester nominal.
+        Concrete case: the server replied with a short `Retry-After` (1 h)
+        but the automatic update is 24 h away anyway. The defer is not the
+        decisive factor: the nominal time wins, so the label must stay
+        nominal.
         """
         report = (datetime.now() + timedelta(hours=1)).isoformat(timespec="seconds")
         cfg = _cfg(
@@ -273,7 +272,7 @@ class TestTextePresentableAvecReport:
         assert "report" not in texte_prochaine(p).lower()
 
     def test_libelle_report_passe_ignore(self, tmp_path):
-        """`retenter_apres` dépassé → libellé nominal (pas de « report »)."""
+        """`retenter_apres` in the past → nominal label (no "report" mention)."""
         past = (datetime.now() - timedelta(hours=2)).isoformat(timespec="seconds")
         derniere = (datetime.now() - timedelta(hours=20, minutes=30)).isoformat(
             timespec="seconds")

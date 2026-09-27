@@ -1,12 +1,12 @@
-"""Tests pytest-qt des QThread de vérification et téléchargement.
+"""pytest-qt tests for the update-check and download QThreads.
 
-Requiert `pytest-qt` et un display Qt : sur CI headless, définir
+Requires `pytest-qt` and a Qt display: on headless CI, set
 `QT_QPA_PLATFORM=offscreen`.
 
-Chaque test appelle `thread.wait()` après avoir reçu le signal attendu :
-sans cela, le wrapper Python peut être garbage-collecté avant que Qt ait
-fini de terminer le QThread C++, ce qui déclenche
-« QThread: Destroyed while thread is still running » puis SIGABRT.
+Every test calls `thread.wait()` after receiving the expected signal:
+without it, the Python wrapper can be garbage-collected before Qt has
+finished terminating the C++ QThread, which triggers
+"QThread: Destroyed while thread is still running" followed by SIGABRT.
 """
 
 from __future__ import annotations

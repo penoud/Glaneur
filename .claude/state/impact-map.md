@@ -9,82 +9,90 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-**Sprint « Identifiants FR → EN ». Batch 0 — préparation.**
+**Sprint « Identifiants FR → EN ». Batch 1 — sweep résiduel des commentaires
+et docstrings français.**
 
-Ce lot ne touche pas au code de production. Il produit :
+Le lot « docstrings-en » (2026-09-26) a passé `Glaneur/` en anglais côté
+docstrings. Les tests n'y sont pas passés : plusieurs modules gardent une
+docstring de module et des docstrings de méthode en français, plus quelques
+commentaires `#`. Un seul commentaire résiduel subsiste dans la prod
+(`Glaneur/engine/core.py:530`) — non couvert par la sweep précédente parce
+que le mot est dans une prose entre parenthèses, pas dans une docstring.
 
-1. La présente Impact Map, remise au format « lot en cours » — elle sera
-   réécrite au début de chaque lot suivant du sprint.
-2. Le **dictionnaire de renommage** consolidé (`rename-dictionary.md`)
-   qui sert de source de vérité aux lots 2 à 6 : toute décision d'un
-   lot suivant sur un identifiant renvoie à ce fichier plutôt qu'à une
-   discussion locale.
-
-Les décisions ouvertes de fin de plan de sprint (voir chat) sont
-figées ici, dans « Décisions figées ».
+Ce lot **ne touche à aucun identifiant** : références comme `nettoyer()`,
+`télécharger()`, `Moteur.executer`, `cfg.dossier`, `'fichier'` (clé JSON)
+restent telles quelles — leur renommage est le travail des lots 2 à 6.
 
 ## Directly modified
 
-- .claude/state/impact-map.md          (ce fichier — réécrit)
-- .claude/state/rename-dictionary.md   (nouveau — dictionnaire FR → EN)
+- Glaneur/engine/core.py                    (1 commentaire, ligne 530)
+- tests/test_bug_report.py                  (docstring de module)
+- tests/test_config.py                      (docstring de module)
+- tests/test_core.py                        (2 séparateurs `#` + docstrings)
+- tests/test_scheduler.py                   (docstring de module + comm.)
+- tests/test_source_base.py                 (docstrings + 2 séparateurs)
+- tests/test_source_djangoplicity.py        (docstring de module)
+- tests/test_source_wordpress.py            (docstring de module)
+- tests/test_system.py                      (docstring de module)
+- tests/test_updater_threads.py             (docstring de module)
+- tests/test_logsetup.py                    (docstring de module)
 
 ## Direct dependencies
 
-Aucune. Batch 0 n'a pas de dépendance de code.
+Aucune. Sweep textuelle sans changement d'API ni de comportement.
 
 ## Tests
 
-Aucun test à jouer. Le contenu produit sera exercé par les lots suivants.
+- Ruff ciblé sur chaque fichier modifié (les docstrings changées peuvent
+  déclencher les règles `D` si un style Google-Napoleon est enfreint —
+  peu probable ici mais à vérifier).
+- Pas d'exécution des tests fonctionnels concernés : les docstrings et
+  commentaires n'affectent pas l'exécution des tests. Un simple
+  `pytest --collect-only` sur le paquet `tests/` suffit à confirmer
+  qu'aucun fichier ne casse à la collecte (encoding, syntaxe des
+  triple-quotes après édition, etc.). Validation `local` selon la
+  table de CLAUDE.md.
 
 ## Explicitly out of scope
 
-- Toute modification de `Glaneur/**/*.py`, `tests/**`, `translations/**`,
-  `docs/sphinx/**`, `packaging/**`, `README.md`, `CLAUDE.md`.
-- La sweep résiduelle de commentaires FR (lot 1).
-- Les renommages eux-mêmes (lots 2 à 6).
-- Le changement de clés JSON persistées de `Config` (lot 4b, décision
-  figée ci-dessous mais implémentation reportée).
-- Les `.ts`/`.qm` Qt (lot 7, différé).
+- Renommage d'identifiants (lots 2 à 6, 4b).
+- Traduction des chaînes littérales FR utilisées comme clés/valeurs
+  (`'fichier'`, `"transitoire"`, `"coupure"`, `"definitif"`,
+  `"introuvable"`, `"illisible"`, `"divers"`, `"galerie"`, `"date"`,
+  `"plat"`, `"Manuel"`, `"1 heure"`…). Ces chaînes sont soit persistées,
+  soit affichées, soit des clés de dispatch : elles changent seulement
+  quand un lot d'identifiants les prend en charge.
+- Docstrings production dans `Glaneur/` déjà passées par le lot
+  « docstrings-en ». On ne les rejoue pas.
+- Commentaires `#` de la prod qui référencent un identifiant FR à
+  renommer plus tard (`nettoyer()`, `Moteur.fichier_complet`, `cfg.dossier`,
+  `'fichier'`) : ces références suivront leur renommage dans le bon
+  lot.
+- Frontière 1 et test `test_boundaries.py::test_no_qt_outside_ui[…]` :
+  aucun rapport avec la sweep.
 
 ## Invariants
 
-Ce lot ne modifie aucune frontière ni invariant du code. Les invariants
-qui **contraignent** les lots suivants sont recensés dans le dictionnaire
-sous « Contraintes », pas ici, pour rester au bon endroit lorsque les
-lots 2 à 6 recopieront ce champ.
+- **Aucun identifiant Python n'est renommé.**
+- **Aucune chaîne littérale n'est modifiée.** Les libellés utilisés en
+  dispatch (`"transitoire"`, `"coupure"`, `"definitif"`, `"introuvable"`,
+  `"galerie"`, etc.) restent bit-à-bit identiques.
+- Les docstrings restent en style Napoleon (Google) — la sweep ne doit
+  pas casser un `Args:` ou `Returns:` en tête de docstring existante.
+- Les tests continuent d'être collectés et de passer sans changement
+  d'assertions.
 
 ## Validation
 
-Niveau `local` (rédaction). Pas de pytest, pas de ruff, pas de Sphinx.
-La cohérence est vérifiée à la lecture par la conversation principale.
+Niveau `local` selon la table CLAUDE.md (« Python local » — tests
+concernés + ruff ciblé). Ce lot ne concerne aucune frontière ni
+invariant du code exécutable, ne modifie aucune API publique, ne touche
+pas à la persistance, ne modifie ni `docs/sphinx/**` ni `packaging/**`.
 
-## Décisions figées pour le sprint (arbitrages des points ouverts)
-
-Ces choix sont pris à Batch 0 pour que les lots suivants n'aient pas à
-les rejouer. Ils sont recopiés en tête du dictionnaire.
-
-- **Clés JSON persistées de `Config` (lot 4b) : shim de compatibilité.**
-  Le lot 4b renomme les champs de `Config` en anglais et ajoute dans
-  `Config.load` (ex `Config.charger`) une traduction FR → EN des clés
-  lues. Les écritures sortent en anglais. Le shim reste au moins une
-  release. Justification : sinon rupture silencieuse pour tout
-  utilisateur existant, hors politique de l'écart connu actuel.
-- **Sources Qt (`.ts` `sourcelanguage="fr"`) : différé.** Ce sprint est
-  code-only côté identifiants. Le lot 7 reste optionnel et sera
-  déclenché par l'owner i18n dans un sprint séparé — la manipulation
-  demande une passe de retraduction du côté `glaneur_fr.ts` qui devient
-  cible et non plus source.
-- **`review Opus`.** Réservé au lot 4b (rupture de format persistant).
-  Les lots 2 (moteur) et 3 (scheduler) restent en Sonnet — ils changent
-  l'API interne exportée par `Glaneur.engine.__init__` et
-  `Glaneur.scheduler`, mais pas la persistance. Un `review Opus` sur
-  Batch 2 se demande à `invariant-reviewer` uniquement si le diff
-  découvre une frontière non prévue.
-- **Ordre d'exécution retenu.** 0 → 1 → 2 → 3 → 4a → 5 → 6 → 4b → 8.
-  Le lot 4b passe en dernier des lots de renommage : il consomme le
-  vocabulaire EN adopté par les lots 2/3/5/6, et son shim de compat
-  bénéficie des `test_boundaries` mis à jour.
-- **Parallélisme.** Autorisé uniquement entre lots 2 (moteur) et 3
-  (scheduler), dans deux worktrees. Non recommandé par défaut : les
-  tests partagent `conftest.py`, `test_boundaries.py` et le tableau
-  d'imports.
+- `ruff check` sur les 11 fichiers modifiés.
+- `pytest --collect-only tests/test_bug_report.py tests/test_config.py
+  tests/test_core.py tests/test_scheduler.py tests/test_source_base.py
+  tests/test_source_djangoplicity.py tests/test_source_wordpress.py
+  tests/test_system.py tests/test_updater_threads.py tests/test_logsetup.py`
+  — les collecter suffit à valider la sweep. Une exécution complète de
+  la suite n'est pas justifiée par l'impact.

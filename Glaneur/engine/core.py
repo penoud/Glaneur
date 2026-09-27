@@ -527,7 +527,7 @@ class Moteur:
                 else:
                     res.echecs += 1
                     # `statut` can be an internal code ("introuvable") or an
-                    # already-translated phrase (see télécharger()).
+                    # already-translated phrase (see telecharger()).
                     affiche = QCoreApplication.translate("Moteur", "introuvable") if statut == "introuvable" else statut
                     self._journal(f"{fichier.name} : {affiche}")
 

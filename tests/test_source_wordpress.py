@@ -1,8 +1,8 @@
-"""Tests de l'adaptateur WordPress : pagination `X-WP-TotalPages`, sortie
-sur 400 (page au-delà de la dernière), tri des bases REST galerie-first,
-et extraction du mois depuis `/uploads/AAAA/MM/`.
+"""Tests for the WordPress adapter: `X-WP-TotalPages` pagination, exit on
+400 (page past the last one), gallery-first ordering of the REST bases,
+and month extraction from `/uploads/YYYY/MM/`.
 
-Aucun accès réseau : `Transport.get_json` est mocké.
+No network access: `Transport.get_json` is mocked.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
-"""Tests du moteur : utilitaires, manifeste, Moteur.executer et supprimer_image.
+"""Tests for the engine: utilities, manifest, Moteur.executer and supprimer_image.
 
-Aucun accès réseau : `Moteur.telecharger` et l'adaptateur de source sont mockés
-via `unittest.mock`. Les tests créent leur propre dossier temporaire avec
-`tmp_path` et n'ont pas besoin des interfaces COM Windows.
+No network access: `Moteur.telecharger` and the source adapter are mocked
+via `unittest.mock`. The tests create their own temporary directory with
+`tmp_path` and do not need the Windows COM interfaces.
 """
 
 from __future__ import annotations
@@ -386,7 +386,7 @@ class TestFichierComplet:
         assert Moteur.fichier_complet(f, {}, 42) is False
 
     def test_sans_taille_attendue_accepte(self, tmp_path):
-        # neither état.taille nor taille_api: we trust what we have
+        # neither an expected size nor an API-reported size: we trust what we have
         f = tmp_path / "x.jpg"
         f.write_bytes(b"a")
         assert Moteur.fichier_complet(f, None, None) is True
@@ -731,15 +731,15 @@ class TestExecuter:
 
 
 # --------------------------------------------------------------------------- #
-# Moteur.executer — coupe-circuit réseau et report différé (lot 2)
+# Moteur.executer — network circuit breaker and deferred retry (lot 2)
 # --------------------------------------------------------------------------- #
 
 class TestCoupeCircuit:
-    """Coupe-circuit du moteur : arrêt propre sur ``coupure`` ou 5 ``transitoire``.
+    """Engine circuit breaker: clean stop on ``coupure`` or 5 ``transitoire``.
 
-    Ces tests mockent :meth:`Moteur.telecharger` pour injecter directement le
-    triplet ``(statut, infos, Classification)`` — pas d'accès réseau, pas
-    d'attente réelle sur les backoffs.
+    These tests mock :meth:`Moteur.telecharger` to inject the
+    ``(statut, infos, Classification)`` triple directly — no network access,
+    no real waiting on backoffs.
     """
 
     _OK = ("ok", {"taille": 1, "etag": "", "modifie": "", "url": "u"}, None)
@@ -770,7 +770,7 @@ class TestCoupeCircuit:
         assert tel.call_count == 2
 
     def test_cinq_transitoires_consecutifs_interrompent(self, tmp_path):
-        """Cinq échecs ``transitoire`` consécutifs déclenchent le report."""
+        """Five consecutive ``transitoire`` failures trigger a defer."""
         moteur = _moteur(tmp_path, classement="date")
         elements = self._elements(10)
         transitoire = ("erreur : timeout", None,
@@ -784,7 +784,7 @@ class TestCoupeCircuit:
         assert tel.call_count == 5
 
     def test_succes_reinitialise_le_compteur(self, tmp_path):
-        """Un succès entre deux séries d'échecs ``transitoire`` remet le compteur à zéro."""
+        """A success between two runs of ``transitoire`` failures resets the counter."""
         moteur = _moteur(tmp_path, classement="date")
         elements = self._elements(10)
         transitoire = ("erreur : timeout", None,
@@ -812,7 +812,7 @@ class TestCoupeCircuit:
         assert res.reporte is False
 
     def test_retry_after_alimente_retenter_apres(self, tmp_path):
-        """Un ``Retry-After`` de 3600 s produit un ISO 8601 à ~1 h dans le futur."""
+        """A ``Retry-After`` of 3600 s produces an ISO 8601 about 1 h in the future."""
         moteur = _moteur(tmp_path, classement="date")
         el = self._elements(1)[0]
         reponse = ("erreur : quota", None, Classification("coupure", 3600.0))
@@ -830,7 +830,7 @@ class TestCoupeCircuit:
         assert cible <= apres + timedelta(seconds=3660)
 
     def test_sans_retry_after_retenter_apres_est_vide(self, tmp_path):
-        """Sans ``Retry-After``, ``res.retenter_apres`` reste vide : le planificateur décidera."""
+        """Without ``Retry-After``, ``res.retenter_apres`` stays empty: the scheduler decides."""
         moteur = _moteur(tmp_path, classement="date")
         el = self._elements(1)[0]
         reponse = ("erreur : boum", None, Classification("coupure", None))
@@ -841,7 +841,7 @@ class TestCoupeCircuit:
         assert res.retenter_apres == ""
 
     def test_manifeste_sauvegarde_meme_sur_report(self, tmp_path):
-        """Le manifeste sur disque contient les entrées téléchargées avant la coupure."""
+        """The on-disk manifest keeps the entries downloaded before the cut."""
         moteur = _moteur(tmp_path, classement="date")
         elements = self._elements(3)
         coupure = ("erreur : coupure", None, Classification("coupure", None))
@@ -854,7 +854,7 @@ class TestCoupeCircuit:
         assert "1" in m
 
     def test_cache_non_sauvegarde_sur_report(self, tmp_path):
-        """Une coupure n'écrit pas le cache moteur (analogue à ``Interrompu``)."""
+        """A cut does not write the engine cache (same as ``Interrompu``)."""
         moteur = _moteur(tmp_path, site="https://x", classement="date")
         elements = self._elements(3)
         coupure = ("erreur : coupure", None, Classification("coupure", None))
@@ -949,7 +949,7 @@ class TestChargerManifeste:
 
 
 # --------------------------------------------------------------------------- #
-# executer: extra branches (inchangé, gallery resolution, OSError…)
+# executer: extra branches (unchanged, gallery resolution, OSError…)
 # --------------------------------------------------------------------------- #
 
 class TestExecuterExtra:
@@ -1250,16 +1250,16 @@ class TestCacheAPI:
 # --------------------------------------------------------------------------- #
 
 class TestSauverManifesteFusion:
-    """Fusion en écriture : la marque UI l'emporte sur la version mémoire du moteur.
+    """Write-merge: the UI mark wins over the engine's in-memory version.
 
-    Non-régression contre la race last-writer-wins entre
-    ``Moteur.executer()`` (charge le manifeste à l'entrée, réécrit tout
-    dans le ``finally``) et ``supprimer_image``/``restaurer`` (lire-muter-
-    écrire côté UI).
+    Non-regression against the last-writer-wins race between
+    ``Moteur.executer()`` (loads the manifest on entry, rewrites everything
+    in ``finally``) and ``supprimer_image``/``restaurer`` (read-mutate-write
+    on the UI side).
     """
 
     def test_marque_supprime_ui_survit_a_sauvegarde_moteur(self, tmp_path):
-        """La marque `supprime` posée par l'UI pendant un run survit au `finally` du moteur."""
+        """A `supprime` mark set by the UI during a run survives the engine's `finally`."""
         # Disk state at run start; engine loads it into memory.
         ecrire_manifeste(tmp_path, {"1": {"fichier": "a.jpg", "taille": 42}})
         # File must exist for supprimer_image to succeed.
@@ -1275,7 +1275,7 @@ class TestSauverManifesteFusion:
         assert "supprime" in lire_manifeste(tmp_path)["1"]
 
     def test_marque_restaure_ui_survit_a_sauvegarde_moteur(self, tmp_path):
-        """La marque `restaure` posée par l'UI pendant un run survit au `finally` du moteur."""
+        """A `restaure` mark set by the UI during a run survives the engine's `finally`."""
         # Disk starts with a `supprime` mark; engine loads it into memory.
         ecrire_manifeste(tmp_path, {
             "1": {"fichier": "a.jpg", "taille": 42,
@@ -1295,7 +1295,7 @@ class TestSauverManifesteFusion:
         assert "supprime" not in stocke
 
     def test_entree_disque_hors_perimetre_preservee(self, tmp_path):
-        """Une entrée présente uniquement sur disque n'est pas effacée par la fusion."""
+        """An entry present only on disk is not wiped by the merge."""
         # Ident "2" is on disk with a `supprime` mark but not in the engine's
         # inventory this run (e.g. filtered out); the fusion must keep it.
         ecrire_manifeste(tmp_path, {
@@ -1310,7 +1310,7 @@ class TestSauverManifesteFusion:
         assert m["2"].get("fichier") == "b.jpg"
 
     def test_nouvelle_entree_moteur_ecrite(self, tmp_path):
-        """Une entrée que le moteur vient d'ajouter en mémoire est bien persistée."""
+        """An entry the engine just added in memory is persisted correctly."""
         ecrire_manifeste(tmp_path, {"1": {"fichier": "a.jpg"}})
         moteur = _moteur(tmp_path)
         moteur.sauver_manifeste({
@@ -1323,7 +1323,7 @@ class TestSauverManifesteFusion:
         assert m["3"]["taille"] == 10
 
     def test_suppression_ui_pendant_reset_par_moteur(self, tmp_path):
-        """Suppression UI concomitante d'un re-téléchargement : `supprime` l'emporte, champs frais préservés."""
+        """UI deletion concurrent with a re-download: `supprime` wins, fresh fields preserved."""
         # Disk: user deleted the image just before the engine finished
         # re-downloading it (fresh size/etag in memory, no `supprime`).
         ecrire_manifeste(tmp_path, {
@@ -1340,7 +1340,7 @@ class TestSauverManifesteFusion:
         assert stocke["etag"] == "neuf"
 
     def test_champ_supprime_en_memoire_ecrase_disque_normalement(self, tmp_path):
-        """La marque `supprime` posée par le moteur en mémoire est écrite normalement (règle de fusion asymétrique)."""
+        """A `supprime` mark set by the engine in memory is written normally (asymmetric merge rule)."""
         # Engine set `supprime` itself (case "file disappeared during run",
         # engine.py branch around line 750-755). Disk has no `supprime`.
         ecrire_manifeste(tmp_path, {"1": {"fichier": "a.jpg"}})
@@ -1354,7 +1354,7 @@ class TestSauverManifesteFusion:
         assert stocke.get("supprime") == "2026-01-05T00:00:00"
 
     def test_sauvegarde_periodique_non_regressee(self, tmp_path):
-        """La fusion ne rate pas le tick des 25 : ``sauver_manifeste`` reste appelée >= 2 fois avec 26 éléments."""
+        """The merge does not miss the 25-tick: ``sauver_manifeste`` is still called >= 2 times with 26 items."""
         # Mirror of TestExecuterExtra::test_sauvegarde_periodique to detect any
         # regression in the periodic save cadence once the fusion is added.
         moteur = _moteur(tmp_path, classement="date")
