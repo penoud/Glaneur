@@ -756,38 +756,38 @@ Quitter maintenant ?</source>
 <context>
     <name>Planificateur</name>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="192"/>
-        <location filename="../Glaneur/scheduler.py" line="195"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="35"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="38"/>
         <source>Mise à jour automatique désactivée</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="198"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="41"/>
         <source>Prochaine mise à jour : imminente</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="203"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="46"/>
         <source>{jours} j {heures} h</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="206"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="49"/>
         <source>{heures} h {minutes:02d} min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="209"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="52"/>
         <source>{minutes} min</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="217"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="55"/>
         <source>Reprise reportée dans {delai} ({date})</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="220"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="58"/>
         <source>Prochaine mise à jour dans {delai} ({date})</source>
         <translation type="unfinished"></translation>
     </message>

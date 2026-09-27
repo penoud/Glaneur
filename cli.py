@@ -20,6 +20,7 @@ from Glaneur.engine import (
     restaurer,
 )
 from Glaneur.scheduler import Planificateur
+from Glaneur.scheduler_labels import texte_prochaine
 
 
 def main() -> int:
@@ -119,7 +120,7 @@ def main() -> int:
         # truncated.
         planificateur = Planificateur(c)
         planificateur.differer(res)
-        print(f"  {planificateur.texte_prochaine()}", file=sys.stderr)
+        print(f"  {texte_prochaine(planificateur)}", file=sys.stderr)
         return 2
     return 1 if res.echecs and not res.telechargees else 0
 

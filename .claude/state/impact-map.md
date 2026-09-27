@@ -9,74 +9,90 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Lot 4 du sprint « Coupe-circuit réseau et report différé ». Câble
-`Resultat.reporte` dans l'UI (`app.py`) et le CLI (`cli.py`), et met à
-jour les fichiers `.ts` avec les nouvelles chaînes traduites introduites
-par les lots 2 et 3.
+Frontière 1 sur le scheduler : rendre `Glaneur/scheduler.py` Qt-free en
+extrayant le formatage traduit `texte_prochaine()` vers un helper UI
+séparé. Retirer l'entrée correspondante de `KNOWN_QT_IMPORTS` dans
+`tests/test_boundaries.py` (le xfail strict échoue dès que la dette est
+soldée). Mettre à jour CLAUDE.md et régénérer les `.ts`.
+
+`Glaneur/engine/core.py` reste **hors périmètre** (chantier séparé :
+émission d'événements structurés).
 
 ## Directly modified
 
-- app.py                                     (dans `_terminer` : si
-                                              `res.reporte`, appeler
-                                              `planificateur.differer(res)`
-                                              au lieu de
-                                              `marquer_execution()`,
-                                              adapter le message des
-                                              échecs pour éviter le
-                                              double libellé)
-- cli.py                                     (après `moteur.executer()` :
-                                              si `res.reporte`, appeler
-                                              `differer(res)` sur un
-                                              `Planificateur(c)`, imprimer
-                                              un résumé et sortir avec
-                                              exit code 2)
-- translations/glaneur_fr.ts                 (mise à jour via
-                                              `build_translations.py update`)
-- translations/glaneur_en.ts                 (idem, traductions à
-                                              compléter manuellement pour
-                                              les nouvelles chaînes)
+- Glaneur/scheduler.py                       (retirer `QCoreApplication`,
+                                              retirer `texte_prochaine()`,
+                                              exposer `report_actif()`
+                                              publique pour que le helper
+                                              n'ait pas à toucher aux
+                                              méthodes `_` )
+- Glaneur/scheduler_labels.py                (nouveau : fonction
+                                              `texte_prochaine(planificateur)`
+                                              avec les 7 chaînes
+                                              « Planificateur » traduites ;
+                                              hors périmètre du test de
+                                              boundary, qui ne scanne que
+                                              scheduler.py, detect.py,
+                                              engine/*.py et sources/*.py)
+- app.py                                     (dans `_rafraichir_echeance` :
+                                              `texte_prochaine(self.planificateur)`
+                                              au lieu de la méthode)
+- cli.py                                     (idem : `texte_prochaine(planificateur)`)
+- tests/test_boundaries.py                   (retirer
+                                              `"Glaneur/scheduler.py"`
+                                              de `KNOWN_QT_IMPORTS`)
+- tests/test_scheduler.py                    (les tests `TestTextePresentable*`
+                                              importent et exercent la
+                                              fonction du helper, pas la
+                                              méthode)
+- CLAUDE.md                                  (retirer l'écart connu
+                                              scheduler ; l'écart moteur
+                                              reste)
+- translations/glaneur_fr.ts                 (régénérer via
+                                              `build_translations.py update`
+                                              — les libellés
+                                              « Planificateur » ne
+                                              changent pas, seul le
+                                              `filename=` bascule sur
+                                              `scheduler_labels.py`)
+- translations/glaneur_en.ts                 (idem)
 
 ## Direct dependencies
 
-- `Glaneur.scheduler.Planificateur.differer` (lot 3), consommé par
-  `app.py` et `cli.py`.
-- Nouvelles chaînes traduisibles introduites aux lots 2/3 :
-  - `Moteur` : « Serveur indisponible ou quota atteint — reprise après {heure}. »
-    et sa variante sans heure.
-  - `Planificateur` : « Reprise reportée dans {delai} ({date}) ».
-  - `Glaneur.cli` : nouvelles impressions (pas traduites, cohérent
-    avec le reste du CLI qui est en français hard-coded).
+- `build_translations.py` scanne déjà `*(RACINE / "Glaneur").glob("*.py")`,
+  donc le nouveau fichier est capté sans modification du build.
 
 ## Tests
 
-- Pas de nouveaux tests unitaires : `app.py` est peu testé et le
-  cheminement est trivial (assignation conditionnelle). Le CLI n'a
-  pas de tests dédiés dans le dépôt.
-- La régression est couverte par la suite existante — aucun test ne
-  doit se casser.
-- Ruff ciblé sur `app.py` et `cli.py`.
-
-## Potentially affected
-
-- `_verifier_echeance` : quand un report est actif, `prochaine()`
-  renvoie une date future, donc `echeance_atteinte()` reste `False` —
-  pas d'auto-run intempestif. Comportement voulu, testé au lot 3
-  côté planificateur.
+- `tests/test_scheduler.py` : classes `TestTextePresentable` et
+  `TestTextePresentableAvecReport` (7 tests) — mêmes assertions, appel
+  changé.
+- `tests/test_boundaries.py::test_no_qt_outside_ui[Glaneur/scheduler.py]`
+  doit passer de XFAIL à PASSED.
+- `tests/test_cli.py::test_deux_si_run_reporte` couvre déjà le chemin
+  d'appel dans le CLI.
+- Ruff ciblé sur les fichiers modifiés.
+- Pas de suite complète nécessaire : validation `local` selon la table
+  de CLAUDE.md (« Une source » → tests concernés + ruff), le scheduler
+  n'étant ni API publique ni format persistant.
 
 ## Explicitly out of scope
 
-- Docs Sphinx (lot 5).
-- Refactor de `_terminer` au-delà du câblage du report.
-- Tests unitaires de l'UI (le dépôt n'en a pas pour `app.py`).
+- `Glaneur/engine/core.py` (chantier séparé, événements structurés).
+- Réécriture de la logique de planification (dates, backoff) — inchangée.
+- Ajout de traductions anglaises (les entrées restent `unfinished`,
+  comme aujourd'hui).
+- Docs Sphinx : pas de docstrings publiques changées dans le sens des
+  signatures ; `texte_prochaine()` disparaît mais il n'est pas
+  documenté en `autoclass` séparément.
 
 ## Invariants
 
-- Un run avec `res.reporte = True` :
-  - ne doit PAS appeler `marquer_execution()` (sinon le report est
-    immédiatement effacé au lot 3) ;
-  - doit appeler `planificateur.differer(res)` exactement une fois.
-- Un run avec `res.interrompu = True` conserve le comportement existant
-  (ni `marquer_execution` ni `differer`).
-- Un run normal (`not res.reporte and not res.interrompu`) reste
-  inchangé : `marquer_execution()`.
-- Le CLI ne quitte plus toujours 0/1 : 2 est réservé aux reports.
+- Le scheduler n'importe plus Qt (frontière 1 satisfaite).
+- Les 7 chaînes source « Planificateur » restent **identiques
+  caractère pour caractère** — sinon les `.ts` existants perdraient
+  leurs entrées et il faudrait retraduire.
+- L'API du CLI et de l'UI reste inchangée du point de vue de
+  l'utilisateur (mêmes libellés affichés).
+- `Planificateur.report_actif()` (nouveau) renvoie exactement le même
+  booléen que le calcul inline précédent dans `texte_prochaine`.
