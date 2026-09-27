@@ -1,10 +1,9 @@
 """Due-date logic for automatic updates.
 
 Deliberately without a thread or a widget: the class only answers "is it
-time?". The interface polls it periodically through a ``QTimer``. The
-only Qt dependency is ``QCoreApplication.translate`` for the visible
-labels returned by :meth:`Planificateur.texte_prochaine` (no widget, no
-thread introduced).
+time?". The interface polls it periodically through a ``QTimer``. Fully
+Qt-free — the localised label rendered from this state lives in
+:mod:`Glaneur.scheduler_labels`, on the UI side of boundary 1.
 
 The due date is computed from ``derniere_execution`` stored in the
 configuration, so it survives an application shutdown: if the interval
@@ -16,13 +15,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QCoreApplication
-
 if TYPE_CHECKING:
-    from .engine.resultat import Resultat
-
-# lupdate only extracts QCoreApplication.translate("Ctx", "src") calls
-# with literals: we inline rather than aliasing (see bug_report.py).
+    from .engine.result import Resultat
 
 # Exponential backoff applied when the server did not provide a
 # ``Retry-After``: level 0 -> 1 h, 1 -> 2 h, 2 -> 4 h. The level is
@@ -123,6 +117,18 @@ class Planificateur:
         prochaine = self.prochaine()
         return prochaine is not None and datetime.now() >= prochaine
 
+    def report_actif(self) -> bool:
+        """True when a valid ``retenter_apres`` pushes the nominal deadline out.
+
+        Exposed for the UI-side label helper so it can pick the "deferred"
+        wording without touching private methods.
+        """
+        nominale = self._nominale()
+        report = self._retenter_apres()
+        return (report is not None
+                and nominale is not None
+                and report > nominale)
+
     def marquer_execution(self) -> None:
         """Record the current instant as the last run and persist the config.
 
@@ -169,50 +175,3 @@ class Planificateur:
             self.config.backoff_niveau = min(niveau + 1, 2)
         self.config.retenter_apres = cible.isoformat(timespec="seconds")
         self.config.sauver()
-
-    # -- display ------------------------------------------------------------- #
-
-    def texte_prochaine(self) -> str:
-        """Localised label for the user: "Next update in ...".
-
-        Format adapted to the remaining time before the deadline: days +
-        hours above 24 h, hours + minutes above one hour, minutes below.
-        Returns a dedicated message in manual mode or when the deadline
-        is already past.
-
-        Returns:
-            A ready-to-display text, translated through
-            ``QCoreApplication.translate`` (context ``"Planificateur"``).
-        """
-        if not self.config.intervalle_heures:
-            return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
-        prochaine = self.prochaine()
-        if prochaine is None:
-            return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
-        reste = prochaine - datetime.now()
-        if reste.total_seconds() <= 0:
-            return QCoreApplication.translate("Planificateur", "Prochaine mise à jour : imminente")
-        heures, secondes = divmod(int(reste.total_seconds()), 3600)
-        minutes = secondes // 60
-        if heures >= 24:
-            jours, heures = divmod(heures, 24)
-            delai = QCoreApplication.translate(
-                "Planificateur", "{jours} j {heures} h").format(jours=jours, heures=heures)
-        elif heures:
-            delai = QCoreApplication.translate(
-                "Planificateur", "{heures} h {minutes:02d} min").format(heures=heures, minutes=minutes)
-        else:
-            delai = QCoreApplication.translate(
-                "Planificateur", "{minutes} min").format(minutes=minutes)
-        nominale = self._nominale()
-        report = self._retenter_apres()
-        report_actif = (report is not None
-                        and nominale is not None
-                        and report > nominale)
-        if report_actif:
-            return QCoreApplication.translate(
-                "Planificateur", "Reprise reportée dans {delai} ({date})").format(
-                delai=delai, date=f"{prochaine:%d/%m à %H:%M}")
-        return QCoreApplication.translate(
-            "Planificateur", "Prochaine mise à jour dans {delai} ({date})").format(
-            delai=delai, date=f"{prochaine:%d/%m à %H:%M}")

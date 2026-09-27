@@ -784,38 +784,38 @@ Quit now?</translation>
 <context>
     <name>Planificateur</name>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="192"/>
-        <location filename="../Glaneur/scheduler.py" line="195"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="35"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="38"/>
         <source>Mise à jour automatique désactivée</source>
         <translation>Automatic update disabled</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="198"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="41"/>
         <source>Prochaine mise à jour : imminente</source>
         <translation>Next update: imminent</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="203"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="46"/>
         <source>{jours} j {heures} h</source>
         <translation>{jours} d {heures} h</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="206"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="49"/>
         <source>{heures} h {minutes:02d} min</source>
         <translation>{heures} h {minutes:02d} min</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="209"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="52"/>
         <source>{minutes} min</source>
         <translation>{minutes} min</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="217"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="55"/>
         <source>Reprise reportée dans {delai} ({date})</source>
         <translation>Resume deferred by {delai} ({date})</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler.py" line="220"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="58"/>
         <source>Prochaine mise à jour dans {delai} ({date})</source>
         <translation>Next update in {delai} ({date})</translation>
     </message>

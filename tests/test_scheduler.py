@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from Glaneur.config import Config
 from Glaneur.engine.result import Resultat
 from Glaneur.scheduler import Planificateur
+from Glaneur.scheduler_labels import texte_prochaine
 
 
 def _cfg(tmp_path, **kw):
@@ -86,13 +87,13 @@ class TestMarquerExecution:
 class TestTextePresentable:
     def test_mode_manuel(self, tmp_path):
         p = Planificateur(_cfg(tmp_path, intervalle_heures=0))
-        assert "désactivée" in p.texte_prochaine()
+        assert "désactivée" in texte_prochaine(p)
 
     def test_imminente(self, tmp_path):
         t0 = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
         p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        assert "imminente" in p.texte_prochaine()
+        assert "imminente" in texte_prochaine(p)
 
     def test_reste_en_minutes(self, tmp_path):
         # due time in ~30 min: derniere = now - 23h30
@@ -100,7 +101,7 @@ class TestTextePresentable:
             timespec="seconds")
         p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        r = p.texte_prochaine()
+        r = texte_prochaine(p)
         assert "min" in r
         # < 1h → no "h" field
         assert " h " not in r
@@ -111,14 +112,14 @@ class TestTextePresentable:
             timespec="seconds")
         p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        assert " h " in p.texte_prochaine()
+        assert " h " in texte_prochaine(p)
 
     def test_reste_en_jours(self, tmp_path):
         # due time in 5 days: interval 7 days, derniere = 2 days ago
         t0 = (datetime.now() - timedelta(days=2)).isoformat(timespec="seconds")
         p = Planificateur(_cfg(tmp_path, intervalle_heures=168,
                                derniere_execution=t0))
-        assert " j " in p.texte_prochaine()
+        assert " j " in texte_prochaine(p)
 
 
 # --------------------------------------------------------------------------- #
@@ -251,7 +252,7 @@ class TestTextePresentableAvecReport:
             retenter_apres=report,
         )
         p = Planificateur(cfg)
-        assert "report" in p.texte_prochaine().lower()
+        assert "report" in texte_prochaine(p).lower()
 
     def test_libelle_report_avant_nominale_ignore(self, tmp_path):
         """Report antérieur à la nominale → pas de libellé « report » trompeur.
@@ -269,7 +270,7 @@ class TestTextePresentableAvecReport:
             retenter_apres=report,
         )
         p = Planificateur(cfg)
-        assert "report" not in p.texte_prochaine().lower()
+        assert "report" not in texte_prochaine(p).lower()
 
     def test_libelle_report_passe_ignore(self, tmp_path):
         """`retenter_apres` dépassé → libellé nominal (pas de « report »)."""
@@ -283,4 +284,4 @@ class TestTextePresentableAvecReport:
             retenter_apres=past,
         )
         p = Planificateur(cfg)
-        assert "report" not in p.texte_prochaine().lower()
+        assert "report" not in texte_prochaine(p).lower()

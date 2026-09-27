@@ -83,6 +83,7 @@ from Glaneur.engine import (
     supprimer_image,
 )
 from Glaneur.scheduler import Planificateur
+from Glaneur.scheduler_labels import texte_prochaine
 from Glaneur.sources import classements_pour
 from Glaneur.system import (
     avancer_diaporama,
@@ -1211,7 +1212,7 @@ class Fenetre(QMainWindow):
             self._lancer(auto=True)
 
     def _rafraichir_echeance(self) -> None:
-        texte = self.planificateur.texte_prochaine()
+        texte = texte_prochaine(self.planificateur)
         self.label_echeance.setText(texte)
         if self.tray:
             self.tray.setToolTip(self.tr("Glaneur — {texte}").format(texte=texte))

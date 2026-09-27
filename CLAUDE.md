@@ -13,12 +13,6 @@ hors de son lot, ni signalé comme régression, sauf s'il s'aggrave.
   ses messages. La frontière 1 sera tenue quand le moteur émettra des événements
   structurés. Suivi par `xfail(strict=True)` dans `tests/test_boundaries.py`.
   Les autres submodules de `Glaneur/engine/` sont indépendants de Qt.
-- `Glaneur/scheduler.py` importe `PySide6.QtCore`. Même frontière 1 à tenir,
-  probablement par extraction de la partie « planification » hors Qt. Suivi
-  par `xfail(strict=True)` dans `tests/test_boundaries.py` (entrée
-  `Glaneur/scheduler.py` dans `KNOWN_QT_IMPORTS`) ; à retirer dès que le
-  prochain lot qui touche le scheduler extrait la partie planification hors
-  Qt.
 - Les identifiants Python (noms de fonctions, classes, variables locales) et
   les chaînes source de l'interface (`.ts` en `sourcelanguage="fr"`, libellés
   français en clés dans `config.py`) restent en français : futur lot. Les
