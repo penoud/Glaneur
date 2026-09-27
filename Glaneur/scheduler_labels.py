@@ -31,7 +31,7 @@ def next_run_text(scheduler: Scheduler) -> str:
         A translated text (context ``"Planificateur"``).
     """
     config = scheduler.config
-    if not config.intervalle_heures:
+    if not config.interval_hours:
         return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
     prochaine = scheduler.next_run()
     if prochaine is None:

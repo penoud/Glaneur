@@ -110,13 +110,13 @@ class TestArgumentsVersOptions:
             monkeypatch,
             [],
             config_kw={
-                "dossier": str(tmp_path / "photos"),
+                "target_dir": str(tmp_path / "photos"),
                 "site": "https://example.test",
-                "type_source": "wordpress",
-                "classement": "date",
-                "format_image": "Large",
-                "largeur_min": 800,
-                "delai_requetes": 1.5,
+                "source_type": "wordpress",
+                "sort_mode": "date",
+                "image_format": "Large",
+                "min_width": 800,
+                "request_delay": 1.5,
             },
         )
         assert rc == 0
@@ -269,7 +269,7 @@ class TestRestaurer:
         appels = {}
 
         def faux_restaurer(dossier, ids):
-            appels["dossier"] = dossier
+            appels["target_dir"] = dossier
             appels["ids"] = list(ids)
             return len(appels["ids"])
 
@@ -285,7 +285,7 @@ class TestRestaurer:
             ["--dossier", str(tmp_path), "--restaurer", "12", "34", "56"],
         )
         assert rc == 0
-        assert appels["dossier"] == tmp_path.expanduser()
+        assert appels["target_dir"] == tmp_path.expanduser()
         assert appels["ids"] == ["12", "34", "56"]
         assert "3 image(s) remise(s)" in capsys.readouterr().out
 

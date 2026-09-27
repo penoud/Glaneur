@@ -9,150 +9,128 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-**Sprint « Identifiants FR → EN ». Batch 6 — sources + system.**
+**Sprint « Identifiants FR → EN ». Batch 4b — champs `Config` (format
+persistant).**
 
-Renommer la surface de `Glaneur/sources/` (base, wordpress, djangoplicity,
-package) et de `Glaneur/system.py`.
+Renommer les champs FR de la dataclass `Config` en anglais. Les clés
+JSON de `config.json` deviennent EN à l'écriture ; à la lecture, le
+`load()` accepte les deux orthographes via un **shim de compat** pour
+qu'un utilisateur existant ne perde pas sa config.
 
-### `Glaneur/sources/base.py`
+### Renommages `Config`
 
-Constantes module :
-- `_MOTS_COUPURE → _CUT_KEYWORDS`
-- `_STATUTS_COUPURE → _CUT_STATUSES`
-- `_STATUTS_DEFINITIFS → _DEFINITIVE_STATUSES`
+| FR                        | EN                        |
+| ------------------------- | ------------------------- |
+| `dossier`                 | `target_dir`              |
+| `intervalle_heures`       | `interval_hours`          |
+| `largeur_min`             | `min_width`               |
+| `classement`              | `sort_mode`               |
+| `type_source`             | `source_type`             |
+| `format_image`            | `image_format`            |
+| `verifier_integrite`      | `verify_integrity`        |
+| `diaporama_dossier`       | `slideshow_dir`           |
+| `delai_requetes`          | `request_delay`           |
+| `derniere_execution`      | `last_run`                |
+| `retenter_apres`          | `retry_after`             |
+| `backoff_niveau`          | `backoff_level`           |
+| `lancer_au_demarrage`     | `run_at_startup`          |
+| `fermer_dans_barre`       | `close_to_tray`           |
+| `verifier_maj_demarrage`  | `check_updates_on_start`  |
+| `langue`                  | `language`                |
 
-Classe `Classification → ErrorClassification` + champ `categorie → category`.
-Les VALEURS de `category` (`"transitoire"`, `"coupure"`, `"definitif"`)
-restent FR (chaînes de dispatch persistables via l'engine `res.message`).
+`site` et `notifications` sont déjà EN et restent.
 
-Classe `Transport` :
-- constructeur : `delai → delay` (paramètre + attribut)
-- méthode : `verifier_arret → check_stop`
-- méthode : `pause → sleep`
+### Shim de compat
 
-Classe `Source` :
-- constructeur : `reglages → settings` (paramètre + attribut)
-- class var : `classements → sort_modes`
-- méthode abstraite : `inventaire → inventory`
-- méthode : `resoudre_groupes → resolve_groups`
-- méthode : `convertir_depuis → convert_from`
+Dans `Config.load`, avant `setattr`, on traduit chaque clé FR trouvée
+dans le JSON vers son nom EN via une table `_LEGACY_FIELD_ALIASES`.
+Le shim :
 
-### `Glaneur/sources/wordpress.py`
+- accepte tout ancien fichier `config.json` sans changement de format,
+- accepte un JSON hybride (mix EN/FR) — le EN gagne s'il est présent,
+- écrit systématiquement les clés EN via `Config.save`
+  (`dataclasses.asdict` sur les champs renommés produit du EN
+  directement).
 
-- Fonction module : `_nettoyer → _clean`
-- Méthodes de `WordPress` : `inventaire → inventory`,
-  `resoudre_groupes → resolve_groups`, `_bases_rest → _rest_bases`
+Après un cycle load→save, un vieux `config.json` est réécrit en EN.
 
-### `Glaneur/sources/djangoplicity.py`
+### Nouveaux tests requis
 
-- Fonction module : `_sain → _sanitized`
-- Constante module : `REPLIS → FALLBACKS`
-- Méthodes de `Djangoplicity` : `convertir_depuis → convert_from`,
-  `inventaire → inventory`, `_choisir_ressource → _select_resource`
-
-### `Glaneur/sources/__init__.py`
-
-- Fonction : `classements_pour → sort_modes_for`
-
-### `Glaneur/system.py`
-
-Constantes module :
-- `NOM_ENTREE → REGISTRY_ENTRY`
-- `CLE_RUN → RUN_KEY`
-
-Fonctions publiques :
-- `est_gele → is_frozen`
-- `commande_lancement → launch_command`
-- `demarrage_automatique → autostart` (paramètre `actif → enabled`)
-- `demarrage_automatique_actif → autostart_active`
-- `ouvrir_dossier → open_dir`
-- `definir_dossier_diaporama → set_slideshow_dir`
-- `fond_ecran_actuel → current_wallpaper`
-- `avancer_diaporama → advance_slideshow`
-
-Fonctions privées :
-- `_appel_com → _com_call`
-- `_instancier_bureau → _instantiate_desktop`
-- `_liberer_bureau → _release_desktop`
-- `_creer_tableau_images → _build_images_array`
-
-## Explicitly out of scope
-
-- **`Element`** et ses champs (`ident`, `url`, `nom_fichier`, `date`,
-  `mois`, `largeur`, `taille`, `groupe`, `extra`) — lot 4b (persistés
-  au manifeste via `dataclasses.asdict`).
-- **`Transport.arret`** (param + attribut) et le paramètre `arret` de
-  `Engine.__init__` — grosse cascade sur toute l'API des callbacks
-  d'interruption ; garder FR ce lot pour rester tractable, à faire dans
-  un lot cleanup ultérieur si souhaité.
-- **`Engine.dossier_pour`** (méthode de `Engine`, garde FR par cohérence
-  avec `Element.groupe`/`.mois` qui restent FR jusqu'au lot 4b).
-- **`Engine._pause`** (méthode privée, gardée FR en lot 2 par cohérence
-  avec le nom local et le fait qu'elle enveloppe `transport.sleep`).
-- **`WordPress._to_element` / `Djangoplicity._to_element`** — restent FR
-  parce qu'elles retournent `Element` (renommage `→ Item` au lot 4b) ;
-  les deux renommages iront ensemble.
-- Valeurs de dispatch FR (chaînes `"transitoire"`, `"coupure"`,
-  `"definitif"`, `"galerie"`, `"date"`, `"plat"`, `"wordpress"`,
-  `"djangoplicity"`, `"Large"`, `"Small"`, `"Original"`, statuts
-  d'engine, marques `"supprime"`, `"restaure"`, etc.).
-- Constantes CO/COM identifiées par des UUID Microsoft
-  (`_CLSID_DESKTOP_WALLPAPER`, `_IID_IDESKTOP_WALLPAPER`, `_VT_*`, etc.) :
-  gardent leur nom actuel (déjà EN-ish + collisions avec spec Windows).
-- Contexte Qt `"Updater"` etc. et strings sources FR : inchangés.
+- **Round-trip legacy** : écrire un `config.json` avec toutes les clés
+  FR, faire `Config.load(chemin)` puis `Config.save()`, relire brut,
+  vérifier que le disque contient les clés EN et les mêmes valeurs.
+- **Hybride** : JSON avec une clé FR (`dossier`) et une clé EN
+  (`sort_mode`) → les deux sont chargées correctement.
+- **Cœur inchangé** : la validation (`validate()`) tolère les valeurs
+  hors-liste comme avant.
 
 ## Directly modified
 
-- Glaneur/sources/base.py
-- Glaneur/sources/wordpress.py
-- Glaneur/sources/djangoplicity.py
-- Glaneur/sources/__init__.py
-- Glaneur/system.py
-- Glaneur/engine/core.py            (Transport(...) call, `self.source.*`
-                                      chains, imports d'`ErrorClassification`
-                                      / `classify_error`)
-- Glaneur/config.py                 (`from .sources import
-                                      sort_modes_for` + usage)
-- app.py                            (imports depuis `Glaneur.system`)
-- tests/test_source_base.py         (Classification/categorie)
-- tests/test_source_wordpress.py    (méthodes)
-- tests/test_source_djangoplicity.py
-- tests/test_sources_edges.py       (_sain, _nettoyer)
-- tests/test_system.py              (fonctions)
-- tests/test_core.py                (patchs sur `source.inventaire`,
-                                      `source.resoudre_groupes`)
-- tests/test_boundaries.py          (potentiel : liste des imports Qt)
+- Glaneur/config.py                    (dataclass, `_LEGACY_FIELD_ALIASES`,
+                                        `load`, `validate`, properties)
+- Glaneur/scheduler.py                 (accès aux champs `derniere_execution`,
+                                        `retenter_apres`, `intervalle_heures`,
+                                        `backoff_niveau`)
+- app.py                               (nombreux sites : lecture de
+                                        `cfg.classement`, `cfg.dossier`,
+                                        etc. + écriture)
+- cli.py                               (lecture de `c.dossier`,
+                                        `c.delai_requetes`)
+- tests/test_config.py                 (tests existants + 2/3 nouveaux
+                                        pour le shim et le round-trip)
+- tests/test_scheduler.py              (helper `_cfg(...)`)
+- tests/test_cli.py                    (patch de Config.load)
 
 ## Direct dependencies
 
-- Sphinx docstrings : rôles `:class:`, `:meth:`, `:func:`, ``\`\`X\`\```
-  sur `Classification`, `Source.inventaire`, `Transport.pause`,
-  `resoudre_groupes`, etc. Le lot met à jour les rôles au fil des
-  edits.
-- CLAUDE.md « Écarts connus » : le premier écart parle du moteur/Qt,
-  le second des identifiants Python restants. Ce lot fait avancer le
-  deuxième mais ne le solde pas (Config fields lot 4b, Element lot 4b,
-  arret & Engine._pause différés). Aucune modif de CLAUDE.md ce lot.
-- Frontière 1 : les sources et `system.py` restent Qt-free (déjà).
+- CLAUDE.md « Écarts connus » : l'écart identifiants va être partiellement
+  résorbé (Config fields → EN). Note à mettre à jour dans un commit
+  ultérieur, pas ici, pour ne pas mélanger deux préoccupations.
+- Sphinx : les rôles `:attr:\`Config.dossier\`` etc. dans les docstrings
+  d'`engine/options.py`, `sources/base.py`, `scheduler.py`, `config.py`
+  changent au fil des renommages.
+- `translations/*.ts` : aucun contexte de traduction ni chaîne source
+  n'est touché.
+
+## Explicitly out of scope
+
+- **`Element` et ses champs** (`nom_fichier`, `mois`, `largeur`,
+  `taille`, `groupe`) : à la relecture des tests, `Element` n'est
+  **jamais** sérialisé (le manifeste stocke un `infos` dict à clés
+  hardcodées, pas `dataclasses.asdict(Element)`). Le renommage
+  d'`Element` n'est donc pas bloqué par la persistance et peut se
+  faire dans un lot cleanup séparé sans shim. Reste FR ici.
+- **Clés du manifeste** (`taille`, `fichier`, `etag`, `modifie`, `url`,
+  `extra`, `supprime`, `restaure`) : elles **sont** persistées et un
+  renommage exigerait un shim de manifest-read distinct. Hors périmètre
+  de ce lot ; à faire dans un lot 4c éventuel.
+- **Valeurs de dispatch** (`"galerie"`, `"date"`, `"plat"`, `"wordpress"`,
+  `"djangoplicity"`, `"Large"`, `"Small"`, `"Original"`) : restent
+  bit-à-bit identiques.
+- CLI flags FR (`--dossier`, `--classement`, `--delai`, `--verifier`,
+  `--depuis`, `--jusqua`, `--restaurer`, etc.) : user-facing, restent
+  FR jusqu'à un lot UI dédié.
+- Attributs argparse `args.dossier`, `args.classement`, etc. : dérivés
+  des flags, restent FR pour rester alignés.
 
 ## Invariants
 
-- **Format JSON du manifeste et du config inchangés** : rien de persisté
-  touché (Element FR ; Config fields FR).
-- **`.ts` / `.qm` inchangés** : aucune string source ou contexte de
-  traduction touché.
-- **Valeurs de `Classification.category`** (`"transitoire"`, `"coupure"`,
-  `"definitif"`) restent bit-à-bit identiques : ce sont des chaînes
-  de dispatch consommées par `Engine.run`.
-- **Suite complète green** après renommage.
-- `test_boundaries.py` : les imports Qt de `system.py` restent limités
-  aux appels ctypes/COM (aucun Qt). Les sources restent Qt-free.
+- **Rétro-compatibilité de `config.json`** : tout fichier écrit par une
+  version antérieure doit se charger sans exception avec les mêmes
+  valeurs de champs.
+- Après un cycle `load → save`, le fichier disque contient les clés EN
+  (migration silencieuse à l'écriture suivante).
+- Les valeurs de dispatch et les libellés UI restent inchangés.
+- Le contexte Qt et les strings `.ts` restent inchangés.
+- Suite complète green, y compris les tests existants qui construisent
+  un `Config` via kwargs FR — ceux-là seront migrés vers kwargs EN.
 
 ## Validation
 
-Niveau **`full`** — le lot traverse `sources/`, `system.py`, `engine/core.py`
-et les couches d'app/tests.
+Niveau **`full` + reviewer Opus** — rupture de format persistant, cœur
+de sprint.
 
 - `pytest` complet + couverture.
 - `ruff check` global.
+- Nouveaux tests round-trip pour le shim.
 - Sphinx : différé, cf. lots précédents.

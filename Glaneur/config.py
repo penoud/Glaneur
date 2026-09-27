@@ -136,6 +136,29 @@ def default_images_dir() -> Path:
     return Path.home() / "Glaneur"
 
 
+# Legacy JSON keys → new EN field names. A ``config.json`` written by
+# a pre-4b version is loaded through this table so no user loses their
+# settings; the next ``Config.save`` rewrites the file with EN keys.
+_LEGACY_FIELD_ALIASES: dict[str, str] = {
+    "dossier": "target_dir",
+    "intervalle_heures": "interval_hours",
+    "largeur_min": "min_width",
+    "classement": "sort_mode",
+    "type_source": "source_type",
+    "format_image": "image_format",
+    "verifier_integrite": "verify_integrity",
+    "diaporama_dossier": "slideshow_dir",
+    "delai_requetes": "request_delay",
+    "derniere_execution": "last_run",
+    "retenter_apres": "retry_after",
+    "backoff_niveau": "backoff_level",
+    "lancer_au_demarrage": "run_at_startup",
+    "fermer_dans_barre": "close_to_tray",
+    "verifier_maj_demarrage": "check_updates_on_start",
+    "langue": "language",
+}
+
+
 @dataclass
 class Config:
     """Persistent configuration serialised as JSON.
@@ -149,45 +172,45 @@ class Config:
     site: str = "https://example.com"
     #: Target sync directory; empty = value returned by
     #: :func:`default_images_dir`.
-    dossier: str = ""
+    target_dir: str = ""
     #: Interval between two automatic runs, in hours. Must belong to
     #: the values of ``INTERVALS`` (``0`` = manual only).
-    intervalle_heures: int = 24
+    interval_hours: int = 24
     #: Skips images narrower than this (in pixels).
-    largeur_min: int = 800
+    min_width: int = 800
     #: ``galerie``, ``date`` or ``plat``.
-    classement: str = "galerie"
+    sort_mode: str = "galerie"
     #: Key of the ``Glaneur.sources.SOURCES`` registry.
-    type_source: str = "wordpress"
+    source_type: str = "wordpress"
     #: Used by Djangoplicity; values in ``DJANGOPLICITY_FORMATS``.
-    format_image: str = "Large"
+    image_format: str = "Large"
     #: ETag/Last-Modified revalidation of files already present.
-    verifier_integrite: bool = False
+    verify_integrity: bool = False
     #: Sets the directory as the Windows desktop wallpaper slideshow.
-    diaporama_dossier: bool = False
+    slideshow_dir: bool = False
     #: Floor of the pause between two requests, in seconds.
-    delai_requetes: float = 0.5
+    request_delay: float = 0.5
     #: ISO 8601 date of the last run, fed by the scheduler.
-    derniere_execution: str = ""
+    last_run: str = ""
     #: ISO 8601 date (naive local) of the next run deferred by a network
     #: circuit-breaker — see
     #: :meth:`Glaneur.scheduler.Scheduler.defer`.
     #: Empty = no defer in progress.
-    retenter_apres: str = ""
+    retry_after: str = ""
     #: Exponential-backoff level — 0 -> 1 h, 1 -> 2 h, 2 -> 4 h.
     #: Reset to 0 by
     #: :meth:`Glaneur.scheduler.Scheduler.mark_run`.
-    backoff_niveau: int = 0
+    backoff_level: int = 0
     #: Adds the application to the user session's startup items.
-    lancer_au_demarrage: bool = False
+    run_at_startup: bool = False
     #: The close button minimizes to the notification area instead of exiting.
-    fermer_dans_barre: bool = True
+    close_to_tray: bool = True
     #: System notification bubble after an automatic update.
     notifications: bool = True
     #: Queries GitHub Releases at launch to offer an update.
-    verifier_maj_demarrage: bool = True
+    check_updates_on_start: bool = True
     #: Language code (``fr``, ``en``, ...). Empty = system locale.
-    langue: str = ""
+    language: str = ""
 
     _path: Path | None = field(default=None, repr=False, compare=False)
 
@@ -219,12 +242,15 @@ class Config:
                     brut = json.load(f)
                 connus = {f.name for f in fields(cls) if not f.name.startswith("_")}
                 for cle, valeur in brut.items():
+                    # Translate legacy FR keys to their EN name so a
+                    # config.json written before batch 4b keeps loading.
+                    cle = _LEGACY_FIELD_ALIASES.get(cle, cle)
                     if cle in connus:
                         setattr(cfg, cle, valeur)
             except (json.JSONDecodeError, OSError, TypeError):
                 pass  # unreadable config: fall back to default values
-        if not cfg.dossier:
-            cfg.dossier = str(default_images_dir())
+        if not cfg.target_dir:
+            cfg.target_dir = str(default_images_dir())
         cfg.validate()
         return cfg
 
@@ -256,52 +282,52 @@ class Config:
         to avoid the ``config → sources → engine → config`` cycle). The
         request delay is clamped between 0.2 and 10 seconds.
         """
-        if self.intervalle_heures not in INTERVALS.values():
-            self.intervalle_heures = 24
-        self.largeur_min = max(0, min(int(self.largeur_min), 10000))
-        if self.classement not in SORT_MODES.values():
-            self.classement = "galerie"
-        if self.type_source not in SOURCE_TYPES.values():
-            self.type_source = "wordpress"
-        if self.format_image not in DJANGOPLICITY_FORMATS.values():
-            self.format_image = "Large"
+        if self.interval_hours not in INTERVALS.values():
+            self.interval_hours = 24
+        self.min_width = max(0, min(int(self.min_width), 10000))
+        if self.sort_mode not in SORT_MODES.values():
+            self.sort_mode = "galerie"
+        if self.source_type not in SOURCE_TYPES.values():
+            self.source_type = "wordpress"
+        if self.image_format not in DJANGOPLICITY_FORMATS.values():
+            self.image_format = "Large"
         # The sort mode must be supported by the source. Deferred import to
         # avoid the `config → sources → engine → config` cycle.
         from .sources import sort_modes_for
-        classements_ok = sort_modes_for(self.type_source)
-        if classements_ok and self.classement not in classements_ok:
-            self.classement = "date"
+        classements_ok = sort_modes_for(self.source_type)
+        if classements_ok and self.sort_mode not in classements_ok:
+            self.sort_mode = "date"
         # too short a delay would hammer the club's server
-        self.delai_requetes = max(0.2, min(float(self.delai_requetes), 10.0))
+        self.request_delay = max(0.2, min(float(self.request_delay), 10.0))
         # The exponential defer backoff only knows three tiers.
         try:
-            niveau = int(self.backoff_niveau)
+            niveau = int(self.backoff_level)
         except (TypeError, ValueError):
             niveau = 0
-        self.backoff_niveau = max(0, min(niveau, 2))
+        self.backoff_level = max(0, min(niveau, 2))
 
     @property
     def interval_label(self) -> str:
-        """UI label of :attr:`intervalle_heures` (key of ``INTERVALS``).
+        """UI label of :attr:`interval_hours` (key of ``INTERVALS``).
 
         Returns:
             The label associated with the numeric value, or the default
             label ``"Une fois par jour"`` when the value is not listed.
         """
         for libelle, heures in INTERVALS.items():
-            if heures == self.intervalle_heures:
+            if heures == self.interval_hours:
                 return libelle
         return "Une fois par jour"
 
     @property
     def sort_mode_label(self) -> str:
-        """UI label of :attr:`classement` (key of ``SORT_MODES``).
+        """UI label of :attr:`sort_mode` (key of ``SORT_MODES``).
 
         Returns:
             The label associated with the stored value, or
             ``"Par galerie"`` by default.
         """
         for libelle, valeur in SORT_MODES.items():
-            if valeur == self.classement:
+            if valeur == self.sort_mode:
                 return libelle
         return "Par galerie"

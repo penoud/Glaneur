@@ -41,18 +41,18 @@ def main() -> int:
     c = Config.load()
     p = argparse.ArgumentParser(
         description="Télécharge les images d'un site (WordPress ou Djangoplicity).")
-    p.add_argument("-d", "--dossier", default=c.dossier, help="dossier de destination")
-    p.add_argument("--type", dest="type_source",
+    p.add_argument("-d", "--dossier", default=c.target_dir, help="dossier de destination")
+    p.add_argument("--type", dest="source_type",
                    choices=["wordpress", "djangoplicity"],
-                   default=c.type_source, help="type de site à interroger")
-    p.add_argument("--format", dest="format_image",
+                   default=c.source_type, help="type de site à interroger")
+    p.add_argument("--format", dest="image_format",
                    choices=["Large", "Original", "Small"],
-                   default=c.format_image,
+                   default=c.image_format,
                    help="résolution Djangoplicity (ignoré pour WordPress)")
     p.add_argument("--classement", choices=["galerie", "date", "plat"],
-                   default=c.classement)
-    p.add_argument("--largeur-min", type=int, default=c.largeur_min)
-    p.add_argument("--delai", type=float, default=c.delai_requetes)
+                   default=c.sort_mode)
+    p.add_argument("--largeur-min", type=int, default=c.min_width)
+    p.add_argument("--delai", type=float, default=c.request_delay)
     p.add_argument("--verifier", action="store_true", help="revalider les fichiers existants")
     p.add_argument("--force", action="store_true", help="ignorer le manifeste")
     p.add_argument("--pas-cache", action="store_true",
@@ -79,8 +79,8 @@ def main() -> int:
         since=args.depuis,
         until=args.jusqua,
         use_cache=not args.pas_cache,
-        source_type=args.type_source,
-        image_format=args.format_image,
+        source_type=args.source_type,
+        image_format=args.image_format,
     )
 
     dernier = [""]

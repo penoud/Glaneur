@@ -258,7 +258,7 @@ class DialoguePreferences(QDialog):
         self.combo_type.addItems(list(SOURCE_TYPES))
         libelle_type_courant = next(
             (libelle for libelle, val in SOURCE_TYPES.items()
-             if val == cfg.type_source),
+             if val == cfg.source_type),
             next(iter(SOURCE_TYPES)),
         )
         self.combo_type.setCurrentText(libelle_type_courant)
@@ -280,7 +280,7 @@ class DialoguePreferences(QDialog):
         self.combo_format.addItems(list(DJANGOPLICITY_FORMATS))
         libelle_format_courant = next(
             (libelle for libelle, val in DJANGOPLICITY_FORMATS.items()
-             if val == cfg.format_image),
+             if val == cfg.image_format),
             next(iter(DJANGOPLICITY_FORMATS)),
         )
         self.combo_format.setCurrentText(libelle_format_courant)
@@ -295,7 +295,7 @@ class DialoguePreferences(QDialog):
         # --- destination --------------------------------------------------
         boite = QGroupBox(self.tr("Destination"))
         ligne = QHBoxLayout(boite)
-        self.champ_dossier = QLineEdit(cfg.dossier)
+        self.champ_dossier = QLineEdit(cfg.target_dir)
         ligne.addWidget(self.champ_dossier, 1)
         bouton = QPushButton(self.tr("Parcourir…"))
         bouton.clicked.connect(self._choisir_dossier)
@@ -328,13 +328,13 @@ class DialoguePreferences(QDialog):
         self.spin_largeur.setRange(0, 10000)
         self.spin_largeur.setSingleStep(100)
         self.spin_largeur.setSuffix(self.tr(" px"))
-        self.spin_largeur.setValue(cfg.largeur_min)
+        self.spin_largeur.setValue(cfg.min_width)
         self.spin_largeur.setToolTip(self.tr(
             "Écarte les logos et vignettes sous cette largeur. 0 pour tout garder."))
         form.addRow(self.tr("Largeur minimale :"), self.spin_largeur)
 
         self.case_verifier = QCheckBox(self.tr("Vérifier l'intégrité des fichiers existants"))
-        self.case_verifier.setChecked(cfg.verifier_integrite)
+        self.case_verifier.setChecked(cfg.verify_integrity)
         self.case_verifier.setToolTip(self.tr(
             "Interroge le serveur sur chaque fichier connu (réponse 304 si identique).\n"
             "Plus lent, à réserver à un contrôle ponctuel."))
@@ -342,7 +342,7 @@ class DialoguePreferences(QDialog):
 
         self.case_diaporama = QCheckBox(self.tr(
             "Utiliser ce dossier pour le diaporama Windows"))
-        self.case_diaporama.setChecked(cfg.diaporama_dossier)
+        self.case_diaporama.setChecked(cfg.slideshow_dir)
         self.case_diaporama.setEnabled(sys.platform == "win32")
         self.case_diaporama.setToolTip(self.tr(
             "Configure le diaporama de fond d'écran Windows pour piocher\n"
@@ -350,7 +350,7 @@ class DialoguePreferences(QDialog):
         form.addRow("", self.case_diaporama)
 
         self.case_barre = QCheckBox(self.tr("Réduire dans la zone de notification à la fermeture"))
-        self.case_barre.setChecked(cfg.fermer_dans_barre)
+        self.case_barre.setChecked(cfg.close_to_tray)
         form.addRow("", self.case_barre)
 
         self.case_demarrage = QCheckBox(self.tr("Lancer au démarrage de Windows"))
@@ -359,7 +359,7 @@ class DialoguePreferences(QDialog):
         form.addRow("", self.case_demarrage)
 
         self.case_maj_demarrage = QCheckBox(self.tr("Vérifier les mises à jour au démarrage"))
-        self.case_maj_demarrage.setChecked(cfg.verifier_maj_demarrage)
+        self.case_maj_demarrage.setChecked(cfg.check_updates_on_start)
         self.case_maj_demarrage.setEnabled(sys.platform == "win32")
         self.case_maj_demarrage.setToolTip(self.tr(
             "Interroge GitHub en arrière-plan au lancement de l'application\n"
@@ -373,7 +373,7 @@ class DialoguePreferences(QDialog):
         for code, libelle in AVAILABLE_LANGUAGES.items():
             self.combo_langue.addItem(libelle, code)
         for i in range(self.combo_langue.count()):
-            if self.combo_langue.itemData(i) == cfg.langue:
+            if self.combo_langue.itemData(i) == cfg.language:
                 self.combo_langue.setCurrentIndex(i)
                 break
         self.combo_langue.setToolTip(self.tr(
@@ -436,18 +436,18 @@ class DialoguePreferences(QDialog):
         error message or None."""
         c = self.cfg
         c.site = self.champ_site.text().strip()
-        c.dossier = self.champ_dossier.text()
-        c.intervalle_heures = INTERVALS.get(self.combo_intervalle.currentText(), 24)
-        c.classement = SORT_MODES.get(self.combo_classement.currentText(), "galerie")
-        c.type_source = SOURCE_TYPES.get(self.combo_type.currentText(), "wordpress")
-        c.format_image = DJANGOPLICITY_FORMATS.get(
+        c.target_dir = self.champ_dossier.text()
+        c.interval_hours = INTERVALS.get(self.combo_intervalle.currentText(), 24)
+        c.sort_mode = SORT_MODES.get(self.combo_classement.currentText(), "galerie")
+        c.source_type = SOURCE_TYPES.get(self.combo_type.currentText(), "wordpress")
+        c.image_format = DJANGOPLICITY_FORMATS.get(
             self.combo_format.currentText(), "Large")
-        c.largeur_min = self.spin_largeur.value()
-        c.verifier_integrite = self.case_verifier.isChecked()
-        c.diaporama_dossier = self.case_diaporama.isChecked()
-        c.fermer_dans_barre = self.case_barre.isChecked()
-        c.verifier_maj_demarrage = self.case_maj_demarrage.isChecked()
-        c.langue = self.combo_langue.currentData() or ""
+        c.min_width = self.spin_largeur.value()
+        c.verify_integrity = self.case_verifier.isChecked()
+        c.slideshow_dir = self.case_diaporama.isChecked()
+        c.close_to_tray = self.case_barre.isChecked()
+        c.check_updates_on_start = self.case_maj_demarrage.isChecked()
+        c.language = self.combo_langue.currentData() or ""
         c.validate()
         c.save()
 
@@ -459,14 +459,14 @@ class DialoguePreferences(QDialog):
             if obtenu != voulu:
                 problemes.append(self.tr(
                     "Impossible de modifier le démarrage automatique de Windows."))
-            c.lancer_au_demarrage = obtenu
+            c.run_at_startup = obtenu
             c.save()
 
             # slideshow: only attempt configuration if the user explicitly
             # asks for it, and create it beforehand, otherwise an empty
             # directory would prevent building the image array.
-            if c.diaporama_dossier:
-                dossier = Path(c.dossier).expanduser()
+            if c.slideshow_dir:
+                dossier = Path(c.target_dir).expanduser()
                 try:
                     dossier.mkdir(parents=True, exist_ok=True)
                 except OSError as e:
@@ -477,7 +477,7 @@ class DialoguePreferences(QDialog):
                         problemes.append(self.tr(
                             "Impossible de configurer le diaporama Windows "
                             "(dossier vide ou COM indisponible)."))
-                        c.diaporama_dossier = False
+                        c.slideshow_dir = False
                         c.save()
         return "\n".join(problemes) if problemes else None
 
@@ -685,7 +685,7 @@ class Fenetre(QMainWindow):
         self.minuteur_affichage.start(PERIODE_AFFICHAGE)
         self._rafraichir_echeance()
 
-        if sys.platform == "win32" and self.cfg.verifier_maj_demarrage:
+        if sys.platform == "win32" and self.cfg.check_updates_on_start:
             QTimer.singleShot(3000, self._verifier_mise_a_jour)
 
     # ------------------------------------------------------------------ UI --
@@ -893,13 +893,13 @@ class Fenetre(QMainWindow):
         """Refresh the site and folder display labels."""
         self.label_site.setText(self.tr("Site : {site}").format(site=self.cfg.site or "—"))
         self.label_dossier.setText(self.tr("Dossier : {dossier}").format(
-            dossier=self.cfg.dossier or "—"))
+            target_dir=self.cfg.target_dir or "—"))
 
     def _appliquer_diaporama_au_demarrage(self) -> None:
         """Reconfigure the slideshow on every launch when the option is on
         — the folder contents may have changed since last time."""
-        if sys.platform == "win32" and self.cfg.diaporama_dossier:
-            dossier = Path(self.cfg.dossier).expanduser()
+        if sys.platform == "win32" and self.cfg.slideshow_dir:
+            dossier = Path(self.cfg.target_dir).expanduser()
             if dossier.is_dir():
                 set_slideshow_dir(dossier)
 
@@ -1041,12 +1041,12 @@ class Fenetre(QMainWindow):
 
     def _ouvrir_dossier(self) -> None:
         try:
-            open_dir(Path(self.cfg.dossier))
+            open_dir(Path(self.cfg.target_dir))
         except OSError as e:
             QMessageBox.warning(self, self.tr("Dossier inaccessible"), str(e))
 
     def _gerer_supprimees(self) -> None:
-        dossier = Path(self.cfg.dossier).expanduser()
+        dossier = Path(self.cfg.target_dir).expanduser()
         entrees = list_deleted(dossier)
         if not entrees:
             QMessageBox.information(
@@ -1068,7 +1068,7 @@ class Fenetre(QMainWindow):
                         "Fonction disponible uniquement sous Windows, avec un\n"
                         "diaporama de fond d'écran actif."))
             return
-        dossier = Path(self.cfg.dossier).expanduser()
+        dossier = Path(self.cfg.target_dir).expanduser()
         # simple ownership check for the message; the engine will run
         # its own check again before erasing anything
         try:
@@ -1099,7 +1099,7 @@ class Fenetre(QMainWindow):
     def _lancer(self, auto: bool = False) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        dossier = Path(self.cfg.dossier).expanduser()
+        dossier = Path(self.cfg.target_dir).expanduser()
         try:
             dossier.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -1124,12 +1124,12 @@ class Fenetre(QMainWindow):
         options = Options(
             target_dir=dossier,
             site=self.cfg.site,
-            sort_mode=self.cfg.classement,
-            min_width=self.cfg.largeur_min,
-            delay=self.cfg.delai_requetes,
-            verify=self.cfg.verifier_integrite,
-            source_type=self.cfg.type_source,
-            image_format=self.cfg.format_image,
+            sort_mode=self.cfg.sort_mode,
+            min_width=self.cfg.min_width,
+            delay=self.cfg.request_delay,
+            verify=self.cfg.verify_integrity,
+            source_type=self.cfg.source_type,
+            image_format=self.cfg.image_format,
         )
         self.travailleur = Travailleur(options, self.arret)
         self.travailleur.journal.connect(self._ecrire)
@@ -1228,7 +1228,7 @@ class Fenetre(QMainWindow):
         Behaviour:
 
         - the close button minimises to the tray while
-          :attr:`Config.fermer_dans_barre` is true and a tray is
+          :attr:`Config.close_to_tray` is true and a tray is
           available;
         - on Linux without a tray host, warn once per session before
           actually quitting;
@@ -1239,7 +1239,7 @@ class Fenetre(QMainWindow):
             event: :class:`QCloseEvent` provided by Qt.
         """
         # the close button minimizes to the notification area, unless requested otherwise
-        if (not self._quitter_demande and self.cfg.fermer_dans_barre
+        if (not self._quitter_demande and self.cfg.close_to_tray
                 and self.tray and self.tray.isVisible()):
             event.ignore()
             self.hide()
@@ -1254,7 +1254,7 @@ class Fenetre(QMainWindow):
         # quitting, and point to the extension to install.
         if (self.tray is None and sys.platform.startswith("linux")
                 and not self._quitter_demande
-                and self.cfg.fermer_dans_barre
+                and self.cfg.close_to_tray
                 and not self._avertissement_tray_montre):
             self._avertissement_tray_montre = True
             QMessageBox.information(
@@ -1336,7 +1336,7 @@ def main() -> int:
 
     # Translator installed BEFORE any widget construction: self.tr() calls
     # evaluated inside __init__ then pick up the correct language.
-    install_translator(app, Config.load().langue)
+    install_translator(app, Config.load().language)
 
     fenetre = Fenetre()
     # Without a tray (Linux without AppIndicator), staying open after the

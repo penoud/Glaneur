@@ -38,8 +38,8 @@ class Scheduler:
 
         Args:
             config: Configuration object from which
-                ``Config.derniere_execution`` and
-                ``Config.intervalle_heures`` are read, and on which
+                ``Config.last_run`` and
+                ``Config.interval_hours`` are read, and on which
                 ``Config.save`` is called by :meth:`mark_run`.
         """
         self.config = config
@@ -50,22 +50,22 @@ class Scheduler:
         """Timestamp of the last run, deserialised from the configuration.
 
         Returns:
-            The datetime read from ``Config.derniere_execution``, or
+            The datetime read from ``Config.last_run``, or
             ``None`` if the field is empty or malformed.
         """
         try:
-            return datetime.fromisoformat(self.config.derniere_execution)
+            return datetime.fromisoformat(self.config.last_run)
         except (ValueError, TypeError):
             return None
 
     def _retry_after(self) -> datetime | None:
         """Resume date after a defer, or ``None`` when missing/malformed.
 
-        Sole parsing point for ``config.retenter_apres`` — at the slightest
+        Sole parsing point for ``config.retry_after`` — at the slightest
         doubt (empty string, broken format), the defer is ignored rather
         than raising.
         """
-        brut = getattr(self.config, "retenter_apres", "") or ""
+        brut = getattr(self.config, "retry_after", "") or ""
         if not brut:
             return None
         try:
@@ -79,12 +79,12 @@ class Scheduler:
         Returns:
             The raw date, or ``None`` in manual mode.
         """
-        if not self.config.intervalle_heures:
+        if not self.config.interval_hours:
             return None
         derniere = self.last_run()
         if derniere is None:
             return datetime.now()       # never run: as soon as possible
-        return derniere + timedelta(hours=self.config.intervalle_heures)
+        return derniere + timedelta(hours=self.config.interval_hours)
 
     def next_run(self) -> datetime | None:
         """Compute the date of the next automatic update.
@@ -92,12 +92,12 @@ class Scheduler:
         If no run has ever been recorded, the "next" is right now: the
         first launch fires immediately.
 
-        An active defer (``config.retenter_apres`` in the future) pushes
+        An active defer (``config.retry_after`` in the future) pushes
         the nominal deadline out to that date.
 
         Returns:
             The scheduled date, or ``None`` in manual mode
-            (``Config.intervalle_heures`` = 0).
+            (``Config.interval_hours`` = 0).
         """
         nominale = self._nominal()
         if nominale is None:
@@ -133,13 +133,13 @@ class Scheduler:
         """Record the current instant as the last run and persist the config.
 
         Called by the engine at the end of a successful run. Writes to
-        ``Config.derniere_execution`` in ISO 8601 with second precision.
+        ``Config.last_run`` in ISO 8601 with second precision.
         Also clears any ongoing defer (``retenter_apres`` and
         ``backoff_niveau``): a successful run closes a backoff.
         """
-        self.config.derniere_execution = datetime.now().isoformat(timespec="seconds")
-        self.config.retenter_apres = ""
-        self.config.backoff_niveau = 0
+        self.config.last_run = datetime.now().isoformat(timespec="seconds")
+        self.config.retry_after = ""
+        self.config.backoff_level = 0
         self.config.save()
 
     def defer(self, res: RunResult) -> None:
@@ -152,8 +152,8 @@ class Scheduler:
         backoff (``BACKOFFS_S`` — 1 h -> 2 h -> 4 h), then increment the
         level (capped at 2).
 
-        ``config.retenter_apres`` is always written in naive local ISO
-        8601 to remain comparable with ``Config.derniere_execution``.
+        ``config.retry_after`` is always written in naive local ISO
+        8601 to remain comparable with ``Config.last_run``.
 
         Args:
             res: :class:`Glaneur.engine.result.RunResult` from a run
@@ -170,8 +170,8 @@ class Scheduler:
                     brut = brut.astimezone().replace(tzinfo=None)
                 cible = brut
         if cible is None:
-            niveau = max(0, min(int(self.config.backoff_niveau), 2))
+            niveau = max(0, min(int(self.config.backoff_level), 2))
             cible = datetime.now() + timedelta(seconds=BACKOFFS_S[niveau])
-            self.config.backoff_niveau = min(niveau + 1, 2)
-        self.config.retenter_apres = cible.isoformat(timespec="seconds")
+            self.config.backoff_level = min(niveau + 1, 2)
+        self.config.retry_after = cible.isoformat(timespec="seconds")
         self.config.save()

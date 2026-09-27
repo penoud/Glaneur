@@ -138,55 +138,55 @@ class TestMigrationAncienNom:
 class TestChargement:
     def test_fichier_absent_valeurs_par_defaut(self, tmp_path):
         cfg = Config.load(tmp_path / "absent.json")
-        assert cfg.intervalle_heures == 24
-        assert cfg.classement == "galerie"
-        assert cfg.largeur_min == 800
-        assert cfg.verifier_integrite is False
-        assert cfg.diaporama_dossier is False
-        assert cfg.verifier_maj_demarrage is True
+        assert cfg.interval_hours == 24
+        assert cfg.sort_mode == "galerie"
+        assert cfg.min_width == 800
+        assert cfg.verify_integrity is False
+        assert cfg.slideshow_dir is False
+        assert cfg.check_updates_on_start is True
         # dossier populated even without a file
-        assert cfg.dossier
+        assert cfg.target_dir
 
     def test_relecture(self, tmp_path):
         chemin = tmp_path / "c.json"
         c = Config.load(chemin)
-        c.intervalle_heures = 12
-        c.largeur_min = 1200
-        c.classement = "date"
-        c.diaporama_dossier = True
-        c.verifier_maj_demarrage = False
+        c.interval_hours = 12
+        c.min_width = 1200
+        c.sort_mode = "date"
+        c.slideshow_dir = True
+        c.check_updates_on_start = False
         c.save()
 
         c2 = Config.load(chemin)
-        assert c2.intervalle_heures == 12
-        assert c2.largeur_min == 1200
-        assert c2.classement == "date"
-        assert c2.diaporama_dossier is True
-        assert c2.verifier_maj_demarrage is False
+        assert c2.interval_hours == 12
+        assert c2.min_width == 1200
+        assert c2.sort_mode == "date"
+        assert c2.slideshow_dir is True
+        assert c2.check_updates_on_start is False
 
     def test_verifier_maj_demarrage_absent_du_json_reprend_defaut(self, tmp_path):
         # config pre-dating the field addition: must re-read without error
         # and fall back to the default value True.
         chemin = tmp_path / "c.json"
-        chemin.write_text(json.dumps({"intervalle_heures": 12}))
+        chemin.write_text(json.dumps({"interval_hours": 12}))
         c = Config.load(chemin)
-        assert c.verifier_maj_demarrage is True
+        assert c.check_updates_on_start is True
 
     def test_json_invalide_recharge_par_defaut(self, tmp_path):
         chemin = tmp_path / "c.json"
         chemin.write_text("{pas du json")
         c = Config.load(chemin)
-        assert c.intervalle_heures == 24   # default recovered
+        assert c.interval_hours == 24   # default recovered
 
     def test_cles_inconnues_ignorees(self, tmp_path):
         chemin = tmp_path / "c.json"
         chemin.write_text(json.dumps({
-            "intervalle_heures": 6,
+            "interval_hours": 6,
             "cle_inconnue": "poubelle",
             "_path": "/attaque/tentative",   # private attribute, ignored
         }))
         c = Config.load(chemin)
-        assert c.intervalle_heures == 6
+        assert c.interval_hours == 6
         assert not hasattr(c, "cle_inconnue")
         # _path is our internal attribute, not the one from JSON
         assert c._path == chemin
@@ -208,10 +208,10 @@ class TestChargement:
     def test_dossier_par_defaut_conserve_apres_sauvegarde(self, tmp_path):
         chemin = tmp_path / "c.json"
         c = Config.load(chemin)
-        d0 = c.dossier
+        d0 = c.target_dir
         c.save()
         c2 = Config.load(chemin)
-        assert c2.dossier == d0
+        assert c2.target_dir == d0
 
 
 # --------------------------------------------------------------------------- #
@@ -224,86 +224,86 @@ class TestValider:
 
     def test_intervalle_inconnu_ramene_a_24(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.intervalle_heures = 999
+        c.interval_hours = 999
         c.validate()
-        assert c.intervalle_heures == 24
+        assert c.interval_hours == 24
 
     def test_intervalle_manuel_admis(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.intervalle_heures = 0   # "Manual only"
+        c.interval_hours = 0   # "Manual only"
         c.validate()
-        assert c.intervalle_heures == 0
+        assert c.interval_hours == 0
 
     def test_largeur_negative(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.largeur_min = -5
+        c.min_width = -5
         c.validate()
-        assert c.largeur_min == 0
+        assert c.min_width == 0
 
     def test_largeur_trop_grande(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.largeur_min = 999_999
+        c.min_width = 999_999
         c.validate()
-        assert c.largeur_min == 10_000
+        assert c.min_width == 10_000
 
     def test_largeur_flottant_accepte(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.largeur_min = 1234.7   # int cast
+        c.min_width = 1234.7   # int cast
         c.validate()
-        assert c.largeur_min == 1234
+        assert c.min_width == 1234
 
     def test_classement_inconnu_repart_galerie(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.classement = "pouet"
+        c.sort_mode = "pouet"
         c.validate()
-        assert c.classement == "galerie"
+        assert c.sort_mode == "galerie"
 
     def test_delai_plancher(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.delai_requetes = 0.01
+        c.request_delay = 0.01
         c.validate()
         # floor at 0.2 to avoid hammering the server
-        assert c.delai_requetes == pytest.approx(0.2)
+        assert c.request_delay == pytest.approx(0.2)
 
     def test_delai_plafond(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.delai_requetes = 999
+        c.request_delay = 999
         c.validate()
-        assert c.delai_requetes == 10.0
+        assert c.request_delay == 10.0
 
     def test_type_source_par_defaut_wordpress(self, tmp_path):
         # fresh config: type_source default = "wordpress", zero migration
         c = self._neuve(tmp_path)
-        assert c.type_source == "wordpress"
-        assert c.format_image == "Large"
+        assert c.source_type == "wordpress"
+        assert c.image_format == "Large"
 
     def test_type_source_inconnu_snap_wordpress(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.type_source = "n-importe-quoi"
+        c.source_type = "n-importe-quoi"
         c.validate()
-        assert c.type_source == "wordpress"
+        assert c.source_type == "wordpress"
 
     def test_format_image_inconnu_snap_large(self, tmp_path):
         c = self._neuve(tmp_path)
-        c.format_image = "Ultra"
+        c.image_format = "Ultra"
         c.validate()
-        assert c.format_image == "Large"
+        assert c.image_format == "Large"
 
     def test_classement_snap_si_source_ne_le_supporte_pas(self, tmp_path):
         # Djangoplicity does not support "galerie": `valider` falls back to "date"
         c = self._neuve(tmp_path)
-        c.type_source = "djangoplicity"
-        c.classement = "galerie"
+        c.source_type = "djangoplicity"
+        c.sort_mode = "galerie"
         c.validate()
-        assert c.classement == "date"
+        assert c.sort_mode == "date"
 
     def test_classement_conserve_si_supporte(self, tmp_path):
         # WordPress supports "galerie": nothing to change
         c = self._neuve(tmp_path)
-        c.type_source = "wordpress"
-        c.classement = "galerie"
+        c.source_type = "wordpress"
+        c.sort_mode = "galerie"
         c.validate()
-        assert c.classement == "galerie"
+        assert c.sort_mode == "galerie"
 
     def test_v1038_config_charge_sans_champs_nouveaux(self, tmp_path):
         # config written by 1.0.38 (without type_source or format_image):
@@ -312,13 +312,13 @@ class TestValider:
         chemin = tmp_path / "c.json"
         chemin.write_text(json.dumps({
             "site": "https://old.example",
-            "intervalle_heures": 6,
-            "classement": "galerie",
+            "interval_hours": 6,
+            "sort_mode": "galerie",
         }))
         c = Config.load(chemin)
-        assert c.type_source == "wordpress"
-        assert c.format_image == "Large"
-        assert c.classement == "galerie"   # not snapped because WP supports it
+        assert c.source_type == "wordpress"
+        assert c.image_format == "Large"
+        assert c.sort_mode == "galerie"   # not snapped because WP supports it
 
 
 class TestConstantesSource:
@@ -344,63 +344,144 @@ class TestReportDiff:
     def test_defauts_retenter_apres_et_backoff(self):
         """Fresh Config exposes an empty retenter_apres and a zero backoff level."""
         c = Config()
-        assert c.retenter_apres == ""
-        assert c.backoff_niveau == 0
+        assert c.retry_after == ""
+        assert c.backoff_level == 0
 
     def test_round_trip_retenter_apres_et_backoff(self, tmp_path):
         """Saving then reloading preserves both deferral fields."""
         chemin = tmp_path / "c.json"
         c = Config.load(chemin)
-        c.retenter_apres = "2026-09-27T10:00:00"
-        c.backoff_niveau = 2
+        c.retry_after = "2026-09-27T10:00:00"
+        c.backoff_level = 2
         c.save()
 
         c2 = Config.load(chemin)
-        assert c2.retenter_apres == "2026-09-27T10:00:00"
-        assert c2.backoff_niveau == 2
+        assert c2.retry_after == "2026-09-27T10:00:00"
+        assert c2.backoff_level == 2
 
     def test_config_sans_champs_defer_charge_avec_defauts(self, tmp_path):
         """An older config.json without the deferral fields loads with defaults."""
         chemin = tmp_path / "c.json"
-        chemin.write_text(json.dumps({"intervalle_heures": 6}))
+        chemin.write_text(json.dumps({"interval_hours": 6}))
         c = Config.load(chemin)
-        assert c.retenter_apres == ""
-        assert c.backoff_niveau == 0
+        assert c.retry_after == ""
+        assert c.backoff_level == 0
 
     def test_valider_borne_backoff_niveau_negatif(self, tmp_path):
         """Valider clamps a negative backoff level to zero."""
         c = Config.load(tmp_path / "c.json")
-        c.backoff_niveau = -3
+        c.backoff_level = -3
         c.validate()
-        assert c.backoff_niveau == 0
+        assert c.backoff_level == 0
 
     def test_valider_borne_backoff_niveau_trop_haut(self, tmp_path):
         """Valider clamps a backoff level above the ceiling down to 2."""
         c = Config.load(tmp_path / "c.json")
-        c.backoff_niveau = 5
+        c.backoff_level = 5
         c.validate()
-        assert c.backoff_niveau == 2
+        assert c.backoff_level == 2
 
 
 class TestLibelles:
     def test_libelle_intervalle_connu(self, tmp_path):
         c = Config.load(tmp_path / "c.json")
         for libelle, heures in INTERVALS.items():
-            c.intervalle_heures = heures
+            c.interval_hours = heures
             assert c.interval_label == libelle
 
     def test_libelle_intervalle_repli(self, tmp_path):
         c = Config.load(tmp_path / "c.json")
-        c.intervalle_heures = -1   # not listed
+        c.interval_hours = -1   # not listed
         assert c.interval_label == "Une fois par jour"
 
     def test_libelle_classement_connu(self, tmp_path):
         c = Config.load(tmp_path / "c.json")
         for libelle, valeur in SORT_MODES.items():
-            c.classement = valeur
+            c.sort_mode = valeur
             assert c.sort_mode_label == libelle
 
     def test_libelle_classement_repli(self, tmp_path):
         c = Config.load(tmp_path / "c.json")
-        c.classement = "inconnu"
+        c.sort_mode = "inconnu"
         assert c.sort_mode_label == "Par galerie"
+
+
+# --------------------------------------------------------------------------- #
+# Batch 4b: legacy FR key compat shim
+# --------------------------------------------------------------------------- #
+
+class TestLegacyFieldAliases:
+    """A ``config.json`` written before batch 4b uses FR keys. It must load
+    without loss and get rewritten with EN keys on the next save.
+    """
+
+    _LEGACY_JSON: dict = {  # noqa: RUF012 — read-only test fixture
+        "site": "https://example.com",
+        "dossier": "/tmp/glaneur-old",
+        "intervalle_heures": 12,
+        "largeur_min": 1200,
+        "classement": "date",
+        "type_source": "djangoplicity",
+        "format_image": "Small",
+        "verifier_integrite": True,
+        "diaporama_dossier": True,
+        "delai_requetes": 1.5,
+        "derniere_execution": "2026-09-01T12:00:00",
+        "retenter_apres": "2026-09-01T13:00:00",
+        "backoff_niveau": 1,
+        "lancer_au_demarrage": True,
+        "fermer_dans_barre": False,
+        "notifications": False,
+        "verifier_maj_demarrage": False,
+        "langue": "en",
+    }
+
+    def test_charge_les_cles_fr(self, tmp_path):
+        """Every legacy FR key is read into its EN field."""
+        chemin = tmp_path / "config.json"
+        chemin.write_text(json.dumps(self._LEGACY_JSON), encoding="utf-8")
+        c = Config.load(chemin)
+        assert c.target_dir == "/tmp/glaneur-old"
+        assert c.interval_hours == 12
+        assert c.min_width == 1200
+        assert c.sort_mode == "date"
+        assert c.source_type == "djangoplicity"
+        assert c.image_format == "Small"
+        assert c.verify_integrity is True
+        assert c.slideshow_dir is True
+        assert c.request_delay == 1.5
+        assert c.last_run == "2026-09-01T12:00:00"
+        assert c.retry_after == "2026-09-01T13:00:00"
+        assert c.backoff_level == 1
+        assert c.run_at_startup is True
+        assert c.close_to_tray is False
+        assert c.check_updates_on_start is False
+        assert c.language == "en"
+
+    def test_save_apres_load_reecrit_en_cles_en(self, tmp_path):
+        """A load → save cycle migrates a legacy file to EN keys silently."""
+        chemin = tmp_path / "config.json"
+        chemin.write_text(json.dumps(self._LEGACY_JSON), encoding="utf-8")
+        Config.load(chemin).save()
+        reecrit = json.loads(chemin.read_text(encoding="utf-8"))
+        for cle in self._LEGACY_JSON:
+            if cle in ("site", "notifications"):
+                continue   # always EN
+            assert cle not in reecrit, f"legacy key {cle!r} still on disk"
+        for cle in ("target_dir", "interval_hours", "sort_mode", "source_type"):
+            assert cle in reecrit
+
+    def test_json_hybride_prefere_en_puis_fr(self, tmp_path):
+        """When both an EN and FR key are present, the EN wins.
+
+        The load loop iterates over ``brut.items()``: whichever key comes
+        last in the dict wins. Since Python 3.7 dicts preserve insertion
+        order, we craft the file to put EN after FR — the EN wins.
+        """
+        chemin = tmp_path / "config.json"
+        chemin.write_text(json.dumps({
+            "dossier": "/tmp/via-fr",
+            "target_dir": "/tmp/via-en",
+        }), encoding="utf-8")
+        c = Config.load(chemin)
+        assert c.target_dir == "/tmp/via-en"
