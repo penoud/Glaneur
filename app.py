@@ -893,7 +893,7 @@ class Fenetre(QMainWindow):
         """Refresh the site and folder display labels."""
         self.label_site.setText(self.tr("Site : {site}").format(site=self.cfg.site or "—"))
         self.label_dossier.setText(self.tr("Dossier : {dossier}").format(
-            target_dir=self.cfg.target_dir or "—"))
+            dossier=self.cfg.target_dir or "—"))
 
     def _appliquer_diaporama_au_demarrage(self) -> None:
         """Reconfigure the slideshow on every launch when the option is on
