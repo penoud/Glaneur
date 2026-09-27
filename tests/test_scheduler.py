@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 from Glaneur.config import Config
 from Glaneur.engine.result import RunResult
-from Glaneur.scheduler import Planificateur
-from Glaneur.scheduler_labels import texte_prochaine
+from Glaneur.scheduler import Scheduler
+from Glaneur.scheduler_labels import next_run_text
 
 
 def _cfg(tmp_path, **kw):
@@ -20,63 +20,63 @@ def _cfg(tmp_path, **kw):
 
 class TestDerniere:
     def test_vide(self, tmp_path):
-        p = Planificateur(_cfg(tmp_path, derniere_execution=""))
-        assert p.derniere() is None
+        p = Scheduler(_cfg(tmp_path, derniere_execution=""))
+        assert p.last_run() is None
 
     def test_invalide(self, tmp_path):
-        p = Planificateur(_cfg(tmp_path, derniere_execution="pas une date"))
-        assert p.derniere() is None
+        p = Scheduler(_cfg(tmp_path, derniere_execution="pas une date"))
+        assert p.last_run() is None
 
     def test_valide(self, tmp_path):
         t = "2026-01-15T12:30:00"
-        p = Planificateur(_cfg(tmp_path, derniere_execution=t))
-        assert p.derniere() == datetime.fromisoformat(t)
+        p = Scheduler(_cfg(tmp_path, derniere_execution=t))
+        assert p.last_run() == datetime.fromisoformat(t)
 
 
 class TestProchaine:
     def test_mode_manuel(self, tmp_path):
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=0))
-        assert p.prochaine() is None
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=0))
+        assert p.next_run() is None
 
     def test_jamais_execute_declanche_immediat(self, tmp_path):
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=""))
         avant = datetime.now()
-        r = p.prochaine()
+        r = p.next_run()
         apres = datetime.now()
         assert avant <= r <= apres
 
     def test_calcul_normal(self, tmp_path):
         t0 = datetime.now() - timedelta(hours=1)
-        p = Planificateur(_cfg(tmp_path,
+        p = Scheduler(_cfg(tmp_path,
                                intervalle_heures=6,
                                derniere_execution=t0.isoformat(timespec="seconds")))
-        assert p.prochaine() == p.derniere() + timedelta(hours=6)
+        assert p.next_run() == p.last_run() + timedelta(hours=6)
 
 
 class TestEcheanceAtteinte:
     def test_manuel_jamais(self, tmp_path):
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=0))
-        assert p.echeance_atteinte() is False
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=0))
+        assert p.is_due() is False
 
     def test_echeance_passee(self, tmp_path):
         t0 = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        assert p.echeance_atteinte() is True
+        assert p.is_due() is True
 
     def test_echeance_future(self, tmp_path):
         t0 = datetime.now().isoformat(timespec="seconds")
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        assert p.echeance_atteinte() is False
+        assert p.is_due() is False
 
 
 class TestMarquerExecution:
     def test_ecrit_horodatage_et_persiste(self, tmp_path):
         cfg = _cfg(tmp_path, intervalle_heures=24, derniere_execution="")
-        p = Planificateur(cfg)
-        p.marquer_execution()
+        p = Scheduler(cfg)
+        p.mark_run()
         # re-read from disk: the timestamp has been persisted
         cfg2 = Config.charger(tmp_path / "c.json")
         assert cfg2.derniere_execution
@@ -86,22 +86,22 @@ class TestMarquerExecution:
 
 class TestTextePresentable:
     def test_mode_manuel(self, tmp_path):
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=0))
-        assert "désactivée" in texte_prochaine(p)
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=0))
+        assert "désactivée" in next_run_text(p)
 
     def test_imminente(self, tmp_path):
         t0 = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        assert "imminente" in texte_prochaine(p)
+        assert "imminente" in next_run_text(p)
 
     def test_reste_en_minutes(self, tmp_path):
         # due time in ~30 min: derniere = now - 23h30
         t0 = (datetime.now() - timedelta(hours=23, minutes=30)).isoformat(
             timespec="seconds")
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        r = texte_prochaine(p)
+        r = next_run_text(p)
         assert "min" in r
         # < 1h → no "h" field
         assert " h " not in r
@@ -110,16 +110,16 @@ class TestTextePresentable:
         # due time in ~3h30: derniere = now - 20h30
         t0 = (datetime.now() - timedelta(hours=20, minutes=30)).isoformat(
             timespec="seconds")
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=24,
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=24,
                                derniere_execution=t0))
-        assert " h " in texte_prochaine(p)
+        assert " h " in next_run_text(p)
 
     def test_reste_en_jours(self, tmp_path):
         # due time in 5 days: interval 7 days, derniere = 2 days ago
         t0 = (datetime.now() - timedelta(days=2)).isoformat(timespec="seconds")
-        p = Planificateur(_cfg(tmp_path, intervalle_heures=168,
+        p = Scheduler(_cfg(tmp_path, intervalle_heures=168,
                                derniere_execution=t0))
-        assert " j " in texte_prochaine(p)
+        assert " j " in next_run_text(p)
 
 
 # --------------------------------------------------------------------------- #
@@ -130,9 +130,9 @@ class TestDifferer:
     def test_differer_sans_hint_utilise_backoff_1h(self, tmp_path):
         """Level 0 with no server hint schedules retry ~1h out and bumps level to 1."""
         cfg = _cfg(tmp_path, backoff_niveau=0)
-        p = Planificateur(cfg)
+        p = Scheduler(cfg)
         avant = datetime.now()
-        p.differer(RunResult(deferred=True, retry_after=""))
+        p.defer(RunResult(deferred=True, retry_after=""))
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert abs((parsed - (avant + timedelta(hours=1))).total_seconds()) < 60
         assert cfg.backoff_niveau == 1
@@ -140,9 +140,9 @@ class TestDifferer:
     def test_differer_incremente_le_niveau_1_a_2(self, tmp_path):
         """Level 1 with no hint schedules retry ~2h out and moves to level 2."""
         cfg = _cfg(tmp_path, backoff_niveau=1)
-        p = Planificateur(cfg)
+        p = Scheduler(cfg)
         avant = datetime.now()
-        p.differer(RunResult(deferred=True, retry_after=""))
+        p.defer(RunResult(deferred=True, retry_after=""))
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert abs((parsed - (avant + timedelta(hours=2))).total_seconds()) < 60
         assert cfg.backoff_niveau == 2
@@ -150,9 +150,9 @@ class TestDifferer:
     def test_differer_plafonne_le_niveau_a_2(self, tmp_path):
         """Level 2 caps at 2 and applies the 4h backoff without going further."""
         cfg = _cfg(tmp_path, backoff_niveau=2)
-        p = Planificateur(cfg)
+        p = Scheduler(cfg)
         avant = datetime.now()
-        p.differer(RunResult(deferred=True, retry_after=""))
+        p.defer(RunResult(deferred=True, retry_after=""))
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert abs((parsed - (avant + timedelta(hours=4))).total_seconds()) < 60
         assert cfg.backoff_niveau == 2
@@ -160,9 +160,9 @@ class TestDifferer:
     def test_differer_avec_hint_serveur(self, tmp_path):
         """A server Retry-After sets retenter_apres verbatim and leaves the level intact."""
         cfg = _cfg(tmp_path, backoff_niveau=1)
-        p = Planificateur(cfg)
+        p = Scheduler(cfg)
         hint_aware = datetime(2026, 9, 27, 10, 0, 0, tzinfo=timezone.utc)
-        p.differer(RunResult(deferred=True, retry_after=hint_aware.isoformat()))
+        p.defer(RunResult(deferred=True, retry_after=hint_aware.isoformat()))
         expected_local = hint_aware.astimezone().replace(tzinfo=None)
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert parsed.tzinfo is None
@@ -170,10 +170,10 @@ class TestDifferer:
         assert cfg.backoff_niveau == 1
 
     def test_differer_persiste(self, tmp_path):
-        """Fields written by differer survive a fresh charger() round-trip."""
+        """Fields written by defer survive a fresh charger() round-trip."""
         cfg = _cfg(tmp_path, backoff_niveau=0)
-        p = Planificateur(cfg)
-        p.differer(RunResult(deferred=True, retry_after=""))
+        p = Scheduler(cfg)
+        p.defer(RunResult(deferred=True, retry_after=""))
 
         cfg2 = Config.charger(tmp_path / "c.json")
         assert cfg2.retenter_apres == cfg.retenter_apres
@@ -185,26 +185,26 @@ class TestProchaineAvecReport:
         """When the deferral date is later than the nominal deadline, prochaine returns it."""
         derniere = datetime.now() - timedelta(hours=1)
         report = datetime.now() + timedelta(hours=26)
-        p = Planificateur(_cfg(
+        p = Scheduler(_cfg(
             tmp_path,
             intervalle_heures=24,
             derniere_execution=derniere.isoformat(timespec="seconds"),
             retenter_apres=report.isoformat(timespec="seconds"),
         ))
-        r = p.prochaine()
+        r = p.next_run()
         assert abs((r - report.replace(microsecond=0)).total_seconds()) < 2
 
     def test_prochaine_ignore_retenter_apres_depasse(self, tmp_path):
         """A stale deferral must not drag the nominal deadline back into the past."""
         derniere = datetime.now() - timedelta(hours=1)
         report = datetime.now() - timedelta(hours=5)
-        p = Planificateur(_cfg(
+        p = Scheduler(_cfg(
             tmp_path,
             intervalle_heures=24,
             derniere_execution=derniere.isoformat(timespec="seconds"),
             retenter_apres=report.isoformat(timespec="seconds"),
         ))
-        r = p.prochaine()
+        r = p.next_run()
         nominal = datetime.fromisoformat(
             derniere.isoformat(timespec="seconds")) + timedelta(hours=24)
         assert r == nominal
@@ -212,13 +212,13 @@ class TestProchaineAvecReport:
     def test_prochaine_retenter_apres_invalide_ignore(self, tmp_path):
         """A malformed retenter_apres is silently ignored, prochaine still returns nominal."""
         derniere = datetime.now() - timedelta(hours=1)
-        p = Planificateur(_cfg(
+        p = Scheduler(_cfg(
             tmp_path,
             intervalle_heures=24,
             derniere_execution=derniere.isoformat(timespec="seconds"),
             retenter_apres="not-a-datetime",
         ))
-        r = p.prochaine()
+        r = p.next_run()
         nominal = datetime.fromisoformat(
             derniere.isoformat(timespec="seconds")) + timedelta(hours=24)
         assert r == nominal
@@ -226,14 +226,14 @@ class TestProchaineAvecReport:
 
 class TestMarquerExecutionReinitialise:
     def test_reset_apres_marquer_execution(self, tmp_path):
-        """marquer_execution clears any pending deferral (retenter_apres + backoff)."""
+        """mark_run clears any pending deferral (retenter_apres + backoff)."""
         report = (datetime.now() + timedelta(hours=1)).isoformat(timespec="seconds")
         cfg = _cfg(tmp_path,
                    intervalle_heures=24,
                    retenter_apres=report,
                    backoff_niveau=2)
-        p = Planificateur(cfg)
-        p.marquer_execution()
+        p = Scheduler(cfg)
+        p.mark_run()
         assert cfg.retenter_apres == ""
         assert cfg.backoff_niveau == 0
 
@@ -250,8 +250,8 @@ class TestTextePresentableAvecReport:
             derniere_execution=datetime.now().isoformat(timespec="seconds"),
             retenter_apres=report,
         )
-        p = Planificateur(cfg)
-        assert "report" in texte_prochaine(p).lower()
+        p = Scheduler(cfg)
+        assert "report" in next_run_text(p).lower()
 
     def test_libelle_report_avant_nominale_ignore(self, tmp_path):
         """Defer earlier than the nominal time → no misleading "report" label.
@@ -268,8 +268,8 @@ class TestTextePresentableAvecReport:
             derniere_execution=datetime.now().isoformat(timespec="seconds"),
             retenter_apres=report,
         )
-        p = Planificateur(cfg)
-        assert "report" not in texte_prochaine(p).lower()
+        p = Scheduler(cfg)
+        assert "report" not in next_run_text(p).lower()
 
     def test_libelle_report_passe_ignore(self, tmp_path):
         """`retenter_apres` in the past → nominal label (no "report" mention)."""
@@ -282,5 +282,5 @@ class TestTextePresentableAvecReport:
             derniere_execution=derniere,
             retenter_apres=past,
         )
-        p = Planificateur(cfg)
-        assert "report" not in texte_prochaine(p).lower()
+        p = Scheduler(cfg)
+        assert "report" not in next_run_text(p).lower()

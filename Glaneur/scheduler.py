@@ -21,11 +21,11 @@ if TYPE_CHECKING:
 # Exponential backoff applied when the server did not provide a
 # ``Retry-After``: level 0 -> 1 h, 1 -> 2 h, 2 -> 4 h. The level is
 # incremented on each successive defer and capped at 2; it is reset to
-# zero by :meth:`Planificateur.marquer_execution`.
+# zero by :meth:`Scheduler.mark_run`.
 BACKOFFS_S: tuple[int, ...] = (3600, 7200, 14400)
 
 
-class Planificateur:
+class Scheduler:
     """Compute and display the next automatic-update deadline.
 
     The object is passive: it does not start a timer, it answers the
@@ -40,13 +40,13 @@ class Planificateur:
             config: Configuration object from which
                 ``Config.derniere_execution`` and
                 ``Config.intervalle_heures`` are read, and on which
-                ``Config.sauver`` is called by :meth:`marquer_execution`.
+                ``Config.sauver`` is called by :meth:`mark_run`.
         """
         self.config = config
 
     # -- state --------------------------------------------------------------- #
 
-    def derniere(self) -> datetime | None:
+    def last_run(self) -> datetime | None:
         """Timestamp of the last run, deserialised from the configuration.
 
         Returns:
@@ -58,7 +58,7 @@ class Planificateur:
         except (ValueError, TypeError):
             return None
 
-    def _retenter_apres(self) -> datetime | None:
+    def _retry_after(self) -> datetime | None:
         """Resume date after a defer, or ``None`` when missing/malformed.
 
         Sole parsing point for ``config.retenter_apres`` — at the slightest
@@ -73,7 +73,7 @@ class Planificateur:
         except (ValueError, TypeError):
             return None
 
-    def _nominale(self) -> datetime | None:
+    def _nominal(self) -> datetime | None:
         """Date of the next deadline without considering any defer.
 
         Returns:
@@ -81,12 +81,12 @@ class Planificateur:
         """
         if not self.config.intervalle_heures:
             return None
-        derniere = self.derniere()
+        derniere = self.last_run()
         if derniere is None:
             return datetime.now()       # never run: as soon as possible
         return derniere + timedelta(hours=self.config.intervalle_heures)
 
-    def prochaine(self) -> datetime | None:
+    def next_run(self) -> datetime | None:
         """Compute the date of the next automatic update.
 
         If no run has ever been recorded, the "next" is right now: the
@@ -99,37 +99,37 @@ class Planificateur:
             The scheduled date, or ``None`` in manual mode
             (``Config.intervalle_heures`` = 0).
         """
-        nominale = self._nominale()
+        nominale = self._nominal()
         if nominale is None:
             return None
-        report = self._retenter_apres()
+        report = self._retry_after()
         if report is not None and report > nominale:
             return report
         return nominale
 
-    def echeance_atteinte(self) -> bool:
+    def is_due(self) -> bool:
         """Report whether an automatic run should start right now.
 
         Returns:
-            ``True`` if :meth:`prochaine` has passed, ``False`` otherwise
+            ``True`` if :meth:`next_run` has passed, ``False`` otherwise
             (manual mode included).
         """
-        prochaine = self.prochaine()
+        prochaine = self.next_run()
         return prochaine is not None and datetime.now() >= prochaine
 
-    def report_actif(self) -> bool:
+    def defer_active(self) -> bool:
         """True when a valid ``retenter_apres`` pushes the nominal deadline out.
 
         Exposed for the UI-side label helper so it can pick the "deferred"
         wording without touching private methods.
         """
-        nominale = self._nominale()
-        report = self._retenter_apres()
+        nominale = self._nominal()
+        report = self._retry_after()
         return (report is not None
                 and nominale is not None
                 and report > nominale)
 
-    def marquer_execution(self) -> None:
+    def mark_run(self) -> None:
         """Record the current instant as the last run and persist the config.
 
         Called by the engine at the end of a successful run. Writes to
@@ -142,7 +142,7 @@ class Planificateur:
         self.config.backoff_niveau = 0
         self.config.sauver()
 
-    def differer(self, res: RunResult) -> None:
+    def defer(self, res: RunResult) -> None:
         """Defer the next run after a network circuit-breaker trips.
 
         Uses ``res.retry_after`` (aware UTC, produced by the engine via

@@ -209,7 +209,7 @@ class TestCodesRetour:
         assert rc == 0
 
     def test_deux_si_run_reporte(self, monkeypatch, tmp_path, capsys):
-        # `Planificateur.differer` persists a defer via `Config.sauvegarder`,
+        # `Scheduler.defer` persists a defer via `Config.sauvegarder`,
         # so the config path has to be writable.
         rc = _run(
             monkeypatch, [],
@@ -218,7 +218,7 @@ class TestCodesRetour:
         )
         assert rc == 2
         err = capsys.readouterr().err
-        # texte_prochaine goes to stderr as a next-run hint.
+        # next_run_text goes to stderr as a next-run hint.
         assert err.strip() != ""
 
     def test_130_sur_keyboard_interrupt(self, monkeypatch, capsys):

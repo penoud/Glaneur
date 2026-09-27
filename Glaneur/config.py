@@ -171,12 +171,12 @@ class Config:
     derniere_execution: str = ""
     #: ISO 8601 date (naive local) of the next run deferred by a network
     #: circuit-breaker — see
-    #: :meth:`Glaneur.scheduler.Planificateur.differer`.
+    #: :meth:`Glaneur.scheduler.Scheduler.defer`.
     #: Empty = no defer in progress.
     retenter_apres: str = ""
     #: Exponential-backoff level — 0 -> 1 h, 1 -> 2 h, 2 -> 4 h.
     #: Reset to 0 by
-    #: :meth:`Glaneur.scheduler.Planificateur.marquer_execution`.
+    #: :meth:`Glaneur.scheduler.Scheduler.mark_run`.
     backoff_niveau: int = 0
     #: Adds the application to the user session's startup items.
     lancer_au_demarrage: bool = False

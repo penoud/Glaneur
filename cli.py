@@ -19,8 +19,8 @@ from Glaneur.engine import (
     list_deleted,
     restore,
 )
-from Glaneur.scheduler import Planificateur
-from Glaneur.scheduler_labels import texte_prochaine
+from Glaneur.scheduler import Scheduler
+from Glaneur.scheduler_labels import next_run_text
 
 
 def main() -> int:
@@ -116,11 +116,11 @@ def main() -> int:
 
     if res.deferred:
         # Persist the defer so the next invocation (UI or CLI) honours
-        # the backoff. We do NOT call `marquer_execution` — the run was
+        # the backoff. We do NOT call `mark_run` — the run was
         # truncated.
-        planificateur = Planificateur(c)
-        planificateur.differer(res)
-        print(f"  {texte_prochaine(planificateur)}", file=sys.stderr)
+        planificateur = Scheduler(c)
+        planificateur.defer(res)
+        print(f"  {next_run_text(planificateur)}", file=sys.stderr)
         return 2
     return 1 if res.failures and not res.downloaded else 0
 

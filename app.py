@@ -82,8 +82,8 @@ from Glaneur.engine import (
     list_deleted,
     restore,
 )
-from Glaneur.scheduler import Planificateur
-from Glaneur.scheduler_labels import texte_prochaine
+from Glaneur.scheduler import Scheduler
+from Glaneur.scheduler_labels import next_run_text
 from Glaneur.sources import classements_pour
 from Glaneur.system import (
     avancer_diaporama,
@@ -661,7 +661,7 @@ class Fenetre(QMainWindow):
         self.setMinimumSize(QSize(600, 400))
 
         self.cfg = Config.charger()
-        self.planificateur = Planificateur(self.cfg)
+        self.planificateur = Scheduler(self.cfg)
         self.arret = threading.Event()
         self.travailleur: Travailleur | None = None
         self.auto_en_cours = False
@@ -1189,9 +1189,9 @@ class Fenetre(QMainWindow):
                 n=res.failures))
 
         if res.deferred:
-            self.planificateur.differer(res)
+            self.planificateur.defer(res)
         elif not res.interrupted:
-            self.planificateur.marquer_execution()
+            self.planificateur.mark_run()
         self._rafraichir_echeance()
 
         # info bubble only if the user was not watching
@@ -1207,12 +1207,12 @@ class Fenetre(QMainWindow):
     def _verifier_echeance(self) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        if self.planificateur.echeance_atteinte():
+        if self.planificateur.is_due():
             self._ecrire(self.tr("Mise à jour automatique déclenchée."))
             self._lancer(auto=True)
 
     def _rafraichir_echeance(self) -> None:
-        texte = texte_prochaine(self.planificateur)
+        texte = next_run_text(self.planificateur)
         self.label_echeance.setText(texte)
         if self.tray:
             self.tray.setToolTip(self.tr("Glaneur — {texte}").format(texte=texte))

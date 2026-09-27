@@ -9,171 +9,93 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-**Sprint « Identifiants FR → EN ». Batch 2 — moteur.**
+**Sprint « Identifiants FR → EN ». Batch 3 — scheduler.**
 
-Renommer la surface publique de `Glaneur/engine/` :
+Renommer la classe `Planificateur` et sa surface :
 
-- classes : `Moteur → Engine`, `Resultat → RunResult`, exception
-  `Interrompu → Interrupted` (définie dans `Glaneur/sources/base.py`
-  mais raise/catch et export depuis l'engine → tirée par la conversation
-  principale du lot 2 pour rester cohérent).
-- fonctions module engine (leaf files) : `chemin_cache → cache_path`,
-  `chemin_manifeste → manifest_path`, `nettoyer → clean`,
-  `format_octets → format_bytes`, `_fusionner_marques_ui →
-  _merge_ui_marks`, `lire_cache → read_cache`, `ecrire_cache →
-  write_cache`, `lire_manifeste → read_manifest`, `ecrire_manifeste →
-  write_manifest`, `supprimer_image → delete_image`,
-  `restaurer → restore`, `lister_supprimees → list_deleted`.
-- méthodes `Engine` : `charger_manifeste → load_manifest`,
-  `sauver_manifeste → save_manifest`, `charger_cache → load_cache`,
-  `sauver_cache → save_cache`, `nettoyer` (helper) → `_clean_group`
-  (méthode interne différente du helper module), `chemin_libre →
-  free_path`, `_verifier_arret → _check_stop`,
-  `_declencher_report → _trigger_defer`, `executer → run`.
-- fonction `classer_erreur → classify_error` dans
-  `Glaneur/sources/base.py` (importée par le moteur ; la dataclass
-  `Classification` et son champ `categorie` restent FR — lot 6).
-- champs `Options` (mémoire uniquement) : `dossier → target_dir`,
-  `classement → sort_mode`, `largeur_min → min_width`, `delai → delay`,
-  `verifier → verify`, `depuis → since`, `jusqua → until`,
-  `utiliser_cache → use_cache`, `type_source → source_type`,
-  `format_image → image_format`.
-- champs `RunResult` (mémoire, jamais sérialisé) : `telechargees →
-  downloaded`, `reprises → resumed`, `inchangees → unchanged`,
-  `deja_presentes → already_present`, `supprimees → deleted`,
-  `ignorees → skipped`, `echecs → failures`, `octets → bytes`,
-  `interrompu → interrupted`, `reporte → deferred`, `retenter_apres →
-  retry_after`.
-
-**Hors périmètre strict :** les champs FR de `Config` (lot 4b, format
-persistant, mêmes noms mais **champs différents** — attention aux
-sites `options = Options(target_dir=cfg.dossier, sort_mode=cfg.classement,
-…)` qui traduisent d'un vocabulaire à l'autre), les dataclass `Element`
-et `Classification` (persistance + lot 6), le scheduler (`Planificateur`,
-lot 3), les libellés Qt (`.translate("Moteur", …)`), les valeurs de
-chaînes (`"transitoire"`, `"coupure"`, `"definitif"`, `"galerie"`,
-`"date"`, `"plat"`, `"introuvable"`, `"inchangé"`, `"repris"`,
-`"supprime"`, `"restaure"`, …).
+- `Planificateur → Scheduler`.
+- Méthodes publiques : `differer → defer`, `marquer_execution → mark_run`,
+  `echeance_atteinte → is_due`, `prochaine → next_run`,
+  `derniere → last_run`, `report_actif → defer_active`,
+  `est_gele → is_frozen`.
+- Méthodes internes : `_retenter_apres → _retry_after` (nom déjà utilisé
+  par `Classification.retry_after` dans `sources/base.py`, mais pas de
+  conflit — classes distinctes), `_nominale → _nominal`.
+- Helper UI : `texte_prochaine → next_run_text` dans
+  `Glaneur/scheduler_labels.py`.
+- Contexte de traduction Qt `"Planificateur"` : **inchangé** (les entrées
+  `.ts` existantes le référencent, comme pour `"Moteur"` au lot 2).
 
 ## Directly modified
 
-Engine (rewrite):
-- Glaneur/engine/__init__.py                (imports + `__all__`)
-- Glaneur/engine/core.py                    (Moteur, Options.*, Resultat.*)
-- Glaneur/engine/result.py                  (classe + champs)
-- Glaneur/engine/options.py                 (champs)
-- Glaneur/engine/cache_path.py              (fonction)
-- Glaneur/engine/manifest_path.py           (fonction)
-- Glaneur/engine/sanitize.py                (fonction)
-- Glaneur/engine/format_bytes.py            (fonction)
-- Glaneur/engine/_merge.py                  (fonction)
-- Glaneur/engine/read_cache.py              (fonction)
-- Glaneur/engine/write_cache.py             (fonction)
-- Glaneur/engine/read_manifest.py           (fonction)
-- Glaneur/engine/write_manifest.py          (fonction)
-- Glaneur/engine/delete_image.py            (fonction)
-- Glaneur/engine/restore.py                 (fonction)
-- Glaneur/engine/list_deleted.py            (fonction)
-
-Sources (nécessaire pour la cohérence engine) :
-- Glaneur/sources/base.py                   (`Interrompu → Interrupted`,
-                                             `classer_erreur → classify_error`)
-- Glaneur/sources/__init__.py               (`__all__`)
-- Glaneur/sources/wordpress.py              (usages de `Interrompu` /
-                                             `classer_erreur`)
-- Glaneur/sources/djangoplicity.py          (usages)
-
-Consommateurs :
-- Glaneur/scheduler.py                      (import `Resultat` → `RunResult`
-                                             + éventuels champs)
-- app.py                                    (construction `Options`,
-                                             `Moteur`, lecture `Resultat`)
-- cli.py                                    (idem)
-
-Tests :
-- tests/test_core.py                        (majeur)
-- tests/test_scheduler.py                   (import `Resultat`)
-- tests/test_cli.py                         (options / résultats)
-- tests/test_source_base.py                 (`classer_erreur`, `Interrompu`)
-- tests/test_source_wordpress.py            (`Interrompu`, options)
-- tests/test_source_djangoplicity.py        (idem)
-- tests/test_sources_edges.py               (idem)
-- tests/test_boundaries.py                  (potentiel : liste des imports Qt)
+- Glaneur/scheduler.py               (classe + méthodes)
+- Glaneur/scheduler_labels.py        (helper + appels sur Scheduler)
+- Glaneur/config.py                  (2 rôles `:meth:` dans les
+                                      docstrings de champs, pointant
+                                      vers Scheduler.defer / mark_run)
+- app.py                             (import + attribut
+                                      `self.planificateur` + méthodes)
+- cli.py                             (import + `Planificateur(c)` +
+                                      `.differer` + `texte_prochaine`)
+- tests/test_scheduler.py            (majeur : classes, méthodes,
+                                      noms de méthodes de test qui
+                                      contiennent `prochaine`, `differer`,
+                                      `marquer_execution` etc.)
+- tests/test_cli.py                  (import de `texte_prochaine` si
+                                      présent)
 
 ## Direct dependencies
 
-- Documentation Sphinx : rôles `:class:\`Resultat\``, `:meth:\`Moteur.…\``,
-  ``\`\`Moteur\`\``, `:func:\`ecrire_cache\``, `:mod:\`Glaneur.engine.core\``
-  etc. dans les docstrings de `engine/`, `scheduler.py`, `config.py`.
-  Régénérer `docs/sphinx/api/*.rst` après renommage (`make -C docs/sphinx
-  apidoc`) et vérifier `sphinx-build -W`.
-- CLAUDE.md « Écarts connus » : le premier écart parle de
-  `Glaneur/engine/core.py` qui importe `QCoreApplication`. Lot 2 ne
-  résout pas cet écart (frontière 1), il ne l'aggrave pas non plus →
-  aucune modif de CLAUDE.md.
-- `translations/*.ts` : `Glaneur/engine/core.py` appelle
-  `.translate("Moteur", …)` avec `"Moteur"` comme contexte
-  d'internationalisation. Ce **contexte** est un identifiant de
-  traduction : le changer ferait perdre les traductions actuelles. **On
-  garde `"Moteur"` littéral** au lieu de le calquer sur `Engine`.
-- `packaging/**` : non concerné (pas de référence à ces identifiants).
+- CLAUDE.md « Écarts connus » : l'écart moteur reste — pas d'ajout ni
+  de retrait par ce lot.
+- `translations/*.ts` : le contexte `"Planificateur"` reste littéral,
+  les chaînes sources FR (« Mise à jour automatique désactivée », etc.)
+  restent bit-à-bit identiques.
+- Docs Sphinx : rôles `:class:\`Planificateur\``,
+  `:meth:\`Planificateur.…\``, ``\`\`Planificateur\`\``` dans les
+  docstrings de `config.py`, `scheduler.py`, `scheduler_labels.py`.
+- Frontière 1 (`tests/test_boundaries.py`) : le scheduler reste Qt-free
+  (frontière 1 déjà tenue au lot précédent) — le renommage
+  n'introduit pas d'import Qt, la ligne du scheduler dans
+  `KNOWN_QT_IMPORTS` reste absente.
+- `packaging/**` : inchangé.
 
 ## Tests
 
-- Suite complète : `pytest` avec couverture (la rupture touche l'API
-  publique `Glaneur.engine.*`).
-- `ruff check` global.
-- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
-  après régénération des `.rst`.
-- Boundaries : `test_boundaries.py` scanne les imports Qt de
-  `scheduler.py`, `detect.py`, `engine/*.py`, `sources/*.py`. Le
-  renommage `Moteur → Engine` ne change pas la liste des imports Qt du
-  moteur (`QCoreApplication` reste importé → l'entrée `xfail(strict=True)`
-  du moteur reste **xfail**). Ne pas la retirer.
+- `pytest tests/test_scheduler.py tests/test_cli.py tests/test_boundaries.py
+  tests/test_core.py` — plus un run complet pour non-régression.
+- `ruff check` sur les fichiers modifiés.
+- Sphinx : même remarque qu'au lot 2 (sphinx-build non installé dans
+  l'environnement de travail ; la mise à jour des rôles Sphinx est
+  faite en même temps que le renommage).
 
 ## Explicitly out of scope
 
-- Frontière 1 (Qt hors moteur) — chantier séparé (voir écart connu
-  CLAUDE.md, événements structurés).
-- Champs `Config` (lot 4b). Attention : `Config.dossier`,
-  `Config.classement`, `Config.type_source`, `Config.format_image`,
-  `Config.largeur_min`, `Config.retenter_apres` restent nommés FR ce
-  lot-ci. Les sites `Options(target_dir=cfg.dossier, …)` traduisent.
-- `Element`, `Classification` (lot 4b et lot 6).
-- `Planificateur` (lot 3) — mais l'attribut `.telechargees`, `.reporte`,
-  `.retenter_apres` sur `RunResult` que le scheduler lit doit être
-  renommé côté scheduler dans **ce** lot (impossible autrement, sinon
-  le scheduler casse). Renommer *seulement* la lecture des champs,
-  pas la classe `Planificateur` ni ses méthodes.
-- Chaînes littérales dispatch (`"transitoire"`, `"coupure"`,
-  `"definitif"`, `"galerie"`, `"date"`, `"plat"`, `"introuvable"`,
-  `"inchangé"`, `"repris"`, `"supprime"`, `"restaure"`, `"divers"`).
-- Contexte Qt `.translate("Moteur", …)` : reste `"Moteur"` littéral.
+- Champs `Config` — `derniere_execution`, `retenter_apres`,
+  `intervalle_heures`, `backoff_niveau` — restent FR (lot 4b).
+- Chaînes de traduction Qt (contexte `"Planificateur"` et strings
+  sources), CLI flags et messages FR de sortie utilisateur.
+- `Glaneur/system.py::est_gele()` — homonyme non-scheduler, appartient
+  à un autre module et sera traité au lot 6.
+- Renommage éventuel de la variable d'instance `self.planificateur`
+  dans `app.py` (attribut de `FenetrePrincipale`) : reste en FR ce lot,
+  passera avec un lot UI / app.py dédié plus tard.
 
 ## Invariants
 
-- **`.qm`/`.ts` inchangés.** Le contexte de traduction `"Moteur"` et
-  toutes les chaînes source FR restent bit-à-bit identiques.
-- **Format persistant inchangé.** Ni le manifeste (`Element` FR), ni le
-  cache (structure `{"date_max": …, "titres": {…}}` peu impactée), ni
-  `config.json` (champs `Config` FR) ne changent. Un manifeste écrit
-  avant ce lot reste lisible après.
-- **Aucune modification de comportement.** Ce lot est un rename pur.
-  Les tests fonctionnels existants doivent passer sans changement
-  d'assertion, seuls les noms qu'ils invoquent changent.
-- **Docs Sphinx `-W` vertes.** Toute référence `:meth:`, `:class:`,
-  `:func:`, `:attr:`, `\`\`X\`\`` visant un identifiant renommé est mise
-  à jour dans le même commit.
+- `.qm`/`.ts` inchangés (contexte `"Planificateur"` + sources FR
+  identiques).
+- Persistence inchangée (aucun champ `Config` renommé).
+- Tests passent (surtout `TestPlanificateur*`, `TestTextePresentable*`,
+  `TestTextePresentableAvecReport`).
 
 ## Validation
 
-Niveau **`full`** selon la table CLAUDE.md :
+Niveau **`full`** selon la table CLAUDE.md (« Moteur, scheduler,
+`config.py` » — la ligne du scheduler dans la table demande tests
+concernés + ruff + `invariant-reviewer`, mais le renommage traverse
+`app.py` et `cli.py` donc on passe la suite complète).
 
 - `pytest` complet + couverture.
 - `ruff check` global.
-- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
-  après `make -C docs/sphinx apidoc`.
-- Relecture par `invariant-reviewer` (Sonnet) — surface `Glaneur.engine`
-  et frontière 1 potentiellement affectée si un import est ajouté.
-  **Pas de `review Opus`** : pas de rupture de format persistant, pas
-  d'architecture nouvelle.
+- Sphinx : différé, comme au lot 2.
