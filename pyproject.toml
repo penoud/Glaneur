@@ -1,0 +1,18 @@
+[tool.coverage.run]
+branch = true
+source = ["Glaneur"]
+
+[tool.coverage.report]
+# Global floor only; per-module floors live in tools/check_coverage.py.
+fail_under = 0          # set to the current measured value, then only raise it
+precision = 1
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    'if __name__ == "__main__":',
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
