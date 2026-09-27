@@ -22,8 +22,8 @@ from Glaneur.sources.djangoplicity import Djangoplicity
 def _source(*, format_image="Large", base="https://www.eso.org/public"):
     return Djangoplicity(
         base=base,
-        transport=Transport(delai=0, arret=threading.Event()),
-        reglages={"format_image": format_image},
+        transport=Transport(delay=0, arret=threading.Event()),
+        settings={"format_image": format_image},
     )
 
 
@@ -91,8 +91,8 @@ class TestBase:
     def test_type_et_classements(self):
         assert Djangoplicity.type == "djangoplicity"
         # doc §3: "galerie" has no natural equivalent
-        assert "galerie" not in Djangoplicity.classements
-        assert {"date", "plat"} <= Djangoplicity.classements
+        assert "galerie" not in Djangoplicity.sort_modes
+        assert {"date", "plat"} <= Djangoplicity.sort_modes
 
     def test_endpoint_derive_de_la_base(self):
         s = _source(base="https://www.eso.org/public/")
@@ -100,10 +100,10 @@ class TestBase:
 
     def test_convertir_depuis(self):
         s = _source()
-        assert s.convertir_depuis("2026-06-15T12:00:00") == "20260615120000"
+        assert s.convert_from("2026-06-15T12:00:00") == "20260615120000"
         # tolerant: YYYY-MM-DD is enough, the time is zero-padded
-        assert s.convertir_depuis("2026-06-15") == "20260615000000"
-        assert s.convertir_depuis(None) is None
+        assert s.convert_from("2026-06-15") == "20260615000000"
+        assert s.convert_from(None) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -210,7 +210,7 @@ class TestInventaire:
             "https://x.example/images/d2d/?page=2": page2,
         })
         with patch.object(s.transport, "get_json", side_effect=faux.get_json):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["a:Large", "b:Large", "c:Large"]
         # exactly two requests, not three
         assert len(faux.appels) == 2
@@ -222,7 +222,7 @@ class TestInventaire:
         page1 = _reponse([_entree("a")], next_url=None, count=100)
         faux = FauxServeur({"https://x.example/images/d2d/": page1})
         with patch.object(s.transport, "get_json", side_effect=faux.get_json):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["a:Large"]
 
     def test_deduplication_par_id(self):
@@ -236,7 +236,7 @@ class TestInventaire:
             "https://x.example/images/d2d/?page=2": page2,
         })
         with patch.object(s.transport, "get_json", side_effect=faux.get_json):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert sorted(e.ident for e in r) == ["a:Large", "b:Large", "c:Large"]
 
     def test_after_est_transmis_en_params(self):
@@ -248,7 +248,7 @@ class TestInventaire:
             return {"Count": 0, "Collections": []}, {}
 
         with patch.object(s.transport, "get_json", side_effect=faux_get_json):
-            list(s.inventaire("20260615120000", None))
+            list(s.inventory("20260615120000", None))
         assert capture["params"]["after"] == "20260615120000"
 
 

@@ -31,7 +31,7 @@ from Glaneur.engine import (
     write_manifest,
 )
 from Glaneur.sources import Element
-from Glaneur.sources.base import Classification
+from Glaneur.sources.base import ErrorClassification
 
 # --------------------------------------------------------------------------- #
 # Free-standing utilities
@@ -330,8 +330,8 @@ def _moteur(tmp_path, **kw):
     """Builds a Engine with a default Options, overridable.
 
     The engine builds a `wordpress` adapter by default; tests replace it
-    with a fake as needed, or patch `moteur.source.inventaire`
-    / `moteur.source.resoudre_groupes`.
+    with a fake as needed, or patch `moteur.source.inventory`
+    / `moteur.source.resolve_groups`.
     """
     options = Options(target_dir=tmp_path, delay=0, **kw)
     return Engine(options)
@@ -551,7 +551,7 @@ class TestTelecharger:
         assert infos is None
         assert not dest.exists()
         assert classification is not None
-        assert classification.categorie in {"coupure", "transitoire", "definitif"}
+        assert classification.category in {"coupure", "transitoire", "definitif"}
 
     def test_interruption_conserve_part(self, tmp_path):
         # the stop mid-read must leave the .part for the resume
@@ -576,13 +576,13 @@ class TestTelecharger:
 # --------------------------------------------------------------------------- #
 
 def _patch_inventaire(moteur, elements):
-    """Shortcut: patch `moteur.source.inventaire` to return `elements`.
+    """Shortcut: patch `moteur.source.inventory` to return `elements`.
 
     The inventory adapter is what the engine consumes now; orchestration
     tests no longer test the raw API call, only the orchestration
     downstream of the `Element` contract.
     """
-    return patch.object(moteur.source, "inventaire",
+    return patch.object(moteur.source, "inventory",
                         return_value=iter(elements))
 
 
@@ -699,14 +699,14 @@ class TestExecuter:
         def leve(*_a, **_kw):
             raise Interrupted()
 
-        with patch.object(moteur.source, "inventaire", side_effect=leve):
+        with patch.object(moteur.source, "inventory", side_effect=leve):
             res = moteur.run()
         assert res.interrupted is True
         assert "Interrompu" in res.message
 
     def test_erreur_api_capturee(self, tmp_path):
         moteur = _moteur(tmp_path)
-        with patch.object(moteur.source, "inventaire",
+        with patch.object(moteur.source, "inventory",
                           side_effect=RuntimeError("API HS")):
             res = moteur.run()
         assert "API HS" in res.message
@@ -738,7 +738,7 @@ class TestCoupeCircuit:
     """Engine circuit breaker: clean stop on ``coupure`` or 5 ``transitoire``.
 
     These tests mock :meth:`Engine.download` to inject the
-    ``(statut, infos, Classification)`` triple directly — no network access,
+    ``(statut, infos, ErrorClassification)`` triple directly — no network access,
     no real waiting on backoffs.
     """
 
@@ -759,7 +759,7 @@ class TestCoupeCircuit:
         elements = self._elements(3)
         reponses = [
             self._OK,
-            ("erreur : coupure", None, Classification("coupure", None)),
+            ("erreur : coupure", None, ErrorClassification("coupure", None)),
         ]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download", side_effect=reponses) as tel:
@@ -774,7 +774,7 @@ class TestCoupeCircuit:
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
         transitoire = ("erreur : timeout", None,
-                       Classification("transitoire", None))
+                       ErrorClassification("transitoire", None))
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           side_effect=[transitoire] * 5) as tel:
@@ -788,7 +788,7 @@ class TestCoupeCircuit:
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
         transitoire = ("erreur : timeout", None,
-                       Classification("transitoire", None))
+                       ErrorClassification("transitoire", None))
         reponses = [transitoire] * 4 + [self._OK] + [transitoire] * 4 + [self._OK]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download", side_effect=reponses):
@@ -802,8 +802,8 @@ class TestCoupeCircuit:
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
         transitoire = ("erreur : timeout", None,
-                       Classification("transitoire", None))
-        introuvable = ("introuvable", None, Classification("definitif", None))
+                       ErrorClassification("transitoire", None))
+        introuvable = ("introuvable", None, ErrorClassification("definitif", None))
         reponses = ([transitoire] * 4 + [introuvable] + [transitoire] * 4
                     + [self._OK])
         with _patch_inventaire(moteur, elements), \
@@ -815,7 +815,7 @@ class TestCoupeCircuit:
         """A ``Retry-After`` of 3600 s produces an ISO 8601 about 1 h in the future."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = self._elements(1)[0]
-        reponse = ("erreur : quota", None, Classification("coupure", 3600.0))
+        reponse = ("erreur : quota", None, ErrorClassification("coupure", 3600.0))
         avant = datetime.now(timezone.utc)
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download", return_value=reponse):
@@ -833,7 +833,7 @@ class TestCoupeCircuit:
         """Without ``Retry-After``, ``res.retry_after`` stays empty: the scheduler decides."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = self._elements(1)[0]
-        reponse = ("erreur : boum", None, Classification("coupure", None))
+        reponse = ("erreur : boum", None, ErrorClassification("coupure", None))
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download", return_value=reponse):
             res = moteur.run()
@@ -844,7 +844,7 @@ class TestCoupeCircuit:
         """The on-disk manifest keeps the entries downloaded before the cut."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(3)
-        coupure = ("erreur : coupure", None, Classification("coupure", None))
+        coupure = ("erreur : coupure", None, ErrorClassification("coupure", None))
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           side_effect=[self._OK, coupure]):
@@ -857,7 +857,7 @@ class TestCoupeCircuit:
         """A cut does not write the engine cache (same as ``Interrupted``)."""
         moteur = _moteur(tmp_path, site="https://x", sort_mode="date")
         elements = self._elements(3)
-        coupure = ("erreur : coupure", None, Classification("coupure", None))
+        coupure = ("erreur : coupure", None, ErrorClassification("coupure", None))
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           side_effect=[self._OK, coupure]):
@@ -979,7 +979,7 @@ class TestExecuterExtra:
         moteur = _moteur(tmp_path, sort_mode="galerie")
         el = _element(1, groupe=42)
         with _patch_inventaire(moteur, [el]), \
-             patch.object(moteur.source, "resoudre_groupes",
+             patch.object(moteur.source, "resolve_groups",
                           return_value={"42": "match-42"}) as res_parents, \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
@@ -1000,7 +1000,7 @@ class TestExecuterExtra:
         el = _element(1, groupe="42", mois="2026-03",
                       url="https://cdn.eso.org/large/potw.jpg")
         with _patch_inventaire(moteur, [el]), \
-             patch.object(moteur.source, "resoudre_groupes") as res_g, \
+             patch.object(moteur.source, "resolve_groups") as res_g, \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"}, None)):
@@ -1009,7 +1009,7 @@ class TestExecuterExtra:
 
     def test_oserror_capturee(self, tmp_path):
         moteur = _moteur(tmp_path)
-        with patch.object(moteur.source, "inventaire",
+        with patch.object(moteur.source, "inventory",
                           side_effect=OSError("disque plein")):
             res = moteur.run()
         assert "disque plein" in res.message
@@ -1114,7 +1114,7 @@ class TestCacheAPI:
         assert not cache_path(tmp_path).exists()
 
     def test_executer_utilise_date_du_cache_comme_after(self, tmp_path):
-        # A pre-existing cache must be passed to `source.inventaire` as `depuis`
+        # A pre-existing cache must be passed to `source.inventory` as `depuis`
         write_cache(tmp_path, {
             "site": "https://x.example",
             "derniere_date_media": "2026-06-15T12:00:00",
@@ -1126,7 +1126,7 @@ class TestCacheAPI:
             capture["depuis"] = depuis
             return iter([])
 
-        with patch.object(m.source, "inventaire", side_effect=faux_inventaire):
+        with patch.object(m.source, "inventory", side_effect=faux_inventaire):
             m.run()
         assert capture["depuis"] == "2026-06-15T12:00:00"
 
@@ -1140,7 +1140,7 @@ class TestCacheAPI:
             capture["depuis"] = depuis
             return iter([])
 
-        with patch.object(m.source, "inventaire", side_effect=faux_inventaire):
+        with patch.object(m.source, "inventory", side_effect=faux_inventaire):
             m.run()
         # with a user `depuis`, we do NOT inject the cache date
         assert capture["depuis"] == "2020-01-01"
@@ -1167,7 +1167,7 @@ class TestCacheAPI:
         el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
                       groupe=42, mois="2026-03")
         with _patch_inventaire(m, [el]), \
-             patch.object(m.source, "resoudre_groupes",
+             patch.object(m.source, "resolve_groups",
                           return_value={"42": "match-a"}) as res_p, \
              patch.object(m, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
@@ -1198,7 +1198,7 @@ class TestCacheAPI:
             return dict(connus or {})
 
         with _patch_inventaire(m, [el]), \
-             patch.object(m.source, "resoudre_groupes", side_effect=faux_resoudre), \
+             patch.object(m.source, "resolve_groups", side_effect=faux_resoudre), \
              patch.object(m, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
                                                "modifie": "", "url": "u"}, None)):
@@ -1211,7 +1211,7 @@ class TestCacheAPI:
 
     def test_interruption_ne_sauve_pas_le_cache(self, tmp_path):
         m = _moteur(tmp_path, site="https://x")
-        with patch.object(m.source, "inventaire", side_effect=Interrupted()):
+        with patch.object(m.source, "inventory", side_effect=Interrupted()):
             r = m.run()
         assert r.interrupted is True
         # no cache write: the max date was not committed

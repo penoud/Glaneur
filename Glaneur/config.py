@@ -267,8 +267,8 @@ class Config:
             self.format_image = "Large"
         # The sort mode must be supported by the source. Deferred import to
         # avoid the `config → sources → engine → config` cycle.
-        from .sources import classements_pour
-        classements_ok = classements_pour(self.type_source)
+        from .sources import sort_modes_for
+        classements_ok = sort_modes_for(self.type_source)
         if classements_ok and self.classement not in classements_ok:
             self.classement = "date"
         # too short a delay would hammer the club's server

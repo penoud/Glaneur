@@ -84,14 +84,14 @@ from Glaneur.engine import (
 )
 from Glaneur.scheduler import Scheduler
 from Glaneur.scheduler_labels import next_run_text
-from Glaneur.sources import classements_pour
+from Glaneur.sources import sort_modes_for
 from Glaneur.system import (
-    avancer_diaporama,
-    definir_dossier_diaporama,
-    demarrage_automatique,
-    demarrage_automatique_actif,
-    fond_ecran_actuel,
-    ouvrir_dossier,
+    advance_slideshow,
+    autostart,
+    autostart_active,
+    current_wallpaper,
+    open_dir,
+    set_slideshow_dir,
 )
 from Glaneur.updater.qt_threads import (
     UpdateCheck,
@@ -354,7 +354,7 @@ class DialoguePreferences(QDialog):
         form.addRow("", self.case_barre)
 
         self.case_demarrage = QCheckBox(self.tr("Lancer au démarrage de Windows"))
-        self.case_demarrage.setChecked(demarrage_automatique_actif())
+        self.case_demarrage.setChecked(autostart_active())
         self.case_demarrage.setEnabled(sys.platform == "win32")
         form.addRow("", self.case_demarrage)
 
@@ -405,8 +405,8 @@ class DialoguePreferences(QDialog):
         type_courant = SOURCE_TYPES.get(libelle, "wordpress")
         est_djangoplicity = type_courant == "djangoplicity"
         # To avoid importing the adapters in the UI, the engine exposes
-        # `classements_pour(type)`.
-        supportes = classements_pour(type_courant)
+        # `sort_modes_for(type)`.
+        supportes = sort_modes_for(type_courant)
 
         # Image format: only for Djangoplicity.
         for widget in (self.label_format, self.combo_format):
@@ -455,7 +455,7 @@ class DialoguePreferences(QDialog):
         if sys.platform == "win32":
             # auto-start
             voulu = self.case_demarrage.isChecked()
-            obtenu = demarrage_automatique(voulu)
+            obtenu = autostart(voulu)
             if obtenu != voulu:
                 problemes.append(self.tr(
                     "Impossible de modifier le démarrage automatique de Windows."))
@@ -473,7 +473,7 @@ class DialoguePreferences(QDialog):
                     problemes.append(
                         self.tr("Dossier de destination inaccessible : {erreur}").format(erreur=e))
                 else:
-                    if not definir_dossier_diaporama(dossier):
+                    if not set_slideshow_dir(dossier):
                         problemes.append(self.tr(
                             "Impossible de configurer le diaporama Windows "
                             "(dossier vide ou COM indisponible)."))
@@ -901,7 +901,7 @@ class Fenetre(QMainWindow):
         if sys.platform == "win32" and self.cfg.diaporama_dossier:
             dossier = Path(self.cfg.dossier).expanduser()
             if dossier.is_dir():
-                definir_dossier_diaporama(dossier)
+                set_slideshow_dir(dossier)
 
     # ------------------------------------------------------------ actions --
 
@@ -1041,7 +1041,7 @@ class Fenetre(QMainWindow):
 
     def _ouvrir_dossier(self) -> None:
         try:
-            ouvrir_dossier(Path(self.cfg.dossier))
+            open_dir(Path(self.cfg.dossier))
         except OSError as e:
             QMessageBox.warning(self, self.tr("Dossier inaccessible"), str(e))
 
@@ -1060,7 +1060,7 @@ class Fenetre(QMainWindow):
         self._ecrire(self.tr("{n} image(s) seront retéléchargées à la prochaine mise à jour.").format(n=n))
 
     def _supprimer_fond(self) -> None:
-        fond = fond_ecran_actuel()
+        fond = current_wallpaper()
         if fond is None:
             QMessageBox.information(
                 self, self.tr("Fond d'écran"),
@@ -1091,7 +1091,7 @@ class Fenetre(QMainWindow):
         if reponse != QMessageBox.Yes:
             return
         if delete_image(dossier, fond):
-            avancer_diaporama()
+            advance_slideshow()
             self._ecrire(self.tr("Fond d'écran supprimé : {fond}").format(fond=fond))
         else:
             self._ecrire(self.tr("Échec de suppression du fond : {fond}").format(fond=fond))

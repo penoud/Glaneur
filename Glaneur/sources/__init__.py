@@ -20,22 +20,22 @@ SOURCES: dict[str, type[Source]] = {
 }
 
 
-def classements_pour(type_source: str) -> frozenset[str]:
+def sort_modes_for(source_type: str) -> frozenset[str]:
     """Return the set of sort modes supported by a source type.
 
     Return an empty ``frozenset`` rather than raising for an unknown
     type: the UI then greys everything out without crashing.
 
     Args:
-        type_source: Key of ``Glaneur.sources.SOURCES``.
+        source_type: Key of ``Glaneur.sources.SOURCES``.
 
     Returns:
         The supported sort modes (for example
         ``frozenset({"galerie", "date", "plat"})``), or an empty frozenset
-        if ``type_source`` is not registered.
+        if ``source_type`` is not registered.
     """
-    classe = SOURCES.get(type_source)
-    return classe.classements if classe else frozenset()
+    classe = SOURCES.get(source_type)
+    return classe.sort_modes if classe else frozenset()
 
 
 __all__ = [
@@ -44,5 +44,5 @@ __all__ = [
     "Interrupted",
     "Source",
     "Transport",
-    "classements_pour",
+    "sort_modes_for",
 ]

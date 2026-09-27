@@ -24,7 +24,7 @@ UA = "Mozilla/5.0 (compatible; Glaneur/1.0)"
 # (DNS blackhole, exhausted pool). The real ESO case from the "network
 # circuit-breaker" sprint reports a `NameResolutionError` under this
 # exception type.
-_MOTS_COUPURE = (
+_CUT_KEYWORDS = (
     "NameResolutionError",
     "Failed to resolve",
     "getaddrinfo failed",
@@ -33,14 +33,14 @@ _MOTS_COUPURE = (
 
 #: Upstream HTTP codes meaning a cut: the server explicitly says it
 #: cannot/will not respond (429) or an intermediary is down (502/503/504).
-_STATUTS_COUPURE = frozenset({429, 502, 503, 504})
+_CUT_STATUSES = frozenset({429, 502, 503, 504})
 
 #: Definitive client HTTP codes: nothing to retry without intervention.
-_STATUTS_DEFINITIFS = frozenset({400, 401, 403, 404, 405, 410})
+_DEFINITIVE_STATUSES = frozenset({400, 401, 403, 404, 405, 410})
 
 
 @dataclass(frozen=True)
-class Classification:
+class ErrorClassification:
     """Result of :func:`classify_error` — pure value, no I/O.
 
     Fields documented inline with ``#:`` comments (same reason as
@@ -51,7 +51,7 @@ class Classification:
     #: Error category. ``"transitoire"`` = retry immediately,
     #: ``"coupure"`` = the server cut us off (the engine must defer the
     #: run), ``"definitif"`` = nothing to retry.
-    categorie: Literal["transitoire", "coupure", "definitif"]
+    category: Literal["transitoire", "coupure", "definitif"]
     #: Number of seconds to wait before retrying, extracted from a
     #: ``Retry-After`` header (integer or HTTP-date). ``None`` if the
     #: information is missing — the engine falls back on its own backoff.
@@ -90,7 +90,7 @@ def _retry_after(reponse: requests.Response | None) -> float | None:
 def classify_error(
     exc: BaseException | None,
     reponse: requests.Response | None = None,
-) -> Classification:
+) -> ErrorClassification:
     """Classify a network exception and/or an HTTP response.
 
     The caller passes what it has: an exception alone (no response
@@ -104,39 +104,39 @@ def classify_error(
             ``headers['Retry-After']`` are read. ``None`` is allowed.
 
     Returns:
-        An immutable :class:`Classification`. The function performs no
-        I/O — it is testable without a network.
+        An immutable :class:`ErrorClassification`. The function performs
+        no I/O — it is testable without a network.
     """
     retry_after = _retry_after(reponse)
 
     if reponse is not None:
         code = reponse.status_code
-        if code in _STATUTS_COUPURE:
-            return Classification("coupure", retry_after)
-        if code in _STATUTS_DEFINITIFS:
-            return Classification("definitif", retry_after)
+        if code in _CUT_STATUSES:
+            return ErrorClassification("coupure", retry_after)
+        if code in _DEFINITIVE_STATUSES:
+            return ErrorClassification("definitif", retry_after)
         if 500 <= code < 600:
             # 5xx not listed above: treated as transient
             # (an isolated 500 is not a cut).
-            return Classification("transitoire", retry_after)
+            return ErrorClassification("transitoire", retry_after)
 
     if exc is not None:
         if isinstance(exc, requests.exceptions.Timeout):
-            return Classification("transitoire", retry_after)
+            return ErrorClassification("transitoire", retry_after)
         if isinstance(exc, requests.exceptions.ConnectionError):
             message = str(exc)
-            if any(mot in message for mot in _MOTS_COUPURE):
-                return Classification("coupure", retry_after)
-            return Classification("transitoire", retry_after)
+            if any(mot in message for mot in _CUT_KEYWORDS):
+                return ErrorClassification("coupure", retry_after)
+            return ErrorClassification("transitoire", retry_after)
         if isinstance(exc, (
             requests.exceptions.MissingSchema,
             requests.exceptions.InvalidSchema,
             requests.exceptions.InvalidURL,
             requests.exceptions.URLRequired,
         )):
-            return Classification("definitif", retry_after)
+            return ErrorClassification("definitif", retry_after)
 
-    return Classification("transitoire", retry_after)
+    return ErrorClassification("transitoire", retry_after)
 
 
 class Interrupted(Exception):
@@ -194,20 +194,20 @@ class Transport:
     stop apply to every source without an adapter being able to forget.
     """
 
-    def __init__(self, delai: float, arret: threading.Event | None = None) -> None:
+    def __init__(self, delay: float, arret: threading.Event | None = None) -> None:
         """Build the transport with its session and delay floor.
 
         Args:
-            delai: Floor for the pause between two requests, in seconds.
+            delay: Floor for the pause between two requests, in seconds.
             arret: Shared event that cuts pending requests. Created on
                 demand if not provided.
         """
-        self.delai = delai
+        self.delay = delay
         self.arret = arret or threading.Event()
         self.session = requests.Session()
         self.session.headers["User-Agent"] = UA
 
-    def verifier_arret(self) -> None:
+    def check_stop(self) -> None:
         """Raise :class:`Interrupted` if ``self.arret`` was set.
 
         Raises:
@@ -216,19 +216,19 @@ class Transport:
         if self.arret.is_set():
             raise Interrupted()
 
-    def pause(self, secondes: float | None = None) -> None:
+    def sleep(self, secondes: float | None = None) -> None:
         """Fragmented wait that reacts quickly to a stop request.
 
         Args:
-            secondes: Duration to wait. Uses ``self.delai`` when ``None``.
+            secondes: Duration to wait. Uses ``self.delay`` when ``None``.
 
         Raises:
             Interrupted: If a cooperative stop is requested during the
                 wait.
         """
-        fin = time.monotonic() + (self.delai if secondes is None else secondes)
+        fin = time.monotonic() + (self.delay if secondes is None else secondes)
         while time.monotonic() < fin:
-            self.verifier_arret()
+            self.check_stop()
             time.sleep(min(0.1, max(0.0, fin - time.monotonic())))
 
     def get_json(
@@ -262,7 +262,7 @@ class Transport:
         """
         derniere: Exception | None = None
         for tentative in range(essais):
-            self.verifier_arret()
+            self.check_stop()
             try:
                 r = self.session.get(url, params=params, timeout=30)
                 if r.status_code in fin_si:
@@ -271,7 +271,7 @@ class Transport:
                 return r.json(), r.headers
             except requests.RequestException as e:
                 derniere = e
-                self.pause(2 * (tentative + 1))
+                self.sleep(2 * (tentative + 1))
         raise RuntimeError(f"L'API ne répond pas ({derniere})")
 
 
@@ -285,13 +285,13 @@ class Source(ABC):
     """
 
     type: ClassVar[str]
-    classements: ClassVar[frozenset[str]]
+    sort_modes: ClassVar[frozenset[str]]
 
     def __init__(
         self,
         base: str,
         transport: Transport,
-        reglages: dict,
+        settings: dict,
         journal: Callable[[str], None] | None = None,
         progression: Callable[[int, int, str], None] | None = None,
     ) -> None:
@@ -300,7 +300,7 @@ class Source(ABC):
         Args:
             base: Source site URL, without trailing slash.
             transport: :class:`Transport` provided by the engine.
-            reglages: Free-form dictionary (for example
+            settings: Free-form dictionary (for example
                 ``{"format_image": "Large"}`` for Djangoplicity).
             journal: Text callback for user-facing messages. ``None`` =
                 mute.
@@ -309,19 +309,19 @@ class Source(ABC):
         """
         self.base = base.rstrip("/")
         self.transport = transport
-        self.reglages = reglages or {}
+        self.settings = settings or {}
         self._journal = journal or (lambda _msg: None)
         self._progression = progression or (lambda _fait, _total, _etiquette: None)
 
     @abstractmethod
-    def inventaire(
+    def inventory(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
         """Iterate the catalogue in chronological order when possible.
 
         Args:
             depuis: Lower bound in the source's own format
-                (see :meth:`convertir_depuis`). ``None`` = no lower bound.
+                (see :meth:`convert_from`). ``None`` = no lower bound.
             jusqua: Upper bound. ``None`` = no upper bound.
 
         Yields:
@@ -329,7 +329,7 @@ class Source(ABC):
             source allows it.
         """
 
-    def resoudre_groupes(
+    def resolve_groups(
         self,
         cles: set[str],  # noqa: ARG002
         connus: dict[str, str] | None = None,
@@ -338,7 +338,7 @@ class Source(ABC):
 
         Default implementation: return ``connus`` as-is — no additional
         grouping. Sources that expose a ``galerie`` sort mode (see
-        :attr:`classements`) override this to query the missing titles.
+        :attr:`sort_modes`) override this to query the missing titles.
 
         Args:
             cles: Group identifiers to resolve.
@@ -350,7 +350,7 @@ class Source(ABC):
         """
         return dict(connus or {})
 
-    def convertir_depuis(self, iso: str | None) -> str | None:
+    def convert_from(self, iso: str | None) -> str | None:
         """Translate an ISO date from the cache into the source's format.
 
         Default: leave it as-is. Sources that want, like Djangoplicity,

@@ -20,7 +20,7 @@ import requests
 from PySide6.QtCore import QCoreApplication
 
 from ..sources import SOURCES, Element, Interrupted, Transport
-from ..sources.base import Classification, classify_error
+from ..sources.base import ErrorClassification, classify_error
 from ._locks import _MANIFEST_LOCK
 from ._merge import _merge_ui_marks
 from .format_bytes import format_bytes
@@ -72,7 +72,7 @@ class Engine:
         self._journal = journal or (lambda _msg: None)
         self._progression = progression or (lambda _fait, _total, _etiquette: None)
         self.arret = arret or threading.Event()
-        self.transport = Transport(delai=options.delay, arret=self.arret)
+        self.transport = Transport(delay=options.delay, arret=self.arret)
         # The download session goes through the shared transport: a single
         # user-agent, a single pause floor.
         self.session = self.transport.session
@@ -80,7 +80,7 @@ class Engine:
         self.source = classe(
             base=self.base,
             transport=self.transport,
-            reglages={"format_image": options.image_format},
+            settings={"format_image": options.image_format},
             journal=self._journal,
             progression=self._progression,
         )
@@ -93,7 +93,7 @@ class Engine:
 
     def _pause(self, secondes: float) -> None:
         """Fragmented wait so we can react quickly to a stop request."""
-        self.transport.pause(secondes)
+        self.transport.sleep(secondes)
 
     # -- manifest ----------------------------------------------------------- #
 
@@ -251,7 +251,7 @@ class Engine:
 
     def download(
         self, url: str, dest: Path, etat: dict | None,
-    ) -> tuple[str, dict | None, Classification | None]:
+    ) -> tuple[str, dict | None, ErrorClassification | None]:
         """Download ``url`` to ``dest`` with resume and revalidation.
 
         Handles:
@@ -275,7 +275,7 @@ class Engine:
             or a localised error message, ``infos`` is the new state to
             write to the manifest (or ``None`` if nothing was fetched),
             and ``classification`` is the
-            :class:`Glaneur.sources.base.Classification` of the error
+            :class:`Glaneur.sources.base.ErrorClassification` of the error
             (``None`` on success). The engine consumes
             ``classification`` in :meth:`run` to decide on a
             circuit-breaker trip.
@@ -304,7 +304,7 @@ class Engine:
             if r.status_code == 304:
                 return "inchangé", etat, None
             if r.status_code == 404:
-                return "introuvable", None, Classification("definitif", None)
+                return "introuvable", None, ErrorClassification("definitif", None)
             if r.status_code == 416:
                 tmp.unlink(missing_ok=True)
                 depuis = 0
@@ -341,7 +341,7 @@ class Engine:
     def _trigger_defer(
         self,
         res: RunResult,
-        classification: Classification | None,
+        classification: ErrorClassification | None,
         fait: int,
         total: int,
     ) -> None:
@@ -415,8 +415,8 @@ class Engine:
                     date=depuis_cache[:19]))
 
         try:
-            depuis = self.source.convertir_depuis(depuis_cache) or self.o.since
-            elements = list(self.source.inventaire(depuis, self.o.until))
+            depuis = self.source.convert_from(depuis_cache) or self.o.since
+            elements = list(self.source.inventory(depuis, self.o.until))
 
             if self.o.min_width:
                 avant = len(elements)
@@ -483,10 +483,10 @@ class Engine:
             inconnus = {e.groupe for e, connu in a_faire
                         if e.groupe and connu is None}
             if (self.o.sort_mode == "galerie"
-                    and "galerie" in self.source.classements
+                    and "galerie" in self.source.sort_modes
                     and inconnus):
                 self._progression(0, len(a_faire), QCoreApplication.translate("Moteur", "Identification des galeries…"))
-                titres = self.source.resoudre_groupes(
+                titres = self.source.resolve_groups(
                     inconnus, connus=titres_caches)
 
             echecs_consecutifs = 0
@@ -531,7 +531,7 @@ class Engine:
                     affiche = QCoreApplication.translate("Moteur", "introuvable") if statut == "introuvable" else statut
                     self._journal(f"{fichier.name} : {affiche}")
 
-                    categorie = classification.categorie if classification else "transitoire"
+                    categorie = classification.category if classification else "transitoire"
                     if categorie == "coupure":
                         self._trigger_defer(res, classification, i, len(a_faire))
                         break

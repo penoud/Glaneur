@@ -18,7 +18,7 @@ from .base import Element, Source
 PER_PAGE = 100
 
 
-def _nettoyer(titre: str, defaut: str = "divers") -> str:
+def _clean(titre: str, defaut: str = "divers") -> str:
     """Local copy of ``engine.clean`` to avoid the import cycle."""
     texte = html.unescape(titre or "").strip()
     texte = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode("ascii")
@@ -40,14 +40,14 @@ class WordPress(Source):
     #: Key used in ``Glaneur.sources.SOURCES``.
     type = "wordpress"
     #: Set of supported sort modes.
-    classements = frozenset({"galerie", "date", "plat"})
+    sort_modes = frozenset({"galerie", "date", "plat"})
 
-    def __init__(self, base, transport, reglages, journal=None, progression=None):
+    def __init__(self, base, transport, settings, journal=None, progression=None):
         """Instantiate the adapter and compute the v2 API URL.
 
         Arguments identical to :meth:`Glaneur.sources.base.Source.__init__`.
         """
-        super().__init__(base, transport, reglages, journal, progression)
+        super().__init__(base, transport, settings, journal, progression)
         self.api = f"{self.base}/wp-json/wp/v2"
 
     # -- HTTP ------------------------------------------------------------- #
@@ -58,7 +58,7 @@ class WordPress(Source):
 
     # -- Inventory -------------------------------------------------------- #
 
-    def inventaire(
+    def inventory(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
         """Walk ``/wp/v2/media`` page by page in chronological order.
@@ -118,7 +118,7 @@ class WordPress(Source):
             if not pages_totales and not lot:
                 break
             page += 1
-            self.transport.pause()
+            self.transport.sleep()
 
         return iter(rendus)
 
@@ -143,7 +143,7 @@ class WordPress(Source):
 
     # -- Grouping (gallery) ----------------------------------------------- #
 
-    def _bases_rest(self) -> list[str]:
+    def _rest_bases(self) -> list[str]:
         try:
             types, _ = self._api("types")
         except RuntimeError:
@@ -156,7 +156,7 @@ class WordPress(Source):
         bases.sort(key=lambda b: (0 if "galer" in b else 1, b))
         return bases or ["posts"]
 
-    def resoudre_groupes(
+    def resolve_groups(
         self, cles: set[str], connus: dict[str, str] | None = None,
     ) -> dict[str, str]:
         """Resolve gallery identifiers into cleaned titles.
@@ -182,7 +182,7 @@ class WordPress(Source):
 
         # WP-side IDs are integers; we convert for the parameters and
         # keep string keys in the result.
-        for base in self._bases_rest():
+        for base in self._rest_bases():
             if not restants:
                 break
             ids_int = sorted(int(c) for c in restants if str(c).isdigit())
@@ -198,10 +198,10 @@ class WordPress(Source):
                     continue
                 for item in items or []:
                     cle = str(item["id"])
-                    titres[cle] = item.get("slug") or _nettoyer(
+                    titres[cle] = item.get("slug") or _clean(
                         item.get("title", {}).get("rendered", ""))
                     restants.discard(cle)
-                self.transport.pause()
+                self.transport.sleep()
 
         if restants:
             self._journal(

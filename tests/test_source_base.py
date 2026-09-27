@@ -14,7 +14,7 @@ from email.utils import format_datetime
 import pytest
 import requests
 
-from Glaneur.sources.base import Classification, classify_error
+from Glaneur.sources.base import ErrorClassification, classify_error
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -46,21 +46,21 @@ class TestCoupure:
             "Name or service not known)\"))"
         )
         c = classify_error(exc)
-        assert c.categorie == "coupure"
+        assert c.category == "coupure"
 
     def test_dns_failed_to_resolve_est_une_coupure(self):
         """A lone 'Failed to resolve' message is enough to classify as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "Failed to resolve 'example.invalid'"
         )
-        assert classify_error(exc).categorie == "coupure"
+        assert classify_error(exc).category == "coupure"
 
     def test_dns_getaddrinfo_failed_est_une_coupure(self):
         """A 'getaddrinfo failed' message is classified as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "socket.gaierror: [Errno -2] getaddrinfo failed"
         )
-        assert classify_error(exc).categorie == "coupure"
+        assert classify_error(exc).category == "coupure"
 
     def test_max_retries_exceeded_est_une_coupure(self):
         """ConnectionError 'Max retries exceeded' is classified as `coupure`."""
@@ -68,13 +68,13 @@ class TestCoupure:
             "HTTPSConnectionPool(host='x', port=443): "
             "Max retries exceeded with url: /"
         )
-        assert classify_error(exc).categorie == "coupure"
+        assert classify_error(exc).category == "coupure"
 
     @pytest.mark.parametrize("status", [429, 502, 503, 504])
     def test_status_amont_est_une_coupure(self, status):
         """429 and upstream 5xx (502/503/504) are classified as `coupure`."""
         c = classify_error(None, _reponse(status))
-        assert c.categorie == "coupure"
+        assert c.category == "coupure"
 
 
 # --------------------------------------------------------------------------- #
@@ -86,11 +86,11 @@ class TestTransitoire:
     def test_timeout_seul_est_transitoire(self):
         """`requests.exceptions.Timeout` alone is `transitoire`."""
         exc = requests.exceptions.Timeout("Read timed out.")
-        assert classify_error(exc).categorie == "transitoire"
+        assert classify_error(exc).category == "transitoire"
 
     def test_500_isole_est_transitoire(self):
         """An isolated 500 is not a cut: it stays `transitoire`."""
-        assert classify_error(None, _reponse(500)).categorie == "transitoire"
+        assert classify_error(None, _reponse(500)).category == "transitoire"
 
 
 # --------------------------------------------------------------------------- #
@@ -102,12 +102,12 @@ class TestDefinitif:
     @pytest.mark.parametrize("status", [401, 403, 404])
     def test_erreurs_client_sont_definitives(self, status):
         """401/403/404 are classified as `definitif` (nothing to retry)."""
-        assert classify_error(None, _reponse(status)).categorie == "definitif"
+        assert classify_error(None, _reponse(status)).category == "definitif"
 
     def test_missing_schema_est_definitif(self):
         """A malformed URL (`MissingSchema`) is `definitif`."""
         exc = requests.exceptions.MissingSchema("Invalid URL 'foo'")
-        assert classify_error(exc).categorie == "definitif"
+        assert classify_error(exc).category == "definitif"
 
 
 # --------------------------------------------------------------------------- #
@@ -142,25 +142,25 @@ class TestRetryAfter:
             "Failed to resolve 'example.invalid'"
         )
         c = classify_error(exc)
-        assert c.categorie == "coupure"
+        assert c.category == "coupure"
         assert c.retry_after is None
 
 
 # --------------------------------------------------------------------------- #
-# Contract of the Classification dataclass
+# Contract of the ErrorClassification dataclass
 # --------------------------------------------------------------------------- #
 
 
 class TestClassificationDataclass:
     def test_classification_est_gelee(self):
-        """`Classification` is immutable (frozen dataclass)."""
+        """`ErrorClassification` is immutable (frozen dataclass)."""
         c = classify_error(None, _reponse(429, retry_after="1"))
         with pytest.raises((AttributeError, Exception)):
-            c.categorie = "definitif"  # type: ignore[misc]
+            c.category = "definitif"  # type: ignore[misc]
 
     def test_classification_expose_categorie_et_retry_after(self):
         """The returned object exposes at least `categorie` and `retry_after`."""
         c = classify_error(None, _reponse(500))
-        assert isinstance(c, Classification)
-        assert hasattr(c, "categorie")
+        assert isinstance(c, ErrorClassification)
+        assert hasattr(c, "category")
         assert hasattr(c, "retry_after")

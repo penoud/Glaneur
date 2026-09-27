@@ -22,11 +22,11 @@ from Glaneur.sources.wordpress import WordPress
 
 def _wp(**kw):
     """Builds a WordPress source with a zero-delay transport."""
-    transport = Transport(delai=0, arret=threading.Event())
+    transport = Transport(delay=0, arret=threading.Event())
     return WordPress(
         base=kw.pop("base", "https://x.example"),
         transport=transport,
-        reglages={},
+        settings={},
         journal=kw.pop("journal", None),
         progression=kw.pop("progression", None),
     )
@@ -50,7 +50,7 @@ def _media(id_, url="https://x/wp-content/uploads/2026/01/img.jpg",
 class TestBase:
     def test_type_et_classements(self):
         assert WordPress.type == "wordpress"
-        assert WordPress.classements == frozenset({"galerie", "date", "plat"})
+        assert WordPress.sort_modes == frozenset({"galerie", "date", "plat"})
 
     def test_base_normalise_slash_final(self):
         s = _wp(base="https://example.test/")
@@ -122,7 +122,7 @@ class TestInventaire:
             return page2, headers
 
         with patch.object(s, "_api", side_effect=faux_api):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["1", "2", "3"]
         assert appels == [1, 2]
 
@@ -137,7 +137,7 @@ class TestInventaire:
             return [_media(2), _media(3)], headers
 
         with patch.object(s, "_api", side_effect=faux_api):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert sorted(e.ident for e in r) == ["1", "2", "3"]
 
     def test_arret_immediat_si_pas_de_pages_totales(self):
@@ -150,7 +150,7 @@ class TestInventaire:
             return [], {"X-WP-TotalPages": "0"}
 
         with patch.object(s, "_api", side_effect=faux_api):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert r == []
         assert len(appels) == 1
 
@@ -167,7 +167,7 @@ class TestInventaire:
             return [], headers   # pages 2 and 3 empty
 
         with patch.object(s, "_api", side_effect=faux_api):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["1"]
         assert appels == [1, 2, 3]
 
@@ -176,7 +176,7 @@ class TestInventaire:
         s = _wp()
         with patch.object(s, "_api",
                           return_value=(None, {"X-WP-TotalPages": "0"})):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert r == []
 
     def test_borne_par_pages_totales(self):
@@ -188,7 +188,7 @@ class TestInventaire:
             return [_media(params["page"])], {"X-WP-TotalPages": "3"}
 
         with patch.object(s, "_api", side_effect=faux_api):
-            list(s.inventaire(None, None))
+            list(s.inventory(None, None))
         assert appels == [1, 2, 3]   # does not go past the 3rd page
 
     def test_filtre_depuis_et_jusqua(self):
@@ -200,20 +200,20 @@ class TestInventaire:
             return [], {"X-WP-TotalPages": "0"}
 
         with patch.object(s, "_api", side_effect=faux_api):
-            list(s.inventaire("2026-01-01", "2026-12-31"))
+            list(s.inventory("2026-01-01", "2026-12-31"))
         assert capture["after"].startswith("2026-01-01T")
         assert capture["before"].startswith("2026-12-31T")
 
 
 # --------------------------------------------------------------------------- #
-# `_bases_rest`: discovery of the content types to query
+# `_rest_bases`: discovery of the content types to query
 # --------------------------------------------------------------------------- #
 
 class TestBasesRest:
     def test_replie_sur_defaut_si_api_ko(self):
         s = _wp()
         with patch.object(s, "_api", side_effect=RuntimeError("HS")):
-            assert s._bases_rest() == ["posts", "pages"]
+            assert s._rest_bases() == ["posts", "pages"]
 
     def test_ecarte_types_techniques(self):
         s = _wp()
@@ -226,7 +226,7 @@ class TestBasesRest:
             "nav_menu_item": {"rest_base": "menu-items"},
         }
         with patch.object(s, "_api", return_value=(types, {})):
-            bases = s._bases_rest()
+            bases = s._rest_bases()
         assert "media" not in bases
         assert "blocks" not in bases
         assert "menu-items" not in bases
@@ -250,7 +250,7 @@ class TestResoudreGroupes:
             return items, {}
 
         with patch.object(s, "_api", side_effect=faux_api):
-            titres = s.resoudre_groupes({"42"})
+            titres = s.resolve_groups({"42"})
         # result keys are strings to stay aligned with the manifest keys
         assert titres == {"42": "match-du-siecle"}
 
@@ -264,14 +264,14 @@ class TestResoudreGroupes:
             return [], {}   # no match
 
         with patch.object(s, "_api", side_effect=faux_api):
-            titres = s.resoudre_groupes({"99"})
+            titres = s.resolve_groups({"99"})
         assert titres == {}
         # a message reports unidentified galleries
         assert any("non identifi" in m for m in journal)
 
     def test_set_vide(self):
         s = _wp()
-        assert s.resoudre_groupes(set()) == {}
+        assert s.resolve_groups(set()) == {}
 
     def test_arret_boucle_quand_restants_vides(self):
         # the first base finds everything: the second is never queried
@@ -290,7 +290,7 @@ class TestResoudreGroupes:
             return [], {}
 
         with patch.object(s, "_api", side_effect=faux_api):
-            titres = s.resoudre_groupes({"42"})
+            titres = s.resolve_groups({"42"})
         assert titres == {"42": "match"}
         assert "posts" not in appels
 
@@ -309,13 +309,13 @@ class TestResoudreGroupes:
             return [{"id": 42, "slug": "trouve"}], {}
 
         with patch.object(s, "_api", side_effect=faux_api):
-            titres = s.resoudre_groupes({"42"})
+            titres = s.resolve_groups({"42"})
         assert titres == {"42": "trouve"}
 
     def test_court_circuite_sur_cache_connus(self):
         s = _wp()
         with patch.object(s, "_api") as api:
-            r = s.resoudre_groupes({"42"}, connus={"42": "deja-connu"})
+            r = s.resolve_groups({"42"}, connus={"42": "deja-connu"})
         assert r == {"42": "deja-connu"}
         api.assert_not_called()
 
@@ -326,7 +326,7 @@ class TestResoudreGroupes:
 
 class TestTransportGetJson:
     def test_reponse_dans_fin_si_renvoie_none(self):
-        t = Transport(delai=0)
+        t = Transport(delay=0)
         t.session = MagicMock()
         rep = MagicMock(status_code=400, headers={"h": "1"})
         t.session.get.return_value = rep
@@ -335,7 +335,7 @@ class TestTransportGetJson:
         assert headers.get("h") == "1"
 
     def test_reponse_normale(self):
-        t = Transport(delai=0)
+        t = Transport(delay=0)
         rep = MagicMock(status_code=200, headers={"h": "1"})
         rep.json.return_value = [{"id": 1}]
         rep.raise_for_status = MagicMock()
@@ -345,22 +345,22 @@ class TestTransportGetJson:
         assert payload == [{"id": 1}]
 
     def test_rejeu_puis_succes(self):
-        t = Transport(delai=0)
+        t = Transport(delay=0)
         t.session = MagicMock()
         bon = MagicMock(status_code=200, headers={})
         bon.json.return_value = {"ok": True}
         bon.raise_for_status = MagicMock()
         t.session.get.side_effect = [requests.ConnectionError("boum"), bon]
-        with patch.object(t, "pause"):   # avoids the 2 real seconds of pause
+        with patch.object(t, "sleep"):   # avoids the 2 real seconds of pause
             payload, _ = t.get_json("https://x/api")
         assert payload == {"ok": True}
         assert t.session.get.call_count == 2
 
     def test_echec_repete_leve_runtime(self):
-        t = Transport(delai=0)
+        t = Transport(delay=0)
         t.session = MagicMock()
         t.session.get.side_effect = requests.ConnectionError("HS")
-        with patch.object(t, "pause"), pytest.raises(RuntimeError):
+        with patch.object(t, "sleep"), pytest.raises(RuntimeError):
             t.get_json("https://x/api")
 
     def test_wordpress_passe_fin_si_400(self):
