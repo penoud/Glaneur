@@ -94,8 +94,8 @@ from Glaneur.system import (
     ouvrir_dossier,
 )
 from Glaneur.updater.qt_threads import (
-    TelechargementMiseAJour,
-    VerificationMiseAJour,
+    UpdateCheck,
+    UpdateDownload,
 )
 
 GRENAT = "#471625"
@@ -666,8 +666,8 @@ class Fenetre(QMainWindow):
         self.travailleur: Travailleur | None = None
         self.auto_en_cours = False
         self._quitter_demande = False
-        self.verification_mise_a_jour: VerificationMiseAJour | None = None
-        self.telechargement_mise_a_jour: TelechargementMiseAJour | None = None
+        self.verification_mise_a_jour: UpdateCheck | None = None
+        self.telechargement_mise_a_jour: UpdateDownload | None = None
 
         self._avertissement_tray_montre = False
 
@@ -926,13 +926,13 @@ class Fenetre(QMainWindow):
     def _verifier_mise_a_jour(self, manuel: bool = False) -> None:
         if self._thread_maj_en_cours(self.verification_mise_a_jour):
             return
-        thread = VerificationMiseAJour(self)
-        thread.disponible.connect(self._mise_a_jour_disponible)
+        thread = UpdateCheck(self)
+        thread.available.connect(self._mise_a_jour_disponible)
         if manuel:
-            thread.aucune_maj.connect(self._aucune_mise_a_jour_manuel)
-            thread.erreur.connect(self._erreur_verification_manuel)
+            thread.up_to_date.connect(self._aucune_mise_a_jour_manuel)
+            thread.error.connect(self._erreur_verification_manuel)
         else:
-            thread.erreur.connect(self._ecrire)
+            thread.error.connect(self._ecrire)
         thread.finished.connect(self._maj_verif_terminee)
         thread.finished.connect(thread.deleteLater)
         self.verification_mise_a_jour = thread
@@ -985,9 +985,9 @@ class Fenetre(QMainWindow):
             return
         self._ecrire(self.tr("Téléchargement de la mise à jour {version}…").format(
             version=release.version))
-        self.telechargement_mise_a_jour = TelechargementMiseAJour(release)
-        self.telechargement_mise_a_jour.termine.connect(self._mise_a_jour_telechargee)
-        self.telechargement_mise_a_jour.erreur.connect(self._ecrire)
+        self.telechargement_mise_a_jour = UpdateDownload(release)
+        self.telechargement_mise_a_jour.completed.connect(self._mise_a_jour_telechargee)
+        self.telechargement_mise_a_jour.error.connect(self._ecrire)
         self.telechargement_mise_a_jour.finished.connect(
             self.telechargement_mise_a_jour.deleteLater)
         self.telechargement_mise_a_jour.start()

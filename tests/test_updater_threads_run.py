@@ -1,5 +1,5 @@
-"""Direct-call tests of `VerificationMiseAJour.run` and
-`TelechargementMiseAJour.run`.
+"""Direct-call tests of `UpdateCheck.run` and
+`UpdateDownload.run`.
 
 The pytest-qt tests in `test_updater_threads.py` drive the threads via
 `thread.start()` — code executed inside the worker thread is not seen
@@ -18,8 +18,8 @@ import pytest
 
 from Glaneur.updater.models import Release, ReleaseAsset, UpdateInfo
 from Glaneur.updater.qt_threads import (
-    TelechargementMiseAJour,
-    VerificationMiseAJour,
+    UpdateDownload,
+    UpdateCheck,
 )
 from Glaneur.updater.version import Version
 
@@ -50,7 +50,7 @@ def qapp():
 
 
 # --------------------------------------------------------------------------- #
-# VerificationMiseAJour.run
+# UpdateCheck.run
 # --------------------------------------------------------------------------- #
 
 
@@ -60,11 +60,11 @@ class TestVerificationRun:
         provider = MagicMock()
         provider.check.return_value = UpdateInfo(Version.parse("1.0.0"), release)
 
-        thread = VerificationMiseAJour(provider=provider)
+        thread = UpdateCheck(provider=provider)
         recu_dispo, recu_aucune, recu_err = _Recepteur(), _Recepteur(), _Recepteur()
-        thread.disponible.connect(recu_dispo)
-        thread.aucune_maj.connect(recu_aucune)
-        thread.erreur.connect(recu_err)
+        thread.available.connect(recu_dispo)
+        thread.up_to_date.connect(recu_aucune)
+        thread.error.connect(recu_err)
 
         thread.run()
 
@@ -77,10 +77,10 @@ class TestVerificationRun:
         provider = MagicMock()
         provider.check.return_value = UpdateInfo(Version.parse("1.0.0"), None)
 
-        thread = VerificationMiseAJour(provider=provider)
+        thread = UpdateCheck(provider=provider)
         recu_aucune, recu_dispo = _Recepteur(), _Recepteur()
-        thread.aucune_maj.connect(recu_aucune)
-        thread.disponible.connect(recu_dispo)
+        thread.up_to_date.connect(recu_aucune)
+        thread.available.connect(recu_dispo)
 
         thread.run()
 
@@ -92,9 +92,9 @@ class TestVerificationRun:
         provider = MagicMock()
         provider.check.side_effect = RuntimeError("boom")
 
-        thread = VerificationMiseAJour(provider=provider)
+        thread = UpdateCheck(provider=provider)
         recu = _Recepteur()
-        thread.erreur.connect(recu)
+        thread.error.connect(recu)
 
         thread.run()
 
@@ -104,12 +104,12 @@ class TestVerificationRun:
     def test_provider_par_defaut_utilise_github(self, qapp):
         # Not exercising a network call: only verifying that omitting
         # `provider` picks the `GitHubReleaseProvider` default.
-        thread = VerificationMiseAJour()
+        thread = UpdateCheck()
         assert thread._provider.__class__.__name__ == "GitHubReleaseProvider"
 
 
 # --------------------------------------------------------------------------- #
-# TelechargementMiseAJour.run
+# UpdateDownload.run
 # --------------------------------------------------------------------------- #
 
 
@@ -152,10 +152,10 @@ class TestTelechargementRun:
         checksum_path.write_text("a" * 64)
         _mock_download_pair(monkeypatch, installer_path, checksum_path, tmp_path)
 
-        thread = TelechargementMiseAJour(fausse_release)
+        thread = UpdateDownload(fausse_release)
         recu_termine, recu_err = _Recepteur(), _Recepteur()
-        thread.termine.connect(recu_termine)
-        thread.erreur.connect(recu_err)
+        thread.completed.connect(recu_termine)
+        thread.error.connect(recu_err)
 
         thread.run()
 
@@ -177,10 +177,10 @@ class TestTelechargementRun:
             monkeypatch, installer_path, checksum_path, tmp_path, verify=False,
         )
 
-        thread = TelechargementMiseAJour(fausse_release)
+        thread = UpdateDownload(fausse_release)
         recu_err, recu_termine = _Recepteur(), _Recepteur()
-        thread.erreur.connect(recu_err)
-        thread.termine.connect(recu_termine)
+        thread.error.connect(recu_err)
+        thread.completed.connect(recu_termine)
 
         thread.run()
 
@@ -191,9 +191,9 @@ class TestTelechargementRun:
 
     def test_erreur_si_installateur_manquant(self, qapp):
         release_vide = Release(Version.parse("2.0.0"), "v2.0.0", assets=())
-        thread = TelechargementMiseAJour(release_vide)
+        thread = UpdateDownload(release_vide)
         recu = _Recepteur()
-        thread.erreur.connect(recu)
+        thread.error.connect(recu)
 
         thread.run()
 
@@ -207,9 +207,9 @@ class TestTelechargementRun:
             "Glaneur-2.0.0-setup.exe", "https://x/i.exe", 42,
         )
         release = Release(Version.parse("2.0.0"), "v2.0.0", assets=(installer,))
-        thread = TelechargementMiseAJour(release)
+        thread = UpdateDownload(release)
         recu = _Recepteur()
-        thread.erreur.connect(recu)
+        thread.error.connect(recu)
 
         thread.run()
 
@@ -235,9 +235,9 @@ class TestTelechargementRun:
             "Glaneur.updater.qt_threads.download", download_qui_leve,
         )
 
-        thread = TelechargementMiseAJour(fausse_release)
+        thread = UpdateDownload(fausse_release)
         recu = _Recepteur()
-        thread.erreur.connect(recu)
+        thread.error.connect(recu)
 
         thread.run()
 

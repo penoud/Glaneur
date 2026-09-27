@@ -18,19 +18,19 @@ from .version import Version
 logger = logging.getLogger(__name__)
 
 
-class VerificationMiseAJour(QThread):
+class UpdateCheck(QThread):
     """Ask GitHub whether a release is newer than the running version.
 
     Signals:
 
-    - ``disponible(UpdateInfo)``: an update was found.
-    - ``aucune_maj(UpdateInfo)``: the current version is already up to date.
-    - ``erreur(str)``: localised message ready to display.
+    - ``available(UpdateInfo)``: an update was found.
+    - ``up_to_date(UpdateInfo)``: the current version is already up to date.
+    - ``error(str)``: localised message ready to display.
     """
 
-    disponible = Signal(object)
-    aucune_maj = Signal(object)
-    erreur = Signal(str)
+    available = Signal(object)
+    up_to_date = Signal(object)
+    error = Signal(str)
 
     def __init__(self, parent=None, provider: GitHubReleaseProvider | None = None) -> None:
         """Build the thread with a provider (injectable for tests).
@@ -49,27 +49,29 @@ class VerificationMiseAJour(QThread):
             info = self._provider.check(Version.parse(__version__))
             if info.is_available:
                 logger.info("Update available: %s", info.latest.version)
-                self.disponible.emit(info)
+                self.available.emit(info)
             else:
-                self.aucune_maj.emit(info)
+                self.up_to_date.emit(info)
         except Exception as error:
             logger.exception("Update check failed")
-            self.erreur.emit(QCoreApplication.translate(
+            self.error.emit(QCoreApplication.translate(
                 "Updater", "Vérification de mise à jour impossible : {erreur}").format(erreur=error))
 
 
-class TelechargementMiseAJour(QThread):
+class UpdateDownload(QThread):
     """Fetch the Windows installer and its SHA-256 for the targeted release.
 
     Signals:
 
-    - ``termine(Path, str)``: path of the verified file + temporary
-      directory (the UI can clean it after installation).
-    - ``erreur(str)``: localised message ready to display.
+    - ``completed(Path, str)``: path of the verified file + temporary
+      directory (the UI can clean it after installation). Named
+      ``completed`` rather than ``finished`` to avoid overriding
+      :attr:`QThread.finished` from the base class.
+    - ``error(str)``: localised message ready to display.
     """
 
-    termine = Signal(object, str)
-    erreur = Signal(str)
+    completed = Signal(object, str)
+    error = Signal(str)
 
     def __init__(self, release, parent=None) -> None:
         """Prepare the download for ``release``.
@@ -82,7 +84,7 @@ class TelechargementMiseAJour(QThread):
         self.release = release
 
     def run(self) -> None:
-        """Download, verify SHA-256, emit ``termine`` or ``erreur``."""
+        """Download, verify SHA-256, emit ``completed`` or ``error``."""
         try:
             installer = self.release.windows_installer()
             checksum = self.release.checksum_for(installer) if installer else None
@@ -96,8 +98,8 @@ class TelechargementMiseAJour(QThread):
                 fichier.unlink(missing_ok=True)
                 raise RuntimeError(QCoreApplication.translate(
                     "Updater", "Vérification SHA-256 échouée"))
-            self.termine.emit(fichier, str(dossier))
+            self.completed.emit(fichier, str(dossier))
         except Exception as error:
             logger.exception("Update download failed")
-            self.erreur.emit(QCoreApplication.translate(
+            self.error.emit(QCoreApplication.translate(
                 "Updater", "Téléchargement de la mise à jour impossible : {erreur}").format(erreur=error))

@@ -17,8 +17,8 @@ import pytest
 
 from Glaneur.updater.models import Release, ReleaseAsset, UpdateInfo
 from Glaneur.updater.qt_threads import (
-    TelechargementMiseAJour,
-    VerificationMiseAJour,
+    UpdateCheck,
+    UpdateDownload,
 )
 from Glaneur.updater.version import Version
 
@@ -29,7 +29,7 @@ def _attendre_fin_propre(thread) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# VerificationMiseAJour
+# UpdateCheck
 # --------------------------------------------------------------------------- #
 
 class TestVerificationMiseAJour:
@@ -38,8 +38,8 @@ class TestVerificationMiseAJour:
         provider = MagicMock()
         provider.check.return_value = UpdateInfo(Version.parse("1.0.0"), release)
 
-        thread = VerificationMiseAJour(provider=provider)
-        with qtbot.waitSignal(thread.disponible, timeout=3000) as blocker:
+        thread = UpdateCheck(provider=provider)
+        with qtbot.waitSignal(thread.available, timeout=3000) as blocker:
             thread.start()
         _attendre_fin_propre(thread)
         info = blocker.args[0]
@@ -50,8 +50,8 @@ class TestVerificationMiseAJour:
         provider = MagicMock()
         provider.check.return_value = UpdateInfo(Version.parse("1.0.0"), None)
 
-        thread = VerificationMiseAJour(provider=provider)
-        with qtbot.waitSignal(thread.aucune_maj, timeout=3000) as blocker:
+        thread = UpdateCheck(provider=provider)
+        with qtbot.waitSignal(thread.up_to_date, timeout=3000) as blocker:
             thread.start()
         _attendre_fin_propre(thread)
         assert not blocker.args[0].is_available
@@ -60,15 +60,15 @@ class TestVerificationMiseAJour:
         provider = MagicMock()
         provider.check.side_effect = RuntimeError("boom")
 
-        thread = VerificationMiseAJour(provider=provider)
-        with qtbot.waitSignal(thread.erreur, timeout=3000) as blocker:
+        thread = UpdateCheck(provider=provider)
+        with qtbot.waitSignal(thread.error, timeout=3000) as blocker:
             thread.start()
         _attendre_fin_propre(thread)
         assert "boom" in blocker.args[0]
 
 
 # --------------------------------------------------------------------------- #
-# TelechargementMiseAJour
+# UpdateDownload
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture
@@ -100,8 +100,8 @@ class TestTelechargementMiseAJour:
             lambda fichier, texte: True,
         )
 
-        thread = TelechargementMiseAJour(fausse_release)
-        with qtbot.waitSignal(thread.termine, timeout=3000) as blocker:
+        thread = UpdateDownload(fausse_release)
+        with qtbot.waitSignal(thread.completed, timeout=3000) as blocker:
             thread.start()
         _attendre_fin_propre(thread)
         assert blocker.args[0] == installer_path
@@ -127,8 +127,8 @@ class TestTelechargementMiseAJour:
             lambda fichier, texte: False,
         )
 
-        thread = TelechargementMiseAJour(fausse_release)
-        with qtbot.waitSignal(thread.erreur, timeout=3000) as blocker:
+        thread = UpdateDownload(fausse_release)
+        with qtbot.waitSignal(thread.error, timeout=3000) as blocker:
             thread.start()
         _attendre_fin_propre(thread)
         assert "SHA-256" in blocker.args[0]
@@ -137,8 +137,8 @@ class TestTelechargementMiseAJour:
     def test_emet_erreur_si_installateur_manquant(self, qtbot):
         # Release without the expected Windows installer asset
         release_vide = Release(Version.parse("2.0.0"), "v2.0.0", assets=())
-        thread = TelechargementMiseAJour(release_vide)
-        with qtbot.waitSignal(thread.erreur, timeout=3000) as blocker:
+        thread = UpdateDownload(release_vide)
+        with qtbot.waitSignal(thread.error, timeout=3000) as blocker:
             thread.start()
         _attendre_fin_propre(thread)
         assert "Installateur" in blocker.args[0] or "checksum" in blocker.args[0]
