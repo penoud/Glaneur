@@ -9,90 +9,82 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Frontière 1 sur le scheduler : rendre `Glaneur/scheduler.py` Qt-free en
-extrayant le formatage traduit `texte_prochaine()` vers un helper UI
-séparé. Retirer l'entrée correspondante de `KNOWN_QT_IMPORTS` dans
-`tests/test_boundaries.py` (le xfail strict échoue dès que la dette est
-soldée). Mettre à jour CLAUDE.md et régénérer les `.ts`.
+**Sprint « Identifiants FR → EN ». Batch 0 — préparation.**
 
-`Glaneur/engine/core.py` reste **hors périmètre** (chantier séparé :
-émission d'événements structurés).
+Ce lot ne touche pas au code de production. Il produit :
+
+1. La présente Impact Map, remise au format « lot en cours » — elle sera
+   réécrite au début de chaque lot suivant du sprint.
+2. Le **dictionnaire de renommage** consolidé (`rename-dictionary.md`)
+   qui sert de source de vérité aux lots 2 à 6 : toute décision d'un
+   lot suivant sur un identifiant renvoie à ce fichier plutôt qu'à une
+   discussion locale.
+
+Les décisions ouvertes de fin de plan de sprint (voir chat) sont
+figées ici, dans « Décisions figées ».
 
 ## Directly modified
 
-- Glaneur/scheduler.py                       (retirer `QCoreApplication`,
-                                              retirer `texte_prochaine()`,
-                                              exposer `report_actif()`
-                                              publique pour que le helper
-                                              n'ait pas à toucher aux
-                                              méthodes `_` )
-- Glaneur/scheduler_labels.py                (nouveau : fonction
-                                              `texte_prochaine(planificateur)`
-                                              avec les 7 chaînes
-                                              « Planificateur » traduites ;
-                                              hors périmètre du test de
-                                              boundary, qui ne scanne que
-                                              scheduler.py, detect.py,
-                                              engine/*.py et sources/*.py)
-- app.py                                     (dans `_rafraichir_echeance` :
-                                              `texte_prochaine(self.planificateur)`
-                                              au lieu de la méthode)
-- cli.py                                     (idem : `texte_prochaine(planificateur)`)
-- tests/test_boundaries.py                   (retirer
-                                              `"Glaneur/scheduler.py"`
-                                              de `KNOWN_QT_IMPORTS`)
-- tests/test_scheduler.py                    (les tests `TestTextePresentable*`
-                                              importent et exercent la
-                                              fonction du helper, pas la
-                                              méthode)
-- CLAUDE.md                                  (retirer l'écart connu
-                                              scheduler ; l'écart moteur
-                                              reste)
-- translations/glaneur_fr.ts                 (régénérer via
-                                              `build_translations.py update`
-                                              — les libellés
-                                              « Planificateur » ne
-                                              changent pas, seul le
-                                              `filename=` bascule sur
-                                              `scheduler_labels.py`)
-- translations/glaneur_en.ts                 (idem)
+- .claude/state/impact-map.md          (ce fichier — réécrit)
+- .claude/state/rename-dictionary.md   (nouveau — dictionnaire FR → EN)
 
 ## Direct dependencies
 
-- `build_translations.py` scanne déjà `*(RACINE / "Glaneur").glob("*.py")`,
-  donc le nouveau fichier est capté sans modification du build.
+Aucune. Batch 0 n'a pas de dépendance de code.
 
 ## Tests
 
-- `tests/test_scheduler.py` : classes `TestTextePresentable` et
-  `TestTextePresentableAvecReport` (7 tests) — mêmes assertions, appel
-  changé.
-- `tests/test_boundaries.py::test_no_qt_outside_ui[Glaneur/scheduler.py]`
-  doit passer de XFAIL à PASSED.
-- `tests/test_cli.py::test_deux_si_run_reporte` couvre déjà le chemin
-  d'appel dans le CLI.
-- Ruff ciblé sur les fichiers modifiés.
-- Pas de suite complète nécessaire : validation `local` selon la table
-  de CLAUDE.md (« Une source » → tests concernés + ruff), le scheduler
-  n'étant ni API publique ni format persistant.
+Aucun test à jouer. Le contenu produit sera exercé par les lots suivants.
 
 ## Explicitly out of scope
 
-- `Glaneur/engine/core.py` (chantier séparé, événements structurés).
-- Réécriture de la logique de planification (dates, backoff) — inchangée.
-- Ajout de traductions anglaises (les entrées restent `unfinished`,
-  comme aujourd'hui).
-- Docs Sphinx : pas de docstrings publiques changées dans le sens des
-  signatures ; `texte_prochaine()` disparaît mais il n'est pas
-  documenté en `autoclass` séparément.
+- Toute modification de `Glaneur/**/*.py`, `tests/**`, `translations/**`,
+  `docs/sphinx/**`, `packaging/**`, `README.md`, `CLAUDE.md`.
+- La sweep résiduelle de commentaires FR (lot 1).
+- Les renommages eux-mêmes (lots 2 à 6).
+- Le changement de clés JSON persistées de `Config` (lot 4b, décision
+  figée ci-dessous mais implémentation reportée).
+- Les `.ts`/`.qm` Qt (lot 7, différé).
 
 ## Invariants
 
-- Le scheduler n'importe plus Qt (frontière 1 satisfaite).
-- Les 7 chaînes source « Planificateur » restent **identiques
-  caractère pour caractère** — sinon les `.ts` existants perdraient
-  leurs entrées et il faudrait retraduire.
-- L'API du CLI et de l'UI reste inchangée du point de vue de
-  l'utilisateur (mêmes libellés affichés).
-- `Planificateur.report_actif()` (nouveau) renvoie exactement le même
-  booléen que le calcul inline précédent dans `texte_prochaine`.
+Ce lot ne modifie aucune frontière ni invariant du code. Les invariants
+qui **contraignent** les lots suivants sont recensés dans le dictionnaire
+sous « Contraintes », pas ici, pour rester au bon endroit lorsque les
+lots 2 à 6 recopieront ce champ.
+
+## Validation
+
+Niveau `local` (rédaction). Pas de pytest, pas de ruff, pas de Sphinx.
+La cohérence est vérifiée à la lecture par la conversation principale.
+
+## Décisions figées pour le sprint (arbitrages des points ouverts)
+
+Ces choix sont pris à Batch 0 pour que les lots suivants n'aient pas à
+les rejouer. Ils sont recopiés en tête du dictionnaire.
+
+- **Clés JSON persistées de `Config` (lot 4b) : shim de compatibilité.**
+  Le lot 4b renomme les champs de `Config` en anglais et ajoute dans
+  `Config.load` (ex `Config.charger`) une traduction FR → EN des clés
+  lues. Les écritures sortent en anglais. Le shim reste au moins une
+  release. Justification : sinon rupture silencieuse pour tout
+  utilisateur existant, hors politique de l'écart connu actuel.
+- **Sources Qt (`.ts` `sourcelanguage="fr"`) : différé.** Ce sprint est
+  code-only côté identifiants. Le lot 7 reste optionnel et sera
+  déclenché par l'owner i18n dans un sprint séparé — la manipulation
+  demande une passe de retraduction du côté `glaneur_fr.ts` qui devient
+  cible et non plus source.
+- **`review Opus`.** Réservé au lot 4b (rupture de format persistant).
+  Les lots 2 (moteur) et 3 (scheduler) restent en Sonnet — ils changent
+  l'API interne exportée par `Glaneur.engine.__init__` et
+  `Glaneur.scheduler`, mais pas la persistance. Un `review Opus` sur
+  Batch 2 se demande à `invariant-reviewer` uniquement si le diff
+  découvre une frontière non prévue.
+- **Ordre d'exécution retenu.** 0 → 1 → 2 → 3 → 4a → 5 → 6 → 4b → 8.
+  Le lot 4b passe en dernier des lots de renommage : il consomme le
+  vocabulaire EN adopté par les lots 2/3/5/6, et son shim de compat
+  bénéficie des `test_boundaries` mis à jour.
+- **Parallélisme.** Autorisé uniquement entre lots 2 (moteur) et 3
+  (scheduler), dans deux worktrees. Non recommandé par défaut : les
+  tests partagent `conftest.py`, `test_boundaries.py` et le tableau
+  d'imports.
