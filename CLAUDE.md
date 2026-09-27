@@ -13,11 +13,43 @@ hors de son lot, ni signalé comme régression, sauf s'il s'aggrave.
   ses messages. La frontière 1 sera tenue quand le moteur émettra des événements
   structurés. Suivi par `xfail(strict=True)` dans `tests/test_boundaries.py`.
   Les autres submodules de `Glaneur/engine/` sont indépendants de Qt.
-- Les identifiants Python (noms de fonctions, classes, variables locales) et
-  les chaînes source de l'interface (`.ts` en `sourcelanguage="fr"`, libellés
-  français en clés dans `config.py`) restent en français : futur lot. Les
-  docstrings et les noms de fichiers Python sont désormais en anglais depuis
-  le lot « nettoyage et docstrings-en » (2026-09-26).
+- La surface publique Python est passée en anglais lors du sprint
+  « Identifiants FR → EN » (2026-09-27) : classes, méthodes, fonctions,
+  constantes et champs `Config` (avec shim de compat FR → EN à la
+  lecture de `config.json`). Restent volontairement FR :
+  - **Clés du manifeste** (`taille`, `fichier`, `etag`, `modifie`,
+    `url`, `extra`, `supprime`, `restaure`) : persistées sur disque.
+    Un renommage exigerait un shim de manifest-read, à faire dans un
+    lot dédié.
+  - **Champs de la dataclass `Element`** (`nom_fichier`, `mois`,
+    `largeur`, `taille`, `groupe`). `Element` n'est pas sérialisé
+    directement — c'est le manifeste hardcoded ci-dessus qui l'est —
+    donc le renommage n'est pas bloqué par la persistance mais il
+    cascade largement (sources, `Engine.dossier_pour`, tests) : lot
+    séparé.
+  - **CLI flags** (`--dossier`, `--classement`, `--delai`, `--verifier`,
+    `--depuis`, `--jusqua`, `--restaurer`, `--pas-cache`) et leurs
+    attributs `argparse` (`args.dossier`, `args.classement`, etc.) :
+    user-facing.
+  - **Valeurs de dispatch** (`"transitoire"`, `"coupure"`, `"definitif"`,
+    `"galerie"`, `"date"`, `"plat"`, `"wordpress"`, `"djangoplicity"`,
+    `"Large"`, `"Small"`, `"Original"`, marques `"supprime"` /
+    `"restaure"`, statuts d'engine `"ok"` / `"repris"` / `"inchangé"` /
+    `"introuvable"`) : chaînes stockées ou affichées, changement =
+    rupture UI ou format.
+  - **Contextes Qt de traduction** (`"Moteur"`, `"Planificateur"`,
+    `"Updater"`, `"BugReport"`) et strings sources FR dans les
+    `.translate()` — leur modification invaliderait les `.qm`
+    livrés.
+  - **Chaînes sources `.ts`** (`sourcelanguage="fr"`) : lot i18n séparé,
+    exige une passe de retraduction (`glaneur_fr.ts` deviendrait cible).
+  - **Attribut `Transport.arret` + paramètre `arret` d'`Engine.__init__`**
+    (event de coupure coopérative) : cascade sur toute l'API des
+    callbacks, différée.
+  - **`Engine._pause`** et **`Engine.dossier_pour`** : méthodes internes
+    du moteur laissées FR par cohérence avec `Element.groupe`/`mois`.
+  - Docstrings et noms de fichiers Python en anglais depuis le lot
+    « nettoyage et docstrings-en » (2026-09-26).
 - Le README décrit encore la signature par `WINDOWS_PFX_BASE64`, obsolète (lot 9).
 - Les métadonnées AppStream de `packaging/linux/` décrivent encore une
   application WordPress seule : en attente avec Linux.
@@ -103,7 +135,7 @@ Le niveau de validation est déterminé par l'Impact Map (`local`, `module`,
 | Test seul                                | tests concernés + ruff ciblé                                                     |
 | Python local                             | tests concernés + ruff ciblé                                                     |
 | Une source (`Glaneur/sources/…`)         | tests de la source + tests de contrat concernés + ruff ciblé + `invariant-reviewer` si frontière/invariant touché |
-| Moteur, scheduler, `config.py`           | tests concernés + ruff ciblé + `invariant-reviewer`                              |
+| Engine, scheduler, `config.py`           | tests concernés + ruff ciblé + `invariant-reviewer`                              |
 | API publique ou format persistant        | tests concernés + suite complète + couverture + `invariant-reviewer`             |
 | Packaging                                | tests concernés + validation packaging + `invariant-reviewer`                    |
 | Documentation Sphinx (`docs/sphinx/**`)  | `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` (installer d'abord `requirements-doc.txt`) |
