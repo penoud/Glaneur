@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def chemin_manifeste(dossier: Path) -> Path:
+def manifest_path(dossier: Path) -> Path:
     """Path to the manifest file (``.etat.json``) inside ``dossier``.
 
     Args:

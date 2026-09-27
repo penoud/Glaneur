@@ -40,9 +40,9 @@ glaneur/
 ├── Glaneur/
 │   ├── config.py           Persisted preferences (JSON in %APPDATA%)
 │   ├── engine/             Engine package: orchestration, manifest, downloads, resumes
-│   │   ├── core.py             `Moteur`, main loop
+│   │   ├── core.py             `Engine`, main loop
 │   │   ├── options.py          `Options` input dataclass
-│   │   ├── result.py           `Resultat` output dataclass
+│   │   ├── result.py           `RunResult` output dataclass
 │   │   ├── cache_path.py, read_cache.py, write_cache.py       Per-site JSON cache
 │   │   ├── manifest_path.py, read_manifest.py, write_manifest.py  Downloaded-file manifest
 │   │   ├── delete_image.py, list_deleted.py, restore.py           Trash / restore
@@ -66,15 +66,15 @@ glaneur/
     └── installer.iss       Inno Setup script
 ```
 
-The `engine` package exposes its public API (`Moteur`, `Options`, `Resultat`,
-`chemin_cache`, `chemin_manifeste`, `ecrire_cache`, `ecrire_manifeste`,
-`lire_cache`, `lire_manifeste`, `nettoyer`, `restaurer`, `supprimer_image`,
-`lister_supprimees`, `format_octets`) through `Glaneur/engine/__init__.py`.
+The `engine` package exposes its public API (`Engine`, `Options`, `RunResult`,
+`cache_path`, `manifest_path`, `write_cache`, `write_manifest`,
+`read_cache`, `read_manifest`, `clean`, `restore`, `delete_image`,
+`list_deleted`, `format_bytes`) through `Glaneur/engine/__init__.py`.
 Callers import from `Glaneur.engine` and stay decoupled from the internal
 module split.
 
-**Engine contract.** `Moteur(options, journal, progression, arret).executer()`
-returns a `Resultat`. The engine imports neither Qt nor any widget: callbacks
+**Engine contract.** `Engine(options, journal, progression, arret).run()`
+returns a `RunResult`. The engine imports neither Qt nor any widget: callbacks
 are wired to Qt signals emitted from a `QThread`, and Qt marshals them
 automatically back to the main thread through its queued connections. That is
 what makes the rule « no widget touched outside the main thread » automatic
@@ -120,8 +120,8 @@ the `qtbot` fixture used by the updater QThread tests; the other tests
 ## 3. How it works
 
 **Sources.** The engine delegates to a `Source` adapter (in
-`Glaneur/sources/`) exposing two methods: `inventaire()` lists the available
-images, and `titre_parent()` resolves a gallery id to a readable label. Two
+`Glaneur/sources/`) exposing two methods: `inventory()` lists the available
+images, and `resolve_groups()` resolves gallery ids to readable labels. Two
 implementations are shipped:
 
 - `wordpress` — REST API `GET /wp-json/wp/v2/media?per_page=100`, paginated
@@ -177,7 +177,7 @@ transferred if its copy is identical. Useful occasionally, unnecessary on a
 daily basis.
 
 **Scheduling.** `scheduler.py` compares the current time to
-`derniere_execution` stored in the configuration. The due date therefore
+`last_run` stored in the configuration. The due date therefore
 survives the application being closed: if the interval elapsed while it was
 closed, the update starts on the next launch. An interrupted run does not
 update the timestamp.
@@ -199,27 +199,29 @@ last 50 lines of log).
 
 | Key | Purpose | Default |
 |---|---|---|
-| `type_source` | `wordpress` or `djangoplicity` | `wordpress` |
+| `source_type` | `wordpress` or `djangoplicity` | `wordpress` |
 | `site` | URL of the target site | set from the application |
-| `dossier` | image destination | user's Pictures folder |
-| `intervalle_heures` | 0, 6, 12, 24 or 168 | `24` |
-| `largeur_min` | width threshold in pixels | `800` |
-| `classement` | `galerie`, `date` or `plat` | `galerie` |
-| `format_image` | Djangoplicity: `Large` / `Small` / `Original` | `Large` |
-| `verifier_integrite` | conditional revalidation | `false` |
-| `verifier_maj_demarrage` | queries GitHub Releases at launch | `true` |
-| `lancer_au_demarrage` | `HKCU\...\Run` entry with `--reduit` | `false` |
-| `langue` | ISO code (`fr`, `en`); empty = system locale | `""` |
-| `fermer_dans_barre` | the close button minimises instead of quitting | `true` |
+| `target_dir` | image destination | user's Pictures folder |
+| `interval_hours` | 0, 6, 12, 24 or 168 | `24` |
+| `min_width` | width threshold in pixels | `800` |
+| `sort_mode` | `galerie`, `date` or `plat` | `galerie` |
+| `image_format` | Djangoplicity: `Large` / `Small` / `Original` | `Large` |
+| `verify_integrity` | conditional revalidation | `false` |
+| `check_updates_on_start` | queries GitHub Releases at launch | `true` |
+| `run_at_startup` | `HKCU\...\Run` entry with `--reduit` | `false` |
+| `language` | ISO code (`fr`, `en`); empty = system locale | `""` |
+| `close_to_tray` | the close button minimises instead of quitting | `true` |
 | `notifications` | balloon after an automatic update | `true` |
-| `delai_requetes` | delay between requests, in seconds | `0.5` |
-| `diaporama_dossier` | registers the folder as the Windows slideshow source | `false` |
-| `derniere_execution` | ISO timestamp, managed by the app | — |
+| `request_delay` | delay between requests, in seconds | `0.5` |
+| `slideshow_dir` | registers the folder as the Windows slideshow source | `false` |
+| `last_run` | ISO timestamp, managed by the app | — |
 
 Settings are saved when the Preferences window is validated (OK button).
 Values out of bounds are brought back to sane values at load time;
-`delai_requetes` has a hard floor of 0.2 s to avoid hammering the target
-server.
+`request_delay` has a hard floor of 0.2 s to avoid hammering the target
+server. A `config.json` written by a pre-4b version keeps loading —
+`Config.load` translates the old French keys transparently, and the
+next save rewrites the file in English.
 
 ### Internationalisation
 
@@ -227,7 +229,7 @@ All UI strings go through `self.tr(...)` (widgets) or
 `QCoreApplication.translate("BugReport", ...)` (module `bug_report.py`).
 Sources are in French; other languages live in
 `translations/glaneur_<code>.ts`, compiled to `.qm` which
-`Glaneur/i18n.py` installs on startup according to the `langue`
+`Glaneur/i18n.py` installs on startup according to the `language`
 preference (or the system locale when empty). Language changes take effect
 on **next launch** — no hot retranslation.
 
@@ -350,7 +352,7 @@ The same workflow produces a macOS application (`.app`) distributed as a
 |---|---|
 | « The API is not responding » | site unreachable, or `/wp-json/` disabled by a site update |
 | Folders named `contenu-12345` | the « galleries » content type is not exposed by the API; switch to sort-by-date |
-| Very few images found | `largeur_min` is set too high |
+| Very few images found | `min_width` is set too high |
 | « no Qt platform plugin could be initialized » | on Linux, X11 libraries missing; on Windows, the `platforms\qwindows.dll` plugin is missing from the `dist` folder |
 | `ImportError` on a Qt module only in the exe | module removed by `QT_INUTILES` in the `.spec` |
 | Windows SmartScreen blocks the installer | unsigned executable — « More info » then « Run anyway », or sign with a certificate |
@@ -434,9 +436,9 @@ glaneur/
 ├── Glaneur/
 │   ├── config.py           Préférences persistées (JSON dans %APPDATA%)
 │   ├── engine/             Paquet moteur : orchestration, manifeste, téléchargement, reprise
-│   │   ├── core.py             `Moteur`, boucle principale
+│   │   ├── core.py             `Engine`, boucle principale
 │   │   ├── options.py          `Options` (dataclass d'entrée)
-│   │   ├── result.py           `Resultat` (dataclass de sortie)
+│   │   ├── result.py           `RunResult` (dataclass de sortie)
 │   │   ├── cache_path.py, read_cache.py, write_cache.py       Cache JSON par site
 │   │   ├── manifest_path.py, read_manifest.py, write_manifest.py  Manifeste des fichiers téléchargés
 │   │   ├── delete_image.py, list_deleted.py, restore.py           Corbeille / restauration
@@ -460,15 +462,15 @@ glaneur/
     └── installer.iss       Script Inno Setup
 ```
 
-Le paquet `engine` réexporte son API publique (`Moteur`, `Options`,
-`Resultat`, `chemin_cache`, `chemin_manifeste`, `ecrire_cache`,
-`ecrire_manifeste`, `lire_cache`, `lire_manifeste`, `nettoyer`, `restaurer`,
-`supprimer_image`, `lister_supprimees`, `format_octets`) via
+Le paquet `engine` réexporte son API publique (`Engine`, `Options`,
+`RunResult`, `cache_path`, `manifest_path`, `write_cache`,
+`write_manifest`, `read_cache`, `read_manifest`, `clean`, `restore`,
+`delete_image`, `list_deleted`, `format_bytes`) via
 `Glaneur/engine/__init__.py`. Les appelants importent depuis
 `Glaneur.engine` sans dépendre du découpage interne.
 
-**Contrat du moteur.** `Moteur(options, journal, progression, arret).executer()`
-renvoie un `Resultat`. Le moteur n'importe ni Qt ni aucun widget : les
+**Contrat du moteur.** `Engine(options, journal, progression, arret).run()`
+renvoie un `RunResult`. Le moteur n'importe ni Qt ni aucun widget : les
 callbacks sont branchés sur des signaux Qt émis depuis un `QThread`, et Qt les
 marshale automatiquement vers le thread principal via ses connexions en file.
 C'est ce qui rend la règle « aucun widget touché hors du thread principal »
@@ -515,9 +517,9 @@ autres tests (moteur, scheduler, config, updater unitaire) tournent sans lui.
 ## 3. Fonctionnement
 
 **Sources.** Le moteur délègue à un adaptateur `Source` (dans
-`Glaneur/sources/`) qui expose deux méthodes : `inventaire()` liste
-les images disponibles, `titre_parent()` résout un ID de galerie en libellé
-lisible. Deux implémentations sont fournies :
+`Glaneur/sources/`) qui expose deux méthodes : `inventory()` liste
+les images disponibles, `resolve_groups()` résout des IDs de galerie en
+libellés lisibles. Deux implémentations sont fournies :
 
 - `wordpress` — API REST `GET /wp-json/wp/v2/media?per_page=100`, paginée
   d'après l'en-tête `X-WP-TotalPages`. Le champ `source_url` donne
@@ -573,7 +575,7 @@ transférer d'octets si sa copie est identique. Utile ponctuellement, inutile au
 quotidien.
 
 **Planification.** `scheduler.py` compare l'heure courante à
-`derniere_execution` enregistré dans la configuration. L'échéance survit donc à
+`last_run` enregistré dans la configuration. L'échéance survit donc à
 la fermeture de l'application : si l'intervalle s'est écoulé pendant qu'elle
 était fermée, la mise à jour part au lancement suivant. Une exécution
 interrompue ne met pas à jour l'horodatage.
@@ -595,27 +597,30 @@ lignes de log compactées).
 
 | Clé | Rôle | Défaut |
 |---|---|---|
-| `type_source` | `wordpress` ou `djangoplicity` | `wordpress` |
+| `source_type` | `wordpress` ou `djangoplicity` | `wordpress` |
 | `site` | URL du site cible | configurée dans l'application |
-| `dossier` | destination des images | dossier Images de l'utilisateur |
-| `intervalle_heures` | 0, 6, 12, 24 ou 168 | `24` |
-| `largeur_min` | seuil en pixels | `800` |
-| `classement` | `galerie`, `date` ou `plat` | `galerie` |
-| `format_image` | Djangoplicity : `Large` / `Small` / `Original` | `Large` |
-| `verifier_integrite` | revalidation conditionnelle | `false` |
-| `verifier_maj_demarrage` | interroge GitHub Releases au lancement | `true` |
-| `lancer_au_demarrage` | entrée `HKCU\...\Run` avec `--reduit` | `false` |
-| `langue` | code ISO (`fr`, `en`) ; vide = locale système | `""` |
-| `fermer_dans_barre` | la croix réduit au lieu de quitter | `true` |
+| `target_dir` | destination des images | dossier Images de l'utilisateur |
+| `interval_hours` | 0, 6, 12, 24 ou 168 | `24` |
+| `min_width` | seuil en pixels | `800` |
+| `sort_mode` | `galerie`, `date` ou `plat` | `galerie` |
+| `image_format` | Djangoplicity : `Large` / `Small` / `Original` | `Large` |
+| `verify_integrity` | revalidation conditionnelle | `false` |
+| `check_updates_on_start` | interroge GitHub Releases au lancement | `true` |
+| `run_at_startup` | entrée `HKCU\...\Run` avec `--reduit` | `false` |
+| `language` | code ISO (`fr`, `en`) ; vide = locale système | `""` |
+| `close_to_tray` | la croix réduit au lieu de quitter | `true` |
 | `notifications` | bulle après une mise à jour automatique | `true` |
-| `delai_requetes` | pause entre requêtes, en secondes | `0.5` |
-| `diaporama_dossier` | déclare le dossier comme source du diaporama Windows | `false` |
-| `derniere_execution` | horodatage ISO, géré par l'app | — |
+| `request_delay` | pause entre requêtes, en secondes | `0.5` |
+| `slideshow_dir` | déclare le dossier comme source du diaporama Windows | `false` |
+| `last_run` | horodatage ISO, géré par l'app | — |
 
 Les paramètres sont sauvegardés à la validation de la fenêtre Préférences
 (bouton OK). Les valeurs hors bornes sont ramenées à des valeurs saines au
-chargement ; `delai_requetes` est plafonné à un minimum de 0,2 s pour ne pas
-marteler le serveur cible.
+chargement ; `request_delay` est plafonné à un minimum de 0,2 s pour ne pas
+marteler le serveur cible. Un `config.json` écrit par une version
+antérieure au lot 4b continue à se charger — `Config.load` traduit
+les anciennes clés françaises silencieusement, et la sauvegarde
+suivante réécrit le fichier en anglais.
 
 ### Internationalisation
 
@@ -624,7 +629,7 @@ Toutes les chaînes d'interface passent par `self.tr(...)` (widgets) ou
 Les sources sont en français ; les autres langues vivent dans
 `translations/glaneur_<code>.ts`, compilées en `.qm` que
 `Glaneur/i18n.py` installe au démarrage selon la préférence
-`langue` (ou la locale système si vide). Le changement de langue prend
+`language` (ou la locale système si vide). Le changement de langue prend
 effet au **prochain lancement** — pas de retranslation à chaud.
 
 Workflow traducteur :
@@ -748,7 +753,7 @@ Le même workflow produit une application macOS (`.app`) distribuée en archive
 |---|---|
 | « L'API ne répond pas » | site injoignable, ou `/wp-json/` désactivé par une mise à jour du site |
 | Dossiers nommés `contenu-12345` | le type de contenu « galeries » n'est pas exposé dans l'API ; bascule sur le classement par date |
-| Très peu d'images trouvées | `largeur_min` trop élevée |
+| Très peu d'images trouvées | `min_width` trop élevée |
 | « no Qt platform plugin could be initialized » | sous Linux, bibliothèques X11 manquantes ; sous Windows, plugin `platforms\qwindows.dll` absent du dossier `dist` |
 | `ImportError` sur un module Qt dans l'exe seulement | module retiré par `QT_INUTILES` dans le `.spec` |
 | Windows SmartScreen bloque l'installateur | exécutable non signé — « Informations complémentaires » puis « Exécuter quand même », ou signer avec un certificat |

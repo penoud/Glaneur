@@ -1,4 +1,4 @@
-"""Dataclass :class:`Resultat` — counters and message of a run."""
+"""Dataclass :class:`RunResult` — counters and message of a run."""
 
 from __future__ import annotations
 
@@ -6,38 +6,38 @@ from dataclasses import dataclass, field
 
 
 @dataclass
-class Resultat:
+class RunResult:
     """Counters and message returned by an engine run."""
 
     #: New files actually downloaded.
-    telechargees: int = 0
+    downloaded: int = 0
     #: Files resumed from a partial ``.part``.
-    reprises: int = 0
+    resumed: int = 0
     #: 304 responses (ETag/Last-Modified unchanged).
-    inchangees: int = 0
+    unchanged: int = 0
     #: Files already up to date in the manifest and on disk.
-    deja_presentes: int = 0
+    already_present: int = 0
     #: Files missing from disk on this pass — marked as
     #: deleted in the manifest.
-    supprimees: int = 0
+    deleted: int = 0
     #: Files known as deleted or without a usable URL, not
     #: re-downloaded.
-    ignorees: int = 0
+    skipped: int = 0
     #: Files whose download failed.
-    echecs: int = 0
+    failures: int = 0
     #: Total volume downloaded, in bytes.
-    octets: int = 0
+    bytes: int = 0
     #: True if the user requested a stop mid-run.
-    interrompu: bool = False
+    interrupted: bool = False
     #: True if the run bailed out because the server cut us off
     #: (rate limit, DNS blackhole, 429/503...). The scheduler uses this
     #: to defer the next automatic run — see ``Glaneur.scheduler`` at
     #: lot 3.
-    reporte: bool = False
+    deferred: bool = False
     #: ISO 8601 hint of the earliest resume time, populated from a
     #: ``Retry-After`` header when the server provides one. Empty
     #: means "no hint": the scheduler falls back on its own backoff.
-    retenter_apres: str = ""
+    retry_after: str = ""
     #: Summary ready to display to the user (localized).
     message: str = ""
     #: Free-form bag for extra information.

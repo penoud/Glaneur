@@ -12,21 +12,21 @@ Il contiendra `conf.py`, `index.rst`, l'arborescence `api/` produite par
 - Sections attendues, dans cet ordre quand elles s'appliquent :
 
   ```python
-  def resoudre(url: str, timeout: float = 30) -> Resultat:
-      """Résout une URL vers un `Resultat`.
+  def resoudre(url: str, timeout: float = 30) -> RunResult:
+      """Résout une URL vers un `RunResult`.
 
       La résolution suit les redirections HTTP puis vérifie l'ETag.
-      Voir `Glaneur.engine.Resultat` pour la sémantique du champ `message`.
+      Voir `Glaneur.engine.RunResult` pour la sémantique du champ `message`.
 
       Args:
           url: URL absolue à résoudre.
           timeout: Délai maximum en secondes.
 
       Returns:
-          Le `Resultat` construit à partir de la réponse.
+          Le `RunResult` construit à partir de la réponse.
 
       Raises:
-          Interrompu: Si l'utilisateur a demandé l'arrêt pendant l'appel.
+          Interrupted: Si l'utilisateur a demandé l'arrêt pendant l'appel.
           requests.RequestException: En cas d'échec réseau irrémédiable.
       """
   ```

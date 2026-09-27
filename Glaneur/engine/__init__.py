@@ -23,39 +23,39 @@ remains importable at the same path.
 
 from __future__ import annotations
 
-from ..sources import Interrompu
+from ..sources import Interrupted
 from ._constants import SIZE_SUFFIX, UA
-from .cache_path import chemin_cache
-from .core import Moteur
-from .delete_image import supprimer_image
-from .format_bytes import format_octets
-from .list_deleted import lister_supprimees
-from .manifest_path import chemin_manifeste
+from .cache_path import cache_path
+from .core import Engine
+from .delete_image import delete_image
+from .format_bytes import format_bytes
+from .list_deleted import list_deleted
+from .manifest_path import manifest_path
 from .options import Options
-from .read_cache import lire_cache
-from .read_manifest import lire_manifeste
-from .restore import restaurer
-from .result import Resultat
-from .sanitize import nettoyer
-from .write_cache import ecrire_cache
-from .write_manifest import ecrire_manifeste
+from .read_cache import read_cache
+from .read_manifest import read_manifest
+from .restore import restore
+from .result import RunResult
+from .sanitize import clean
+from .write_cache import write_cache
+from .write_manifest import write_manifest
 
 __all__ = [
     "SIZE_SUFFIX",
     "UA",
-    "Interrompu",
-    "Moteur",
+    "Engine",
+    "Interrupted",
     "Options",
-    "Resultat",
-    "chemin_cache",
-    "chemin_manifeste",
-    "ecrire_cache",
-    "ecrire_manifeste",
-    "format_octets",
-    "lire_cache",
-    "lire_manifeste",
-    "lister_supprimees",
-    "nettoyer",
-    "restaurer",
-    "supprimer_image",
+    "RunResult",
+    "cache_path",
+    "clean",
+    "delete_image",
+    "format_bytes",
+    "list_deleted",
+    "manifest_path",
+    "read_cache",
+    "read_manifest",
+    "restore",
+    "write_cache",
+    "write_manifest",
 ]

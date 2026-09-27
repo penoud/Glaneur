@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def format_octets(n: int) -> str:
+def format_bytes(n: int) -> str:
     """Format a byte count into a human-readable string.
 
     Args:

@@ -1,9 +1,9 @@
-"""Tests de l'adaptateur Djangoplicity : pagination sur `Next`, `after`
-inclusif (l'élément frontière n'est pas retéléchargé une deuxième fois),
-sélection du format avec repli sur Small, désencapsulation des textes
-`"b'…'"` mal encodés côté serveur.
+"""Tests for the Djangoplicity adapter: `Next` pagination, `after`
+inclusive (the boundary item is not re-downloaded a second time),
+format selection with fallback to Small, and unwrapping of `"b'…'"`
+strings mis-encoded server-side.
 
-Aucun accès réseau : `Transport.get_json` est mocké.
+No network access: `Transport.get_json` is mocked.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import threading
 from unittest.mock import patch
 
-from Glaneur.engine import Moteur, Options, lire_manifeste
+from Glaneur.engine import Engine, Options, read_manifest
 from Glaneur.sources import Transport
 from Glaneur.sources.djangoplicity import Djangoplicity
 
@@ -22,8 +22,8 @@ from Glaneur.sources.djangoplicity import Djangoplicity
 def _source(*, format_image="Large", base="https://www.eso.org/public"):
     return Djangoplicity(
         base=base,
-        transport=Transport(delai=0, arret=threading.Event()),
-        reglages={"format_image": format_image},
+        transport=Transport(delay=0, arret=threading.Event()),
+        settings={"format_image": format_image},
     )
 
 
@@ -91,8 +91,8 @@ class TestBase:
     def test_type_et_classements(self):
         assert Djangoplicity.type == "djangoplicity"
         # doc §3: "galerie" has no natural equivalent
-        assert "galerie" not in Djangoplicity.classements
-        assert {"date", "plat"} <= Djangoplicity.classements
+        assert "galerie" not in Djangoplicity.sort_modes
+        assert {"date", "plat"} <= Djangoplicity.sort_modes
 
     def test_endpoint_derive_de_la_base(self):
         s = _source(base="https://www.eso.org/public/")
@@ -100,10 +100,10 @@ class TestBase:
 
     def test_convertir_depuis(self):
         s = _source()
-        assert s.convertir_depuis("2026-06-15T12:00:00") == "20260615120000"
+        assert s.convert_from("2026-06-15T12:00:00") == "20260615120000"
         # tolerant: YYYY-MM-DD is enough, the time is zero-padded
-        assert s.convertir_depuis("2026-06-15") == "20260615000000"
-        assert s.convertir_depuis(None) is None
+        assert s.convert_from("2026-06-15") == "20260615000000"
+        assert s.convert_from(None) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -210,7 +210,7 @@ class TestInventaire:
             "https://x.example/images/d2d/?page=2": page2,
         })
         with patch.object(s.transport, "get_json", side_effect=faux.get_json):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["a:Large", "b:Large", "c:Large"]
         # exactly two requests, not three
         assert len(faux.appels) == 2
@@ -222,7 +222,7 @@ class TestInventaire:
         page1 = _reponse([_entree("a")], next_url=None, count=100)
         faux = FauxServeur({"https://x.example/images/d2d/": page1})
         with patch.object(s.transport, "get_json", side_effect=faux.get_json):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["a:Large"]
 
     def test_deduplication_par_id(self):
@@ -236,7 +236,7 @@ class TestInventaire:
             "https://x.example/images/d2d/?page=2": page2,
         })
         with patch.object(s.transport, "get_json", side_effect=faux.get_json):
-            r = list(s.inventaire(None, None))
+            r = list(s.inventory(None, None))
         assert sorted(e.ident for e in r) == ["a:Large", "b:Large", "c:Large"]
 
     def test_after_est_transmis_en_params(self):
@@ -248,7 +248,7 @@ class TestInventaire:
             return {"Count": 0, "Collections": []}, {}
 
         with patch.object(s.transport, "get_json", side_effect=faux_get_json):
-            list(s.inventaire("20260615120000", None))
+            list(s.inventory("20260615120000", None))
         assert capture["params"]["after"] == "20260615120000"
 
 
@@ -265,18 +265,18 @@ class TestAfterInclusif:
         # not a second copy in telechargees.
         fichier_a = tmp_path / "a.jpg"
         fichier_a.write_bytes(b"contenu-a-attendu")
-        from Glaneur.engine import ecrire_manifeste
-        ecrire_manifeste(tmp_path, {
+        from Glaneur.engine import write_manifest
+        write_manifest(tmp_path, {
             "a:Large": {"fichier": "a.jpg",
                         "taille": len(b"contenu-a-attendu")},
         })
 
         options = Options(
-            dossier=tmp_path, site="https://x.example", delai=0,
-            classement="date", type_source="djangoplicity",
-            format_image="Large",
+            target_dir=tmp_path, site="https://x.example", delay=0,
+            sort_mode="date", source_type="djangoplicity",
+            image_format="Large",
         )
-        moteur = Moteur(options)
+        moteur = Engine(options)
 
         # Build the entries as the fake server would supply them.
         entree_a = _entree("a", ressources=[
@@ -292,16 +292,16 @@ class TestAfterInclusif:
 
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
-             patch.object(moteur, "telecharger",
+             patch.object(moteur, "download",
                           return_value=("ok", {"taille": 42, "etag": "",
                                                "modifie": "", "url": "u"}, None)):
-            res = moteur.executer()
+            res = moteur.run()
 
         # `a` recognized as already present; only `b` downloaded.
-        assert res.deja_presentes == 1
-        assert res.telechargees == 1
+        assert res.already_present == 1
+        assert res.downloaded == 1
         # manifest extended, but entry `a` was not duplicated
-        m = lire_manifeste(tmp_path)
+        m = read_manifest(tmp_path)
         assert "a:Large" in m and "b:Large" in m
 
 
@@ -312,11 +312,11 @@ class TestAfterInclusif:
 class TestRessourceManquante:
     def test_element_sans_url_est_ignoree(self, tmp_path):
         options = Options(
-            dossier=tmp_path, site="https://x.example", delai=0,
-            classement="date", type_source="djangoplicity",
-            format_image="Large",
+            target_dir=tmp_path, site="https://x.example", delay=0,
+            sort_mode="date", source_type="djangoplicity",
+            image_format="Large",
         )
-        moteur = Moteur(options)
+        moteur = Engine(options)
 
         # two entries: one good, one without a usable format (only
         # Icon / Thumbnail)
@@ -330,10 +330,10 @@ class TestRessourceManquante:
 
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
-             patch.object(moteur, "telecharger",
+             patch.object(moteur, "download",
                           return_value=("ok", {"taille": 3_500_000, "etag": "",
                                                "modifie": "", "url": "u"}, None)):
-            res = moteur.executer()
+            res = moteur.run()
         # good: downloaded; bad: ignored
-        assert res.telechargees == 1
-        assert res.ignorees == 1
+        assert res.downloaded == 1
+        assert res.skipped == 1

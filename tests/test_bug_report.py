@@ -1,4 +1,4 @@
-"""Tests du helper de rapport de bug (URL GitHub préremplie)."""
+"""Tests for the bug-report helper (pre-filled GitHub issue URL)."""
 
 from __future__ import annotations
 

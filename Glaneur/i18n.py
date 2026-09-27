@@ -17,7 +17,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QLocale, QTranslator
 
-LANGUES_DISPONIBLES: dict[str, str] = {
+AVAILABLE_LANGUAGES: dict[str, str] = {
     # ISO code -> native label displayed in the preferences
     "fr": "Français",
     "en": "English",
@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _translator: QTranslator | None = None
 
 
-def dossier_traductions() -> Path:
+def translations_dir() -> Path:
     """Locate the ``translations/`` folder depending on the run mode.
 
     Order matters: inside a PyInstaller bundle ``__file__`` points into
@@ -50,7 +50,7 @@ def dossier_traductions() -> Path:
     return candidats[-1]
 
 
-def resoudre_langue(langue_configuree: str) -> str:
+def resolve_language(langue_configuree: str) -> str:
     """Return the effective language code to apply.
 
     Args:
@@ -67,7 +67,7 @@ def resoudre_langue(langue_configuree: str) -> str:
     return QLocale.system().name().split("_")[0] or "fr"
 
 
-def installer_traducteur(app, langue_configuree: str = "") -> str:
+def install_translator(app, langue_configuree: str = "") -> str:
     """Load the matching ``.qm`` and install it on ``app``.
 
     Installation happens before the main window is built: there is no
@@ -78,7 +78,7 @@ def installer_traducteur(app, langue_configuree: str = "") -> str:
         app: ``QCoreApplication`` (typically a ``QApplication``) to
             equip with a translator.
         langue_configuree: Desired code, ``""`` to let
-            :func:`resoudre_langue` decide.
+            :func:`resolve_language` decide.
 
     Returns:
         The language code actually active after the call. May differ
@@ -86,8 +86,8 @@ def installer_traducteur(app, langue_configuree: str = "") -> str:
         on the French source in that case.
     """
     global _translator
-    langue = resoudre_langue(langue_configuree)
-    dossier = dossier_traductions()
+    langue = resolve_language(langue_configuree)
+    dossier = translations_dir()
     logger.info("i18n: language=%s folder=%s exists=%s",
                 langue, dossier, dossier.is_dir())
     if langue == "fr":

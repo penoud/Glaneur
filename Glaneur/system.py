@@ -17,8 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-CLE_RUN = r"Software\Microsoft\Windows\CurrentVersion\Run"
-NOM_ENTREE = "Glaneur"
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+REGISTRY_ENTRY = "Glaneur"
 
 # --- IDesktopWallpaper: identifiers and vtable indices ---------------------- #
 # We access COM via raw ctypes rather than pulling in pywin32 or comtypes.
@@ -44,7 +44,7 @@ _VT_ADVANCESLIDESHOW = 16
 _DSD_FORWARD = 0
 
 
-def est_gele() -> bool:
+def is_frozen() -> bool:
     """Report whether the application runs from the PyInstaller executable.
 
     Returns:
@@ -54,7 +54,7 @@ def est_gele() -> bool:
     return getattr(sys, "frozen", False)
 
 
-def commande_lancement() -> str:
+def launch_command() -> str:
     """Command to write in the registry to relaunch the application.
 
     In a PyInstaller build, the command points directly at the executable;
@@ -65,17 +65,17 @@ def commande_lancement() -> str:
     Returns:
         The command line, with the executable path quoted.
     """
-    if est_gele():
+    if is_frozen():
         return f'"{Path(sys.executable)}" --reduit'
     script = Path(__file__).resolve().parent.parent / "app.py"
     return f'"{Path(sys.executable)}" "{script}" --reduit'
 
 
-def demarrage_automatique(actif: bool) -> bool:
+def autostart(enabled: bool) -> bool:
     """Add or remove the Windows startup entry.
 
     Args:
-        actif: ``True`` to add, ``False`` to remove.
+        enabled: ``True`` to add, ``False`` to remove.
 
     Returns:
         The resulting state (``True`` if the entry is in place after the
@@ -85,21 +85,21 @@ def demarrage_automatique(actif: bool) -> bool:
         return False
     import winreg
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, CLE_RUN, 0,
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0,
                             winreg.KEY_SET_VALUE | winreg.KEY_QUERY_VALUE) as cle:
-            if actif:
-                winreg.SetValueEx(cle, NOM_ENTREE, 0, winreg.REG_SZ, commande_lancement())
+            if enabled:
+                winreg.SetValueEx(cle, REGISTRY_ENTRY, 0, winreg.REG_SZ, launch_command())
             else:
                 try:
-                    winreg.DeleteValue(cle, NOM_ENTREE)
+                    winreg.DeleteValue(cle, REGISTRY_ENTRY)
                 except FileNotFoundError:
                     pass
-        return actif
+        return enabled
     except OSError:
         return False
 
 
-def demarrage_automatique_actif() -> bool:
+def autostart_active() -> bool:
     """Report whether the Windows startup entry is present.
 
     Returns:
@@ -110,14 +110,14 @@ def demarrage_automatique_actif() -> bool:
         return False
     import winreg
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, CLE_RUN) as cle:
-            winreg.QueryValueEx(cle, NOM_ENTREE)
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as cle:
+            winreg.QueryValueEx(cle, REGISTRY_ENTRY)
             return True
     except OSError:
         return False
 
 
-def ouvrir_dossier(chemin: Path) -> None:
+def open_dir(chemin: Path) -> None:
     """Open the folder in the OS file explorer.
 
     Creates the folder if it does not exist yet (useful just after a
@@ -139,7 +139,7 @@ def ouvrir_dossier(chemin: Path) -> None:
 # Windows wallpaper
 # --------------------------------------------------------------------------- #
 
-def _instancier_bureau():
+def _instantiate_desktop():
     """Instantiate IDesktopWallpaper. Returns ``(ptr, uninit)`` or ``(None, False)``.
 
     ``uninit`` says whether the caller must call ``CoUninitialize``: that
@@ -189,7 +189,7 @@ def _instancier_bureau():
         return None, False
 
 
-def _appel_com(ptr, index: int, proto, *args):
+def _com_call(ptr, index: int, proto, *args):
     """Call the method at vtable ``index`` for the interface pointed by ``ptr``."""
     import ctypes
     vtable = ctypes.cast(
@@ -200,13 +200,13 @@ def _appel_com(ptr, index: int, proto, *args):
     return fonction(ptr, *args)
 
 
-def _liberer_bureau(ptr, uninit: bool) -> None:
+def _release_desktop(ptr, uninit: bool) -> None:
     """``Release`` a COM interface and possibly call ``CoUninitialize``."""
     import ctypes
     if isinstance(ptr, ctypes.c_void_p) and ptr.value:
         try:
             proto = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)
-            _appel_com(ptr, _VT_RELEASE, proto)
+            _com_call(ptr, _VT_RELEASE, proto)
         except (OSError, AttributeError, TypeError):
             pass
     if uninit:
@@ -216,7 +216,7 @@ def _liberer_bureau(ptr, uninit: bool) -> None:
             pass
 
 
-def _creer_tableau_images(chemin: Path):
+def _build_images_array(chemin: Path):
     """Build an ``IShellItemArray`` containing the folder's images for Windows.
 
     Returns a ``c_void_p`` on the interface, or ``None`` if nothing could
@@ -266,7 +266,7 @@ def _creer_tableau_images(chemin: Path):
     return tableau
 
 
-def definir_dossier_diaporama(chemin: Path) -> bool:
+def set_slideshow_dir(chemin: Path) -> bool:
     """Configure the Windows slideshow to use ``chemin`` as its source.
 
     Calls ``IDesktopWallpaper::SetSlideshow`` with an ``IShellItemArray``
@@ -284,26 +284,26 @@ def definir_dossier_diaporama(chemin: Path) -> bool:
     """
     if sys.platform != "win32" or not chemin.is_dir():
         return False
-    bureau, uninit = _instancier_bureau()
+    bureau, uninit = _instantiate_desktop()
     if bureau is None:
         return False
     tableau = None
     try:
-        tableau = _creer_tableau_images(chemin)
+        tableau = _build_images_array(chemin)
         if tableau is None:
             return False
         import ctypes
         proto = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p)
-        return _appel_com(bureau, _VT_SET_SLIDESHOW, proto, tableau) == 0
+        return _com_call(bureau, _VT_SET_SLIDESHOW, proto, tableau) == 0
     except (OSError, AttributeError, TypeError):
         return False
     finally:
         if tableau is not None:
-            _liberer_bureau(tableau, False)
-        _liberer_bureau(bureau, uninit)
+            _release_desktop(tableau, False)
+        _release_desktop(bureau, uninit)
 
 
-def fond_ecran_actuel() -> Path | None:
+def current_wallpaper() -> Path | None:
     """Return the path of the image currently displayed as wallpaper.
 
     Goes through ``IDesktopWallpaper::GetWallpaper``. Under a slideshow,
@@ -315,7 +315,7 @@ def fond_ecran_actuel() -> Path | None:
     Returns:
         The image path, or ``None`` off Windows or if the COM call fails.
     """
-    ptr, uninit = _instancier_bureau()
+    ptr, uninit = _instantiate_desktop()
     if ptr is None:
         return None
     try:
@@ -329,8 +329,8 @@ def fond_ecran_actuel() -> Path | None:
         proto_count = ctypes.WINFUNCTYPE(
             ctypes.c_long, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint))
         count = ctypes.c_uint()
-        hr = _appel_com(ptr, _VT_GETMONITORDEVICEPATHCOUNT,
-                        proto_count, ctypes.byref(count))
+        hr = _com_call(ptr, _VT_GETMONITORDEVICEPATHCOUNT,
+                       proto_count, ctypes.byref(count))
         monitor_ids = [None]
         if hr == 0 and count.value:
             proto_monitor = ctypes.WINFUNCTYPE(
@@ -339,16 +339,16 @@ def fond_ecran_actuel() -> Path | None:
             monitor_ids = []
             for index in range(count.value):
                 monitor = ctypes.c_void_p()
-                if _appel_com(ptr, _VT_GETMONITORDEVICEPATHAT,
-                              proto_monitor, index, ctypes.byref(monitor)) == 0:
+                if _com_call(ptr, _VT_GETMONITORDEVICEPATHAT,
+                             proto_monitor, index, ctypes.byref(monitor)) == 0:
                     if monitor.value:
                         monitor_ids.append(ctypes.wstring_at(monitor.value))
                         ctypes.windll.ole32.CoTaskMemFree(monitor)
 
         for monitor_id in monitor_ids:
             out = ctypes.c_void_p()
-            hr = _appel_com(ptr, _VT_GETWALLPAPER, proto, monitor_id,
-                            ctypes.byref(out))
+            hr = _com_call(ptr, _VT_GETWALLPAPER, proto, monitor_id,
+                           ctypes.byref(out))
             if hr == 0 and out.value:
                 chemin = ctypes.wstring_at(out.value)
                 ctypes.windll.ole32.CoTaskMemFree(out)
@@ -358,16 +358,16 @@ def fond_ecran_actuel() -> Path | None:
     except (OSError, AttributeError):
         return None
     finally:
-        _liberer_bureau(ptr, uninit)
+        _release_desktop(ptr, uninit)
 
 
-def avancer_diaporama() -> None:
+def advance_slideshow() -> None:
     """Advance to the next image of the Windows slideshow.
 
     Silent when the slideshow is not configured, when Windows refuses the
     COM call, or off Windows.
     """
-    ptr, uninit = _instancier_bureau()
+    ptr, uninit = _instantiate_desktop()
     if ptr is None:
         return
     try:
@@ -378,8 +378,8 @@ def avancer_diaporama() -> None:
             ctypes.c_wchar_p,      # monitorID
             ctypes.c_int,          # direction
         )
-        _appel_com(ptr, _VT_ADVANCESLIDESHOW, proto, None, _DSD_FORWARD)
+        _com_call(ptr, _VT_ADVANCESLIDESHOW, proto, None, _DSD_FORWARD)
     except (OSError, AttributeError):
         pass
     finally:
-        _liberer_bureau(ptr, uninit)
+        _release_desktop(ptr, uninit)

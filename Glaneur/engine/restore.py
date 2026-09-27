@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from ._locks import _MANIFESTE_LOCK
-from .read_manifest import lire_manifeste
-from .write_manifest import ecrire_manifeste
+from ._locks import _MANIFEST_LOCK
+from .read_manifest import read_manifest
+from .write_manifest import write_manifest
 
 
-def restaurer(dossier: Path, ids: Iterable) -> int:
+def restore(dossier: Path, ids: Iterable) -> int:
     """Clear the delete mark so these images re-enter the queue.
 
     The ``restaure`` mark stays in place until the next successful
@@ -24,8 +24,8 @@ def restaurer(dossier: Path, ids: Iterable) -> int:
     Returns:
         The number of entries actually restored.
     """
-    with _MANIFESTE_LOCK:
-        manifeste = lire_manifeste(dossier)
+    with _MANIFEST_LOCK:
+        manifeste = read_manifest(dossier)
         retablies = 0
         for ident in ids:
             etat = manifeste.get(str(ident))
@@ -35,5 +35,5 @@ def restaurer(dossier: Path, ids: Iterable) -> int:
                 etat["restaure"] = True
                 retablies += 1
         if retablies:
-            ecrire_manifeste(dossier, manifeste)
+            write_manifest(dossier, manifeste)
     return retablies

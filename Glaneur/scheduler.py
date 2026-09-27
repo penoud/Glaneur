@@ -16,16 +16,16 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .engine.result import Resultat
+    from .engine.result import RunResult
 
 # Exponential backoff applied when the server did not provide a
 # ``Retry-After``: level 0 -> 1 h, 1 -> 2 h, 2 -> 4 h. The level is
 # incremented on each successive defer and capped at 2; it is reset to
-# zero by :meth:`Planificateur.marquer_execution`.
+# zero by :meth:`Scheduler.mark_run`.
 BACKOFFS_S: tuple[int, ...] = (3600, 7200, 14400)
 
 
-class Planificateur:
+class Scheduler:
     """Compute and display the next automatic-update deadline.
 
     The object is passive: it does not start a timer, it answers the
@@ -38,34 +38,34 @@ class Planificateur:
 
         Args:
             config: Configuration object from which
-                ``Config.derniere_execution`` and
-                ``Config.intervalle_heures`` are read, and on which
-                ``Config.sauver`` is called by :meth:`marquer_execution`.
+                ``Config.last_run`` and
+                ``Config.interval_hours`` are read, and on which
+                ``Config.save`` is called by :meth:`mark_run`.
         """
         self.config = config
 
     # -- state --------------------------------------------------------------- #
 
-    def derniere(self) -> datetime | None:
+    def last_run(self) -> datetime | None:
         """Timestamp of the last run, deserialised from the configuration.
 
         Returns:
-            The datetime read from ``Config.derniere_execution``, or
+            The datetime read from ``Config.last_run``, or
             ``None`` if the field is empty or malformed.
         """
         try:
-            return datetime.fromisoformat(self.config.derniere_execution)
+            return datetime.fromisoformat(self.config.last_run)
         except (ValueError, TypeError):
             return None
 
-    def _retenter_apres(self) -> datetime | None:
+    def _retry_after(self) -> datetime | None:
         """Resume date after a defer, or ``None`` when missing/malformed.
 
-        Sole parsing point for ``config.retenter_apres`` — at the slightest
+        Sole parsing point for ``config.retry_after`` — at the slightest
         doubt (empty string, broken format), the defer is ignored rather
         than raising.
         """
-        brut = getattr(self.config, "retenter_apres", "") or ""
+        brut = getattr(self.config, "retry_after", "") or ""
         if not brut:
             return None
         try:
@@ -73,96 +73,96 @@ class Planificateur:
         except (ValueError, TypeError):
             return None
 
-    def _nominale(self) -> datetime | None:
+    def _nominal(self) -> datetime | None:
         """Date of the next deadline without considering any defer.
 
         Returns:
             The raw date, or ``None`` in manual mode.
         """
-        if not self.config.intervalle_heures:
+        if not self.config.interval_hours:
             return None
-        derniere = self.derniere()
+        derniere = self.last_run()
         if derniere is None:
             return datetime.now()       # never run: as soon as possible
-        return derniere + timedelta(hours=self.config.intervalle_heures)
+        return derniere + timedelta(hours=self.config.interval_hours)
 
-    def prochaine(self) -> datetime | None:
+    def next_run(self) -> datetime | None:
         """Compute the date of the next automatic update.
 
         If no run has ever been recorded, the "next" is right now: the
         first launch fires immediately.
 
-        An active defer (``config.retenter_apres`` in the future) pushes
+        An active defer (``config.retry_after`` in the future) pushes
         the nominal deadline out to that date.
 
         Returns:
             The scheduled date, or ``None`` in manual mode
-            (``Config.intervalle_heures`` = 0).
+            (``Config.interval_hours`` = 0).
         """
-        nominale = self._nominale()
+        nominale = self._nominal()
         if nominale is None:
             return None
-        report = self._retenter_apres()
+        report = self._retry_after()
         if report is not None and report > nominale:
             return report
         return nominale
 
-    def echeance_atteinte(self) -> bool:
+    def is_due(self) -> bool:
         """Report whether an automatic run should start right now.
 
         Returns:
-            ``True`` if :meth:`prochaine` has passed, ``False`` otherwise
+            ``True`` if :meth:`next_run` has passed, ``False`` otherwise
             (manual mode included).
         """
-        prochaine = self.prochaine()
+        prochaine = self.next_run()
         return prochaine is not None and datetime.now() >= prochaine
 
-    def report_actif(self) -> bool:
+    def defer_active(self) -> bool:
         """True when a valid ``retenter_apres`` pushes the nominal deadline out.
 
         Exposed for the UI-side label helper so it can pick the "deferred"
         wording without touching private methods.
         """
-        nominale = self._nominale()
-        report = self._retenter_apres()
+        nominale = self._nominal()
+        report = self._retry_after()
         return (report is not None
                 and nominale is not None
                 and report > nominale)
 
-    def marquer_execution(self) -> None:
+    def mark_run(self) -> None:
         """Record the current instant as the last run and persist the config.
 
         Called by the engine at the end of a successful run. Writes to
-        ``Config.derniere_execution`` in ISO 8601 with second precision.
+        ``Config.last_run`` in ISO 8601 with second precision.
         Also clears any ongoing defer (``retenter_apres`` and
         ``backoff_niveau``): a successful run closes a backoff.
         """
-        self.config.derniere_execution = datetime.now().isoformat(timespec="seconds")
-        self.config.retenter_apres = ""
-        self.config.backoff_niveau = 0
-        self.config.sauver()
+        self.config.last_run = datetime.now().isoformat(timespec="seconds")
+        self.config.retry_after = ""
+        self.config.backoff_level = 0
+        self.config.save()
 
-    def differer(self, res: Resultat) -> None:
+    def defer(self, res: RunResult) -> None:
         """Defer the next run after a network circuit-breaker trips.
 
-        Uses ``res.retenter_apres`` (aware UTC, produced by the engine via
-        ``_declencher_report``) when the server provided a
+        Uses ``res.retry_after`` (aware UTC, produced by the engine via
+        ``_trigger_defer``) when the server provided a
         ``Retry-After``. The server hint wins and the backoff level does
         not increase. Without a server hint, apply the local exponential
         backoff (``BACKOFFS_S`` — 1 h -> 2 h -> 4 h), then increment the
         level (capped at 2).
 
-        ``config.retenter_apres`` is always written in naive local ISO
-        8601 to remain comparable with ``Config.derniere_execution``.
+        ``config.retry_after`` is always written in naive local ISO
+        8601 to remain comparable with ``Config.last_run``.
 
         Args:
-            res: :class:`Glaneur.engine.result.Resultat` from a run
-                that finished with ``res.reporte = True``.
+            res: :class:`Glaneur.engine.result.RunResult` from a run
+                that finished with ``res.deferred = True``.
         """
         cible: datetime | None = None
-        if res.retenter_apres:
+        if res.retry_after:
             try:
-                brut = datetime.fromisoformat(res.retenter_apres)
+                brut = datetime.fromisoformat(res.retry_after)
             except (ValueError, TypeError):
                 brut = None
             if brut is not None:
@@ -170,8 +170,8 @@ class Planificateur:
                     brut = brut.astimezone().replace(tzinfo=None)
                 cible = brut
         if cible is None:
-            niveau = max(0, min(int(self.config.backoff_niveau), 2))
+            niveau = max(0, min(int(self.config.backoff_level), 2))
             cible = datetime.now() + timedelta(seconds=BACKOFFS_S[niveau])
-            self.config.backoff_niveau = min(niveau + 1, 2)
-        self.config.retenter_apres = cible.isoformat(timespec="seconds")
-        self.config.sauver()
+            self.config.backoff_level = min(niveau + 1, 2)
+        self.config.retry_after = cible.isoformat(timespec="seconds")
+        self.config.save()

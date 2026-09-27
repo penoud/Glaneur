@@ -24,7 +24,7 @@ PER_PAGE = 100
 # Fallback order when the requested format is missing: from closest to "Large"
 # down to the lightest. `Original` is not in the automatic fallback list:
 # accidentally pulling down a one-GB TIFF is not a pleasant surprise.
-REPLIS = ("Large", "Small")
+FALLBACKS = ("Large", "Small")
 
 # Some Djangoplicity installations return texts in the form
 # `"b'…'"` (Python bytes repr). We unwrap them before turning them into
@@ -32,7 +32,7 @@ REPLIS = ("Large", "Small")
 _BYTES_REPR = re.compile(r"^b'(.*)'$|^b\"(.*)\"$")
 
 
-def _sain(texte) -> str:
+def _sanitized(texte) -> str:
     """Unwrap a possible bytes-repr and return a string."""
     if texte is None:
         return ""
@@ -56,7 +56,7 @@ class Djangoplicity(Source):
     online — see the historical note in
     :file:`docs/design/evolution-multi-sources.md`).
 
-    The adapter offers an image format via ``reglages["format_image"]``
+    The adapter offers an image format via ``settings["format_image"]``
     (default ``Large``) and falls back to ``Small`` if the requested
     format is missing. ``Original`` is never picked automatically to
     avoid pulling down surprise TIFFs of several hundred MB.
@@ -67,27 +67,27 @@ class Djangoplicity(Source):
     # No "galerie": Djangoplicity does not expose a coherent album online.
     # Sorting by `Subject.Category` (§9 Q5) is deliberately deferred.
     #: Set of supported sort modes (no ``galerie``).
-    classements = frozenset({"date", "plat"})
+    sort_modes = frozenset({"date", "plat"})
 
-    def __init__(self, base, transport, reglages, journal=None, progression=None):
+    def __init__(self, base, transport, settings, journal=None, progression=None):
         """Instantiate the adapter and compute the ``d2d`` endpoint.
 
         The entry point is ``<base>/images/d2d/``. On ``eso.org`` the base
         often already includes ``/public``, so we only append
         ``/images/d2d/``. The effective image format is read from
-        ``reglages["format_image"]`` (default: ``Large``).
+        ``settings["format_image"]`` (default: ``Large``).
 
         Arguments identical to :meth:`Glaneur.sources.base.Source.__init__`.
         """
-        super().__init__(base, transport, reglages, journal, progression)
+        super().__init__(base, transport, settings, journal, progression)
         # Feed entry point: `<base>/images/d2d/`. On eso.org the base
         # often already includes `/public`, so we only add `/images/d2d/`.
         self.endpoint = f"{self.base}/images/d2d/"
-        self.format_image = reglages.get("format_image") or "Large"
+        self.format_image = settings.get("format_image") or "Large"
 
     # -- utilities -------------------------------------------------------- #
 
-    def convertir_depuis(self, iso: str | None) -> str | None:
+    def convert_from(self, iso: str | None) -> str | None:
         """Convert ``YYYY-MM-DDThh:mm:ss`` into ``YYYYMMDDhhmmss``.
 
         Djangoplicity's ``after`` field is **inclusive** (``>=``): the
@@ -108,32 +108,32 @@ class Djangoplicity(Source):
         s = iso.replace("-", "").replace(":", "").replace("T", "").replace(" ", "")
         return s[:14].ljust(14, "0")
 
-    def _choisir_ressource(self, ressources: list[dict]) -> tuple[dict | None, str]:
+    def _select_resource(self, ressources: list[dict]) -> tuple[dict | None, str]:
         """Return ``(resource, effective_format)``. Fall back to Small if the
         requested format is missing; ``(None, "")`` if no format is available."""
         par_type = {r.get("ResourceType"): r for r in ressources or []}
-        for fmt in (self.format_image, *REPLIS):
+        for fmt in (self.format_image, *FALLBACKS):
             if fmt in par_type:
                 return par_type[fmt], fmt
         return None, ""
 
     def _to_element(self, entree: dict) -> Element:
-        ident_brut = _sain(entree.get("ID") or "")
+        ident_brut = _sanitized(entree.get("ID") or "")
         assets = entree.get("Assets") or []
         premier = (assets[0] if assets else {}) or {}
         ressources = premier.get("Resources") or []
-        ressource, format_effectif = self._choisir_ressource(ressources)
+        ressource, format_effectif = self._select_resource(ressources)
 
-        publication = _sain(entree.get("PublicationDate") or "")
+        publication = _sanitized(entree.get("PublicationDate") or "")
         # Typical `PublicationDate`: "2026-09-21T13:00:00"; we extract
         # "YYYY-MM" from it for the by-date sort.
         mois = publication[:7] if len(publication) >= 7 else None
 
         extra: dict = {}
         if entree.get("Credit"):
-            extra["credit"] = _sain(entree.get("Credit"))
+            extra["credit"] = _sanitized(entree.get("Credit"))
         if entree.get("Rights"):
-            extra["rights"] = _sain(entree.get("Rights"))
+            extra["rights"] = _sanitized(entree.get("Rights"))
 
         if ressource is None:
             # No usable resource: return an Element without URL,
@@ -150,7 +150,7 @@ class Djangoplicity(Source):
                 extra=extra,
             )
 
-        url = _sain(ressource.get("URL") or "")
+        url = _sanitized(ressource.get("URL") or "")
         nom_fichier = urlparse(url).path.rsplit("/", 1)[-1] if url else ""
 
         dims = ressource.get("Dimensions") or []
@@ -167,7 +167,7 @@ class Djangoplicity(Source):
             taille = None
 
         if ressource.get("Checksum"):
-            extra["checksum"] = _sain(ressource.get("Checksum"))
+            extra["checksum"] = _sanitized(ressource.get("Checksum"))
 
         return Element(
             ident=f"{ident_brut}:{format_effectif}",
@@ -183,7 +183,7 @@ class Djangoplicity(Source):
 
     # -- Inventory -------------------------------------------------------- #
 
-    def inventaire(
+    def inventory(
         self, depuis: str | None, jusqua: str | None,
     ) -> Iterator[Element]:
         """Walk the ``d2d`` feed by following the ``Next`` URLs returned.
@@ -195,7 +195,7 @@ class Djangoplicity(Source):
 
         Args:
             depuis: Lower-bound date in ``YYYYMMDDhhmmss`` format
-                (converted by :meth:`convertir_depuis`), inclusive.
+                (converted by :meth:`convert_from`), inclusive.
             jusqua: Upper-bound date in the same format, exclusive.
 
         Yields:
@@ -223,7 +223,7 @@ class Djangoplicity(Source):
 
             entrees = data.get("Collections") or []
             for entree in entrees:
-                ident = _sain(entree.get("ID") or "")
+                ident = _sanitized(entree.get("ID") or "")
                 if not ident or ident in vus:
                     continue
                 vus.add(ident)
@@ -234,6 +234,6 @@ class Djangoplicity(Source):
             if not suivante:
                 break
             url = suivante
-            self.transport.pause()
+            self.transport.sleep()
 
         return iter(rendus)

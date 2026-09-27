@@ -1,4 +1,4 @@
-"""Class :class:`Moteur` — orchestration of a run.
+"""Class :class:`Engine` — orchestration of a run.
 
 This module is the only one in the package that depends on Qt: it uses
 ``QCoreApplication.translate`` to localise messages surfaced to the
@@ -19,22 +19,22 @@ from urllib.parse import urlparse
 import requests
 from PySide6.QtCore import QCoreApplication
 
-from ..sources import SOURCES, Element, Interrompu, Transport
-from ..sources.base import Classification, classer_erreur
-from ._locks import _MANIFESTE_LOCK
-from ._merge import _fusionner_marques_ui
-from .format_bytes import format_octets
-from .manifest_path import chemin_manifeste
+from ..sources import SOURCES, Element, Interrupted, Transport
+from ..sources.base import ErrorClassification, classify_error
+from ._locks import _MANIFEST_LOCK
+from ._merge import _merge_ui_marks
+from .format_bytes import format_bytes
+from .manifest_path import manifest_path
 from .options import Options
-from .read_cache import lire_cache
-from .read_manifest import lire_manifeste
-from .result import Resultat
-from .sanitize import nettoyer
-from .write_cache import ecrire_cache
-from .write_manifest import ecrire_manifeste
+from .read_cache import read_cache
+from .read_manifest import read_manifest
+from .result import RunResult
+from .sanitize import clean
+from .write_cache import write_cache
+from .write_manifest import write_manifest
 
 
-class Moteur:
+class Engine:
     """Orchestrate a run: inventory, sort, download, manifest, cache.
 
     The engine knows nothing about the UI. It exposes two callbacks
@@ -43,7 +43,7 @@ class Moteur:
     from the CLI, or from a unit test.
 
     It also knows nothing about WordPress or Djangoplicity: the source
-    choice is driven by ``Options.type_source``, resolved through
+    choice is driven by ``Options.source_type``, resolved through
     ``Glaneur.sources.SOURCES``.
     """
 
@@ -72,32 +72,32 @@ class Moteur:
         self._journal = journal or (lambda _msg: None)
         self._progression = progression or (lambda _fait, _total, _etiquette: None)
         self.arret = arret or threading.Event()
-        self.transport = Transport(delai=options.delai, arret=self.arret)
+        self.transport = Transport(delay=options.delay, arret=self.arret)
         # The download session goes through the shared transport: a single
         # user-agent, a single pause floor.
         self.session = self.transport.session
-        classe = SOURCES.get(options.type_source) or SOURCES["wordpress"]
+        classe = SOURCES.get(options.source_type) or SOURCES["wordpress"]
         self.source = classe(
             base=self.base,
             transport=self.transport,
-            reglages={"format_image": options.format_image},
+            settings={"format_image": options.image_format},
             journal=self._journal,
             progression=self._progression,
         )
 
     # -- plumbing ----------------------------------------------------------- #
 
-    def _verifier_arret(self) -> None:
+    def _check_stop(self) -> None:
         if self.arret.is_set():
-            raise Interrompu()
+            raise Interrupted()
 
     def _pause(self, secondes: float) -> None:
         """Fragmented wait so we can react quickly to a stop request."""
-        self.transport.pause(secondes)
+        self.transport.sleep(secondes)
 
     # -- manifest ----------------------------------------------------------- #
 
-    def charger_manifeste(self) -> dict:
+    def load_manifest(self) -> dict:
         """Load the previous run's manifest, or ``{}`` in force mode.
 
         Journals a warning if the file exists but is unreadable: the run
@@ -106,35 +106,35 @@ class Moteur:
         Returns:
             The current manifest, possibly empty.
         """
-        if self.o.force or not chemin_manifeste(self.o.dossier).exists():
+        if self.o.force or not manifest_path(self.o.target_dir).exists():
             return {}
-        manifeste = lire_manifeste(self.o.dossier)
+        manifeste = read_manifest(self.o.target_dir)
         if not manifeste:
             self._journal(QCoreApplication.translate("Moteur", "Manifeste illisible, reconstruction complète."))
         return manifeste
 
-    def sauver_manifeste(self, manifeste: dict) -> None:
+    def save_manifest(self, manifeste: dict) -> None:
         """Persist ``manifeste`` on disk merging any UI actions.
 
-        Takes the ``_MANIFESTE_LOCK``, re-reads the manifest from disk
-        and applies the rule described in ``_fusionner_marques_ui``
+        Takes the ``_MANIFEST_LOCK``, re-reads the manifest from disk
+        and applies the rule described in ``_merge_ui_marks``
         before writing atomically. This read-merge-write protects the
         ``supprime`` / ``restaure`` marks the user may set via
-        :func:`Glaneur.engine.delete_image.supprimer_image` or
-        :func:`Glaneur.engine.restore.restaurer` while a run is in
+        :func:`Glaneur.engine.delete_image.delete_image` or
+        :func:`Glaneur.engine.restore.restore` while a run is in
         progress: without it, the engine's periodic or final save would
         overwrite the change the UI made in the meantime.
 
         Args:
             manifeste: In-memory state to persist.
         """
-        with _MANIFESTE_LOCK:
-            disque = lire_manifeste(self.o.dossier)
-            ecrire_manifeste(
-                self.o.dossier, _fusionner_marques_ui(manifeste, disque))
+        with _MANIFEST_LOCK:
+            disque = read_manifest(self.o.target_dir)
+            write_manifest(
+                self.o.target_dir, _merge_ui_marks(manifeste, disque))
 
     @staticmethod
-    def fichier_complet(dest: Path, etat: dict | None, taille_api: int | None) -> bool:
+    def file_complete(dest: Path, etat: dict | None, taille_api: int | None) -> bool:
         """Report whether ``dest`` is a complete download, size-wise.
 
         Args:
@@ -158,7 +158,7 @@ class Moteur:
 
     # -- API cache ---------------------------------------------------------- #
 
-    def charger_cache(self) -> dict:
+    def load_cache(self) -> dict:
         """Read the on-disk cache, wiping it when the context has changed.
 
         The cache is ignored in force mode or when its use is disabled.
@@ -166,7 +166,7 @@ class Moteur:
         source type changes (e.g. WordPress → Djangoplicity), we start
         from scratch so as not to mix two identifier spaces.
 
-        Silent migration: a cache written before ``Options.type_source``
+        Silent migration: a cache written before ``Options.source_type``
         was introduced (i.e. without that field) is read as if it
         matched the current type, so existing WordPress caches remain
         valid.
@@ -174,30 +174,30 @@ class Moteur:
         Returns:
             The cache usable for this run, possibly empty.
         """
-        if self.o.force or not self.o.utiliser_cache:
+        if self.o.force or not self.o.use_cache:
             return {}
-        cache = lire_cache(self.o.dossier)
+        cache = read_cache(self.o.target_dir)
         if cache.get("site") and cache["site"] != self.base:
             return {}
         type_cache = cache.get("type_source")
-        if type_cache and type_cache != self.o.type_source:
+        if type_cache and type_cache != self.o.source_type:
             return {}
         return cache
 
-    def sauver_cache(self, cache: dict) -> None:
+    def save_cache(self, cache: dict) -> None:
         """Persist ``cache`` on disk, except in force / cache-disabled mode.
 
         The current run's origin and source type are re-injected into
-        ``cache`` before writing so that :meth:`charger_cache` can
+        ``cache`` before writing so that :meth:`load_cache` can
         automatically invalidate the next run when either changes.
 
         Args:
             cache: State to serialise (may be partially populated).
         """
-        if self.o.force or not self.o.utiliser_cache:
+        if self.o.force or not self.o.use_cache:
             return
-        ecrire_cache(self.o.dossier, {
-            **cache, "site": self.base, "type_source": self.o.type_source,
+        write_cache(self.o.target_dir, {
+            **cache, "site": self.base, "type_source": self.o.source_type,
         })
 
     # -- paths -------------------------------------------------------------- #
@@ -214,13 +214,13 @@ class Moteur:
             A relative sub-folder name, or an empty string in ``plat``
             mode (everything at the root level).
         """
-        if self.o.classement == "plat":
+        if self.o.sort_mode == "plat":
             return ""
-        if self.o.classement == "date" or not element.groupe:
+        if self.o.sort_mode == "date" or not element.groupe:
             return element.mois or "divers"
         return titres.get(element.groupe) or f"contenu-{element.groupe}"
 
-    def chemin_libre(self, dest: Path, ident: str, pris: set[str]) -> Path:
+    def free_path(self, dest: Path, ident: str, pris: set[str]) -> Path:
         """Pick a destination path that does not overwrite another element.
 
         The same file name can appear in two different months (WordPress
@@ -240,23 +240,23 @@ class Moteur:
         Returns:
             An absolute path unique within ``pris``.
         """
-        relatif = str(dest.relative_to(self.o.dossier))
+        relatif = str(dest.relative_to(self.o.target_dir))
         if relatif in pris:
             dest = dest.with_name(f"{dest.stem}-{ident}{dest.suffix}")
-            relatif = str(dest.relative_to(self.o.dossier))
+            relatif = str(dest.relative_to(self.o.target_dir))
         pris.add(relatif)
         return dest
 
     # -- download ----------------------------------------------------------- #
 
-    def telecharger(
+    def download(
         self, url: str, dest: Path, etat: dict | None,
-    ) -> tuple[str, dict | None, Classification | None]:
+    ) -> tuple[str, dict | None, ErrorClassification | None]:
         """Download ``url`` to ``dest`` with resume and revalidation.
 
         Handles:
 
-        - ``If-None-Match`` / ``If-Modified-Since`` in ``verifier`` mode;
+        - ``If-None-Match`` / ``If-Modified-Since`` in ``verify`` mode;
         - resume through ``Range: bytes=...-`` on a partial ``.part``;
         - fallback to a full download on ``416``;
         - cooperative interruption mid-stream (preserves the ``.part``
@@ -275,13 +275,13 @@ class Moteur:
             or a localised error message, ``infos`` is the new state to
             write to the manifest (or ``None`` if nothing was fetched),
             and ``classification`` is the
-            :class:`Glaneur.sources.base.Classification` of the error
+            :class:`Glaneur.sources.base.ErrorClassification` of the error
             (``None`` on success). The engine consumes
-            ``classification`` in :meth:`executer` to decide on a
+            ``classification`` in :meth:`run` to decide on a
             circuit-breaker trip.
 
         Raises:
-            Interrompu: Propagated if ``self.arret`` is set while the
+            Interrupted: Propagated if ``self.arret`` is set while the
                 stream is being written.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -289,7 +289,7 @@ class Moteur:
         entetes: dict[str, str] = {}
         depuis = 0
 
-        if dest.exists() and self.o.verifier and etat:
+        if dest.exists() and self.o.verify and etat:
             if etat.get("etag"):
                 entetes["If-None-Match"] = etat["etag"]
             elif etat.get("modifie"):
@@ -304,7 +304,7 @@ class Moteur:
             if r.status_code == 304:
                 return "inchangé", etat, None
             if r.status_code == 404:
-                return "introuvable", None, Classification("definitif", None)
+                return "introuvable", None, ErrorClassification("definitif", None)
             if r.status_code == 416:
                 tmp.unlink(missing_ok=True)
                 depuis = 0
@@ -316,7 +316,7 @@ class Moteur:
                 for bloc in r.iter_content(65536):
                     if self.arret.is_set():
                         f.flush()
-                        raise Interrompu()   # the .part is kept for resume
+                        raise Interrupted()   # the .part is kept for resume
                     f.write(bloc)
             tmp.replace(dest)
 
@@ -326,38 +326,38 @@ class Moteur:
                 "modifie": r.headers.get("Last-Modified", ""),
                 "url": url,
             }
-            self._pause(self.o.delai)
+            self._pause(self.o.delay)
             return ("repris" if reprise else "ok"), infos, None
 
         except requests.RequestException as e:
             reponse = getattr(e, "response", None)
-            classification = classer_erreur(e, reponse)
+            classification = classify_error(e, reponse)
             return (
                 QCoreApplication.translate("Moteur", "erreur : {erreur}").format(erreur=e),
                 None,
                 classification,
             )
 
-    def _declencher_report(
+    def _trigger_defer(
         self,
-        res: Resultat,
-        classification: Classification | None,
+        res: RunResult,
+        classification: ErrorClassification | None,
         fait: int,
         total: int,
     ) -> None:
         """Mark ``res`` as deferred and journal an actionable message.
 
-        Fills ``res.retenter_apres`` (ISO 8601) only when the server
+        Fills ``res.retry_after`` (ISO 8601) only when the server
         provided a ``Retry-After`` via ``classification``. Without a
         hint, the field stays empty: it is up to the scheduler to apply
         its own backoff (lot 3).
         """
-        res.reporte = True
+        res.deferred = True
         cible: datetime | None = None
         if classification is not None and classification.retry_after:
             cible = datetime.now(timezone.utc) + timedelta(
                 seconds=classification.retry_after)
-            res.retenter_apres = cible.isoformat(timespec="seconds")
+            res.retry_after = cible.isoformat(timespec="seconds")
         if cible is not None:
             message = QCoreApplication.translate(
                 "Moteur",
@@ -374,8 +374,8 @@ class Moteur:
 
     # -- orchestration ------------------------------------------------------ #
 
-    def executer(self) -> Resultat:
-        """Run the whole thing and return the aggregated ``Resultat``.
+    def run(self) -> RunResult:
+        """Run the whole thing and return the aggregated ``RunResult``.
 
         The order is:
 
@@ -388,25 +388,25 @@ class Moteur:
            images);
         6. cache update (maximum date, titles) on a normal exit.
 
-        A cooperative interruption returns a ``Resultat`` with
-        ``Resultat.interrompu`` set. Network or disk errors are caught
+        A cooperative interruption returns a ``RunResult`` with
+        ``RunResult.interrupted`` set. Network or disk errors are caught
         and reported through ``res.message`` without propagating the
         exception.
 
         Returns:
             The numeric summary of the run.
         """
-        res = Resultat()
-        self.o.dossier.mkdir(parents=True, exist_ok=True)
-        manifeste = self.charger_manifeste()
-        cache = self.charger_cache()
+        res = RunResult()
+        self.o.target_dir.mkdir(parents=True, exist_ok=True)
+        manifeste = self.load_manifest()
+        cache = self.load_cache()
         if manifeste:
             self._journal(QCoreApplication.translate("Moteur", "{n} image(s) déjà connues.").format(n=len(manifeste)))
 
         # Cache: only used if the user has not already bounded the period —
         # in that case, their bounds override the cache's memory.
         depuis_cache = None
-        if not (self.o.depuis or self.o.jusqua):
+        if not (self.o.since or self.o.until):
             depuis_cache = cache.get("derniere_date_media")
             if depuis_cache:
                 self._journal(QCoreApplication.translate(
@@ -415,23 +415,23 @@ class Moteur:
                     date=depuis_cache[:19]))
 
         try:
-            depuis = self.source.convertir_depuis(depuis_cache) or self.o.depuis
-            elements = list(self.source.inventaire(depuis, self.o.jusqua))
+            depuis = self.source.convert_from(depuis_cache) or self.o.since
+            elements = list(self.source.inventory(depuis, self.o.until))
 
-            if self.o.largeur_min:
+            if self.o.min_width:
                 avant = len(elements)
                 elements = [
                     e for e in elements
-                    if e.largeur is None or e.largeur >= self.o.largeur_min
+                    if e.largeur is None or e.largeur >= self.o.min_width
                 ]
                 # An `Element` without a URL (source that did not find the
-                # requested resource) can no longer be downloaded: goes to `ignorees`.
+                # requested resource) can no longer be downloaded: goes to `skipped`.
                 ecartees = avant - len(elements)
                 if ecartees:
                     self._journal(QCoreApplication.translate(
                         "Moteur",
                         "{n} vignette(s) ou logo(s) écarté(s) (moins de {min} px).").format(
-                        n=ecartees, min=self.o.largeur_min))
+                        n=ecartees, min=self.o.min_width))
 
             if not elements:
                 res.message = QCoreApplication.translate("Moteur", "Aucune image ne correspond aux critères.")
@@ -444,34 +444,34 @@ class Moteur:
             a_faire: list[tuple[Element, Path | None]] = []
             for e in elements:
                 etat = manifeste.get(e.ident)
-                connu = self.o.dossier / etat["fichier"] if etat and etat.get("fichier") else None
+                connu = self.o.target_dir / etat["fichier"] if etat and etat.get("fichier") else None
 
                 if etat and etat.get("supprime"):
-                    res.ignorees += 1
+                    res.skipped += 1
                     continue
                 if e.url is None:
                     # The source did not find any usable resource.
-                    res.ignorees += 1
+                    res.skipped += 1
                     continue
                 if (connu is not None and etat.get("taille") and not connu.exists()
                         and not etat.get("restaure")):
                     # already downloaded then gone: the user erased it
                     etat["supprime"] = datetime.now().isoformat(timespec="seconds")
-                    res.supprimees += 1
+                    res.deleted += 1
                     continue
-                if connu and self.fichier_complet(connu, etat, e.taille) and not self.o.verifier:
+                if connu and self.file_complete(connu, etat, e.taille) and not self.o.verify:
                     etat.pop("restaure", None)
-                    res.deja_presentes += 1
+                    res.already_present += 1
                     continue
                 a_faire.append((e, connu))
 
             self._journal(QCoreApplication.translate("Moteur", "{connues} déjà à jour, {a_faire} à traiter.").format(
-                connues=res.deja_presentes, a_faire=len(a_faire)))
-            if res.supprimees:
+                connues=res.already_present, a_faire=len(a_faire)))
+            if res.deleted:
                 self._journal(QCoreApplication.translate(
                     "Moteur",
                     "{n} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées."
-                ).format(n=res.supprimees))
+                ).format(n=res.deleted))
             if not a_faire:
                 res.message = QCoreApplication.translate("Moteur", "Tout est déjà à jour.")
                 self._progression(1, 1, res.message)
@@ -482,31 +482,31 @@ class Moteur:
                              for k, v in (cache.get("titres_parents") or {}).items()}
             inconnus = {e.groupe for e, connu in a_faire
                         if e.groupe and connu is None}
-            if (self.o.classement == "galerie"
-                    and "galerie" in self.source.classements
+            if (self.o.sort_mode == "galerie"
+                    and "galerie" in self.source.sort_modes
                     and inconnus):
                 self._progression(0, len(a_faire), QCoreApplication.translate("Moteur", "Identification des galeries…"))
-                titres = self.source.resoudre_groupes(
+                titres = self.source.resolve_groups(
                     inconnus, connus=titres_caches)
 
             echecs_consecutifs = 0
             for i, (e, connu) in enumerate(a_faire, 1):
-                self._verifier_arret()
+                self._check_stop()
                 url = e.url
                 etat = manifeste.get(e.ident)
                 if connu is not None:
                     fichier = connu
                 else:
                     sous = self.dossier_pour(e, titres)
-                    # nettoyer("") would return "divers" and create a phantom directory
-                    dossier = (self.o.dossier / nettoyer(sous)) if sous else self.o.dossier
+                    # clean("") would return "divers" and create a phantom directory
+                    dossier = (self.o.target_dir / clean(sous)) if sous else self.o.target_dir
                     nom = e.nom_fichier or Path(urlparse(url).path).name
-                    fichier = self.chemin_libre(dossier / nom, e.ident, pris)
+                    fichier = self.free_path(dossier / nom, e.ident, pris)
 
-                statut, infos, classification = self.telecharger(url, fichier, etat)
+                statut, infos, classification = self.download(url, fichier, etat)
 
                 if infos:
-                    infos["fichier"] = str(fichier.relative_to(self.o.dossier))
+                    infos["fichier"] = str(fichier.relative_to(self.o.target_dir))
                     # Source metadata (credit, checksum...): copied into the
                     # manifest for the upcoming catalog export, without the
                     # engine interpreting them.
@@ -514,42 +514,42 @@ class Moteur:
                         infos.setdefault("extra", {}).update(e.extra)
                     manifeste[e.ident] = infos
                 if statut == "ok":
-                    res.telechargees += 1
-                    res.octets += infos["taille"]
+                    res.downloaded += 1
+                    res.bytes += infos["taille"]
                     echecs_consecutifs = 0
                 elif statut == "repris":
-                    res.reprises += 1
-                    res.octets += infos["taille"]
+                    res.resumed += 1
+                    res.bytes += infos["taille"]
                     echecs_consecutifs = 0
                 elif statut == "inchangé":
-                    res.inchangees += 1
+                    res.unchanged += 1
                     echecs_consecutifs = 0
                 else:
-                    res.echecs += 1
+                    res.failures += 1
                     # `statut` can be an internal code ("introuvable") or an
-                    # already-translated phrase (see télécharger()).
+                    # already-translated phrase (see download()).
                     affiche = QCoreApplication.translate("Moteur", "introuvable") if statut == "introuvable" else statut
                     self._journal(f"{fichier.name} : {affiche}")
 
-                    categorie = classification.categorie if classification else "transitoire"
+                    categorie = classification.category if classification else "transitoire"
                     if categorie == "coupure":
-                        self._declencher_report(res, classification, i, len(a_faire))
+                        self._trigger_defer(res, classification, i, len(a_faire))
                         break
                     if categorie == "transitoire":
                         echecs_consecutifs += 1
                         if echecs_consecutifs >= 5:
-                            self._declencher_report(res, None, i, len(a_faire))
+                            self._trigger_defer(res, None, i, len(a_faire))
                             break
                     else:  # "definitif" — a single 404/URL error stays local
                         echecs_consecutifs = 0
 
                 self._progression(i, len(a_faire), f"{fichier.parent.name}/{fichier.name}")
                 if i % 25 == 0:
-                    self.sauver_manifeste(manifeste)
+                    self.save_manifest(manifeste)
 
-            if not res.reporte:
+            if not res.deferred:
                 res.message = QCoreApplication.translate("Moteur", "{n} nouvelle(s) image(s), {taille} téléchargés.").format(
-                    n=res.telechargees, taille=format_octets(res.octets))
+                    n=res.downloaded, taille=format_bytes(res.bytes))
 
                 # Cache update: max date and newly resolved titles.
                 # Only written on normal exit, never after an interruption,
@@ -562,10 +562,10 @@ class Moteur:
                     cache.setdefault("titres_parents", {})
                     cache["titres_parents"].update(
                         {str(k): v for k, v in titres.items() if v})
-                self.sauver_cache(cache)
+                self.save_cache(cache)
 
-        except Interrompu:
-            res.interrompu = True
+        except Interrupted:
+            res.interrupted = True
             res.message = QCoreApplication.translate("Moteur", "Interrompu — la reprise repartira d'ici.")
         except RuntimeError as e:
             res.message = str(e)
@@ -574,6 +574,6 @@ class Moteur:
             res.message = QCoreApplication.translate("Moteur", "Problème d'écriture : {erreur}").format(erreur=e)
             self._journal(res.message)
         finally:
-            self.sauver_manifeste(manifeste)
+            self.save_manifest(manifeste)
 
         return res

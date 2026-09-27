@@ -1,4 +1,4 @@
-"""Localised labels for :class:`Glaneur.scheduler.Planificateur`.
+"""Localised labels for :class:`Glaneur.scheduler.Scheduler`.
 
 Sits on the UI side of boundary 1 so the scheduler itself stays Qt-free.
 lupdate only extracts ``QCoreApplication.translate("Ctx", "src")`` calls
@@ -13,10 +13,10 @@ from datetime import datetime
 
 from PySide6.QtCore import QCoreApplication
 
-from .scheduler import Planificateur
+from .scheduler import Scheduler
 
 
-def texte_prochaine(planificateur: Planificateur) -> str:
+def next_run_text(scheduler: Scheduler) -> str:
     """Ready-to-display label for the next automatic update.
 
     Format adapted to the remaining time before the deadline: days +
@@ -25,15 +25,15 @@ def texte_prochaine(planificateur: Planificateur) -> str:
     already past.
 
     Args:
-        planificateur: The scheduler whose state is rendered.
+        scheduler: The scheduler whose state is rendered.
 
     Returns:
         A translated text (context ``"Planificateur"``).
     """
-    config = planificateur.config
-    if not config.intervalle_heures:
+    config = scheduler.config
+    if not config.interval_hours:
         return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
-    prochaine = planificateur.prochaine()
+    prochaine = scheduler.next_run()
     if prochaine is None:
         return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
     reste = prochaine - datetime.now()
@@ -51,7 +51,7 @@ def texte_prochaine(planificateur: Planificateur) -> str:
     else:
         delai = QCoreApplication.translate(
             "Planificateur", "{minutes} min").format(minutes=minutes)
-    if planificateur.report_actif():
+    if scheduler.defer_active():
         return QCoreApplication.translate(
             "Planificateur", "Reprise reportée dans {delai} ({date})").format(
             delai=delai, date=f"{prochaine:%d/%m à %H:%M}")

@@ -9,90 +9,60 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-Frontière 1 sur le scheduler : rendre `Glaneur/scheduler.py` Qt-free en
-extrayant le formatage traduit `texte_prochaine()` vers un helper UI
-séparé. Retirer l'entrée correspondante de `KNOWN_QT_IMPORTS` dans
-`tests/test_boundaries.py` (le xfail strict échoue dès que la dette est
-soldée). Mettre à jour CLAUDE.md et régénérer les `.ts`.
+**Sprint « Identifiants FR → EN ». Batch 8 — housekeeping.**
 
-`Glaneur/engine/core.py` reste **hors périmètre** (chantier séparé :
-émission d'événements structurés).
+Le sprint a renommé la surface Python à travers les lots 2 à 6 + 4b.
+Deux artefacts documentaires portent encore les anciens noms et
+doivent être alignés :
+
+1. **`CLAUDE.md` « Écarts connus »** : la ligne « identifiants Python
+   restent en français » n'est plus vraie. La récrire pour lister
+   précisément ce qui reste FR après le sprint (persistance non
+   déplacée + user-facing).
+2. **`README.md`** : sections EN et FR, arbre du projet et description
+   du contrat du moteur, référencent encore `Moteur`, `Resultat`,
+   `lire_cache`, `ecrire_cache`, `nettoyer`, `restaurer`,
+   `supprimer_image`, `lister_supprimees`, `format_octets`,
+   `inventaire`, `derniere_execution`, `retenter_apres`,
+   `intervalle_heures`, `verifier_integrite`, `verifier_maj_demarrage`,
+   `lancer_au_demarrage`, `fermer_dans_barre`, `delai_requetes`,
+   `langue`. Les mettre à jour avec les noms EN adoptés.
 
 ## Directly modified
 
-- Glaneur/scheduler.py                       (retirer `QCoreApplication`,
-                                              retirer `texte_prochaine()`,
-                                              exposer `report_actif()`
-                                              publique pour que le helper
-                                              n'ait pas à toucher aux
-                                              méthodes `_` )
-- Glaneur/scheduler_labels.py                (nouveau : fonction
-                                              `texte_prochaine(planificateur)`
-                                              avec les 7 chaînes
-                                              « Planificateur » traduites ;
-                                              hors périmètre du test de
-                                              boundary, qui ne scanne que
-                                              scheduler.py, detect.py,
-                                              engine/*.py et sources/*.py)
-- app.py                                     (dans `_rafraichir_echeance` :
-                                              `texte_prochaine(self.planificateur)`
-                                              au lieu de la méthode)
-- cli.py                                     (idem : `texte_prochaine(planificateur)`)
-- tests/test_boundaries.py                   (retirer
-                                              `"Glaneur/scheduler.py"`
-                                              de `KNOWN_QT_IMPORTS`)
-- tests/test_scheduler.py                    (les tests `TestTextePresentable*`
-                                              importent et exercent la
-                                              fonction du helper, pas la
-                                              méthode)
-- CLAUDE.md                                  (retirer l'écart connu
-                                              scheduler ; l'écart moteur
-                                              reste)
-- translations/glaneur_fr.ts                 (régénérer via
-                                              `build_translations.py update`
-                                              — les libellés
-                                              « Planificateur » ne
-                                              changent pas, seul le
-                                              `filename=` bascule sur
-                                              `scheduler_labels.py`)
-- translations/glaneur_en.ts                 (idem)
+- CLAUDE.md
+- README.md
 
 ## Direct dependencies
 
-- `build_translations.py` scanne déjà `*(RACINE / "Glaneur").glob("*.py")`,
-  donc le nouveau fichier est capté sans modification du build.
-
-## Tests
-
-- `tests/test_scheduler.py` : classes `TestTextePresentable` et
-  `TestTextePresentableAvecReport` (7 tests) — mêmes assertions, appel
-  changé.
-- `tests/test_boundaries.py::test_no_qt_outside_ui[Glaneur/scheduler.py]`
-  doit passer de XFAIL à PASSED.
-- `tests/test_cli.py::test_deux_si_run_reporte` couvre déjà le chemin
-  d'appel dans le CLI.
-- Ruff ciblé sur les fichiers modifiés.
-- Pas de suite complète nécessaire : validation `local` selon la table
-  de CLAUDE.md (« Une source » → tests concernés + ruff), le scheduler
-  n'étant ni API publique ni format persistant.
+Aucune. Édition documentaire pure.
 
 ## Explicitly out of scope
 
-- `Glaneur/engine/core.py` (chantier séparé, événements structurés).
-- Réécriture de la logique de planification (dates, backoff) — inchangée.
-- Ajout de traductions anglaises (les entrées restent `unfinished`,
-  comme aujourd'hui).
-- Docs Sphinx : pas de docstrings publiques changées dans le sens des
-  signatures ; `texte_prochaine()` disparaît mais il n'est pas
-  documenté en `autoclass` séparément.
+- `WINDOWS_PFX_BASE64` dans README — CLAUDE.md le désigne « lot 9 »,
+  concerne le mécanisme de signature Windows, pas le renommage FR→EN.
+- Métadonnées AppStream `packaging/linux/` — CLAUDE.md dit « en attente
+  avec Linux ».
+- Frontière 1 (`QCoreApplication` dans `engine/core.py`) — reste
+  l'écart connu principal ; distinct du sprint.
+- Traductions `.ts` (contextes `"Moteur"`, `"Planificateur"`,
+  `"Updater"` et strings sources FR) — inchangés.
+- Éléments Python restés FR de manière volontaire : voir la liste
+  détaillée que ce lot ajoute à CLAUDE.md.
+
+## Tests
+
+Aucun. Docs pures. Vérification qu'aucun rôle Sphinx cassé n'est
+introduit (les identifiants nommés dans le README sont en prose et
+non `:class:` / `:meth:`).
 
 ## Invariants
 
-- Le scheduler n'importe plus Qt (frontière 1 satisfaite).
-- Les 7 chaînes source « Planificateur » restent **identiques
-  caractère pour caractère** — sinon les `.ts` existants perdraient
-  leurs entrées et il faudrait retraduire.
-- L'API du CLI et de l'UI reste inchangée du point de vue de
-  l'utilisateur (mêmes libellés affichés).
-- `Planificateur.report_actif()` (nouveau) renvoie exactement le même
-  booléen que le calcul inline précédent dans `texte_prochaine`.
+- Comportement inchangé.
+- Aucun code Python modifié.
+- CLAUDE.md « Écarts connus » reste une liste courte et fidèle à ce
+  qui reste divergent entre le code et l'état visé.
+
+## Validation
+
+Niveau `local`. Relecture, pas de pytest ni ruff.

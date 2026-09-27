@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-def _fusionner_marques_ui(memoire: dict, disque: dict) -> dict:
+def _merge_ui_marks(memoire: dict, disque: dict) -> dict:
     """Merge UI marks (``supprime`` / ``restaure``) from disk into the engine manifest.
 
     Rule: for an identifier present in both versions, the engine's

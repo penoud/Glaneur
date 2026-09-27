@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .manifest_path import chemin_manifeste
+from .manifest_path import manifest_path
 
 
-def lire_manifeste(dossier: Path) -> dict:
+def read_manifest(dossier: Path) -> dict:
     """Load the JSON manifest if present, an empty dict otherwise.
 
     A corrupted or unreadable manifest is treated as missing: the next run
@@ -21,7 +21,7 @@ def lire_manifeste(dossier: Path) -> dict:
         The deserialised content, or ``{}`` if the file is missing or
         unreadable.
     """
-    chemin = chemin_manifeste(dossier)
+    chemin = manifest_path(dossier)
     if not chemin.exists():
         return {}
     try:
