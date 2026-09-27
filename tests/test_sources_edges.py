@@ -4,7 +4,7 @@ The main behaviour of each source is covered by its dedicated test
 file. This file drills into the remaining uncovered branches:
 
 - `base._retry_after` on malformed HTTP-dates and naive datetimes,
-- `base.classer_erreur` fallback branches,
+- `base.classify_error` fallback branches,
 - `base.Transport.pause` and `verifier_arret` cooperative stop,
 - `base.Source.resoudre_groupes` / `convertir_depuis` default no-ops,
 - `djangoplicity._sain` on `None` and `bytes`,
@@ -27,11 +27,11 @@ import requests
 from Glaneur.sources import SOURCES, classements_pour
 from Glaneur.sources.base import (
     Classification,
-    Interrompu,
+    Interrupted,
     Source,
     Transport,
     _retry_after,
-    classer_erreur,
+    classify_error,
 )
 from Glaneur.sources.djangoplicity import Djangoplicity, _sain
 from Glaneur.sources.wordpress import _nettoyer
@@ -88,22 +88,22 @@ class TestRetryAfter:
 
 
 # --------------------------------------------------------------------------- #
-# base.classer_erreur
+# base.classify_error
 # --------------------------------------------------------------------------- #
 
 
 class TestClasserErreur:
     def test_5xx_hors_liste_est_transitoire(self):
-        c = classer_erreur(None, _reponse({}, status=500))
+        c = classify_error(None, _reponse({}, status=500))
         assert c.categorie == "transitoire"
 
     def test_connection_error_generique_est_transitoire(self):
         # ConnectionError without a "coupure" keyword: transient retry.
-        c = classer_erreur(requests.exceptions.ConnectionError("timeout doux"), None)
+        c = classify_error(requests.exceptions.ConnectionError("timeout doux"), None)
         assert c.categorie == "transitoire"
 
     def test_connection_error_avec_mot_cle_est_coupure(self):
-        c = classer_erreur(
+        c = classify_error(
             requests.exceptions.ConnectionError(
                 "NameResolutionError: unreachable",
             ), None,
@@ -111,13 +111,13 @@ class TestClasserErreur:
         assert c.categorie == "coupure"
 
     def test_url_invalide_est_definitif(self):
-        c = classer_erreur(requests.exceptions.InvalidURL("no scheme"), None)
+        c = classify_error(requests.exceptions.InvalidURL("no scheme"), None)
         assert c.categorie == "definitif"
 
     def test_ni_reponse_ni_exception_est_transitoire(self):
         # Extreme fallback: nothing to classify. Kept as transient so
         # the engine at least retries once.
-        assert classer_erreur(None, None) == Classification("transitoire", None)
+        assert classify_error(None, None) == Classification("transitoire", None)
 
 
 # --------------------------------------------------------------------------- #
@@ -130,7 +130,7 @@ class TestTransport:
         arret = threading.Event()
         t = Transport(delai=0, arret=arret)
         arret.set()
-        with pytest.raises(Interrompu):
+        with pytest.raises(Interrupted):
             t.verifier_arret()
 
     def test_pause_dort_puis_revient(self):
@@ -145,7 +145,7 @@ class TestTransport:
         arret = threading.Event()
         t = Transport(delai=0, arret=arret)
         arret.set()
-        with pytest.raises(Interrompu):
+        with pytest.raises(Interrupted):
             t.pause(1.0)
 
 

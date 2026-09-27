@@ -13,11 +13,11 @@ from pathlib import Path
 
 from Glaneur.config import Config
 from Glaneur.engine import (
-    Moteur,
+    Engine,
     Options,
-    format_octets,
-    lister_supprimees,
-    restaurer,
+    format_bytes,
+    list_deleted,
+    restore,
 )
 from Glaneur.scheduler import Planificateur
 from Glaneur.scheduler_labels import texte_prochaine
@@ -27,7 +27,7 @@ def main() -> int:
     """CLI entry point.
 
     Parses the command line, applies the arguments on top of the
-    persisted configuration, runs the :class:`Glaneur.engine.Moteur`
+    persisted configuration, runs the :class:`Glaneur.engine.Engine`
     once and prints a readable summary on stdout. A keyboard interrupt
     (``Ctrl+C``) propagates a cooperative ``arret`` to the engine before
     exiting.
@@ -65,22 +65,22 @@ def main() -> int:
 
     if args.restaurer is not None:
         dossier = Path(args.dossier).expanduser()
-        ids = args.restaurer or [e["id"] for e in lister_supprimees(dossier)]
-        print(f"{restaurer(dossier, ids)} image(s) remise(s) en file.")
+        ids = args.restaurer or [e["id"] for e in list_deleted(dossier)]
+        print(f"{restore(dossier, ids)} image(s) remise(s) en file.")
 
     options = Options(
-        dossier=Path(args.dossier).expanduser(),
+        target_dir=Path(args.dossier).expanduser(),
         site=c.site,
-        classement=args.classement,
-        largeur_min=args.largeur_min,
-        delai=args.delai,
-        verifier=args.verifier,
+        sort_mode=args.classement,
+        min_width=args.largeur_min,
+        delay=args.delai,
+        verify=args.verifier,
         force=args.force,
-        depuis=args.depuis,
-        jusqua=args.jusqua,
-        utiliser_cache=not args.pas_cache,
-        type_source=args.type_source,
-        format_image=args.format_image,
+        since=args.depuis,
+        until=args.jusqua,
+        use_cache=not args.pas_cache,
+        source_type=args.type_source,
+        image_format=args.format_image,
     )
 
     dernier = [""]
@@ -100,21 +100,21 @@ def main() -> int:
             sys.stdout.flush()
             dernier[0] = ligne
 
-    moteur = Moteur(options, journal=lambda m: print(f"\n{m}"), progression=progression)
+    moteur = Engine(options, journal=lambda m: print(f"\n{m}"), progression=progression)
     try:
-        res = moteur.executer()
+        res = moteur.run()
     except KeyboardInterrupt:
         moteur.arret.set()
         print("\nInterrompu.")
         return 130
 
     print(f"\n\n{res.message}")
-    print(f"  téléchargées : {res.telechargees}   reprises : {res.reprises}")
-    print(f"  déjà à jour  : {res.deja_presentes}   inchangées : {res.inchangees}")
-    print(f"  supprimées   : {res.supprimees}   ignorées : {res.ignorees}")
-    print(f"  échecs       : {res.echecs}   volume : {format_octets(res.octets)}")
+    print(f"  téléchargées : {res.downloaded}   reprises : {res.resumed}")
+    print(f"  déjà à jour  : {res.already_present}   inchangées : {res.unchanged}")
+    print(f"  supprimées   : {res.deleted}   ignorées : {res.skipped}")
+    print(f"  échecs       : {res.failures}   volume : {format_bytes(res.bytes)}")
 
-    if res.reporte:
+    if res.deferred:
         # Persist the defer so the next invocation (UI or CLI) honours
         # the backoff. We do NOT call `marquer_execution` — the run was
         # truncated.
@@ -122,7 +122,7 @@ def main() -> int:
         planificateur.differer(res)
         print(f"  {texte_prochaine(planificateur)}", file=sys.stderr)
         return 2
-    return 1 if res.echecs and not res.telechargees else 0
+    return 1 if res.failures and not res.downloaded else 0
 
 
 if __name__ == "__main__":

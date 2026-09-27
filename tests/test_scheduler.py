@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from Glaneur.config import Config
-from Glaneur.engine.result import Resultat
+from Glaneur.engine.result import RunResult
 from Glaneur.scheduler import Planificateur
 from Glaneur.scheduler_labels import texte_prochaine
 
@@ -132,7 +132,7 @@ class TestDifferer:
         cfg = _cfg(tmp_path, backoff_niveau=0)
         p = Planificateur(cfg)
         avant = datetime.now()
-        p.differer(Resultat(reporte=True, retenter_apres=""))
+        p.differer(RunResult(deferred=True, retry_after=""))
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert abs((parsed - (avant + timedelta(hours=1))).total_seconds()) < 60
         assert cfg.backoff_niveau == 1
@@ -142,7 +142,7 @@ class TestDifferer:
         cfg = _cfg(tmp_path, backoff_niveau=1)
         p = Planificateur(cfg)
         avant = datetime.now()
-        p.differer(Resultat(reporte=True, retenter_apres=""))
+        p.differer(RunResult(deferred=True, retry_after=""))
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert abs((parsed - (avant + timedelta(hours=2))).total_seconds()) < 60
         assert cfg.backoff_niveau == 2
@@ -152,7 +152,7 @@ class TestDifferer:
         cfg = _cfg(tmp_path, backoff_niveau=2)
         p = Planificateur(cfg)
         avant = datetime.now()
-        p.differer(Resultat(reporte=True, retenter_apres=""))
+        p.differer(RunResult(deferred=True, retry_after=""))
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert abs((parsed - (avant + timedelta(hours=4))).total_seconds()) < 60
         assert cfg.backoff_niveau == 2
@@ -162,7 +162,7 @@ class TestDifferer:
         cfg = _cfg(tmp_path, backoff_niveau=1)
         p = Planificateur(cfg)
         hint_aware = datetime(2026, 9, 27, 10, 0, 0, tzinfo=timezone.utc)
-        p.differer(Resultat(reporte=True, retenter_apres=hint_aware.isoformat()))
+        p.differer(RunResult(deferred=True, retry_after=hint_aware.isoformat()))
         expected_local = hint_aware.astimezone().replace(tzinfo=None)
         parsed = datetime.fromisoformat(cfg.retenter_apres)
         assert parsed.tzinfo is None
@@ -173,7 +173,7 @@ class TestDifferer:
         """Fields written by differer survive a fresh charger() round-trip."""
         cfg = _cfg(tmp_path, backoff_niveau=0)
         p = Planificateur(cfg)
-        p.differer(Resultat(reporte=True, retenter_apres=""))
+        p.differer(RunResult(deferred=True, retry_after=""))
 
         cfg2 = Config.charger(tmp_path / "c.json")
         assert cfg2.retenter_apres == cfg.retenter_apres

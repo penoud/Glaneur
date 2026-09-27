@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def chemin_cache(dossier: Path) -> Path:
+def cache_path(dossier: Path) -> Path:
     """Path to the cache file (``.cache.json``) inside ``dossier``.
 
     Args:

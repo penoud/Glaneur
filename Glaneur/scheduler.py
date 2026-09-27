@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .engine.result import Resultat
+    from .engine.result import RunResult
 
 # Exponential backoff applied when the server did not provide a
 # ``Retry-After``: level 0 -> 1 h, 1 -> 2 h, 2 -> 4 h. The level is
@@ -142,11 +142,11 @@ class Planificateur:
         self.config.backoff_niveau = 0
         self.config.sauver()
 
-    def differer(self, res: Resultat) -> None:
+    def differer(self, res: RunResult) -> None:
         """Defer the next run after a network circuit-breaker trips.
 
-        Uses ``res.retenter_apres`` (aware UTC, produced by the engine via
-        ``_declencher_report``) when the server provided a
+        Uses ``res.retry_after`` (aware UTC, produced by the engine via
+        ``_trigger_defer``) when the server provided a
         ``Retry-After``. The server hint wins and the backoff level does
         not increase. Without a server hint, apply the local exponential
         backoff (``BACKOFFS_S`` — 1 h -> 2 h -> 4 h), then increment the
@@ -156,13 +156,13 @@ class Planificateur:
         8601 to remain comparable with ``Config.derniere_execution``.
 
         Args:
-            res: :class:`Glaneur.engine.result.Resultat` from a run
-                that finished with ``res.reporte = True``.
+            res: :class:`Glaneur.engine.result.RunResult` from a run
+                that finished with ``res.deferred = True``.
         """
         cible: datetime | None = None
-        if res.retenter_apres:
+        if res.retry_after:
             try:
-                brut = datetime.fromisoformat(res.retenter_apres)
+                brut = datetime.fromisoformat(res.retry_after)
             except (ValueError, TypeError):
                 brut = None
             if brut is not None:

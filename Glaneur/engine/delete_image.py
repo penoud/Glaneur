@@ -6,12 +6,12 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from ._locks import _MANIFESTE_LOCK
-from .read_manifest import lire_manifeste
-from .write_manifest import ecrire_manifeste
+from ._locks import _MANIFEST_LOCK
+from .read_manifest import read_manifest
+from .write_manifest import write_manifest
 
 
-def supprimer_image(dossier: Path, fichier: Path) -> bool:
+def delete_image(dossier: Path, fichier: Path) -> bool:
     """Delete ``fichier`` from disk and set the ``supprime`` mark in the manifest.
 
     Without this mark, the next update would see the image missing and
@@ -53,8 +53,8 @@ def supprimer_image(dossier: Path, fichier: Path) -> bool:
         return False
     aiguille = os.path.normcase(relatif.replace("\\", "/"))
 
-    with _MANIFESTE_LOCK:
-        manifeste = lire_manifeste(dossier)
+    with _MANIFEST_LOCK:
+        manifeste = read_manifest(dossier)
         ident_trouve: str | None = None
         for ident, etat in manifeste.items():
             stocke = etat.get("fichier")
@@ -75,5 +75,5 @@ def supprimer_image(dossier: Path, fichier: Path) -> bool:
             entree = manifeste[ident_trouve]
             entree["supprime"] = datetime.now().isoformat(timespec="seconds")
             entree.pop("restaure", None)
-            ecrire_manifeste(dossier, manifeste)
+            write_manifest(dossier, manifeste)
     return True

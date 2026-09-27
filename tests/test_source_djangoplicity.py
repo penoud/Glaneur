@@ -11,7 +11,7 @@ from __future__ import annotations
 import threading
 from unittest.mock import patch
 
-from Glaneur.engine import Moteur, Options, lire_manifeste
+from Glaneur.engine import Engine, Options, read_manifest
 from Glaneur.sources import Transport
 from Glaneur.sources.djangoplicity import Djangoplicity
 
@@ -265,18 +265,18 @@ class TestAfterInclusif:
         # not a second copy in telechargees.
         fichier_a = tmp_path / "a.jpg"
         fichier_a.write_bytes(b"contenu-a-attendu")
-        from Glaneur.engine import ecrire_manifeste
-        ecrire_manifeste(tmp_path, {
+        from Glaneur.engine import write_manifest
+        write_manifest(tmp_path, {
             "a:Large": {"fichier": "a.jpg",
                         "taille": len(b"contenu-a-attendu")},
         })
 
         options = Options(
-            dossier=tmp_path, site="https://x.example", delai=0,
-            classement="date", type_source="djangoplicity",
-            format_image="Large",
+            target_dir=tmp_path, site="https://x.example", delay=0,
+            sort_mode="date", source_type="djangoplicity",
+            image_format="Large",
         )
-        moteur = Moteur(options)
+        moteur = Engine(options)
 
         # Build the entries as the fake server would supply them.
         entree_a = _entree("a", ressources=[
@@ -292,16 +292,16 @@ class TestAfterInclusif:
 
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
-             patch.object(moteur, "telecharger",
+             patch.object(moteur, "download",
                           return_value=("ok", {"taille": 42, "etag": "",
                                                "modifie": "", "url": "u"}, None)):
-            res = moteur.executer()
+            res = moteur.run()
 
         # `a` recognized as already present; only `b` downloaded.
-        assert res.deja_presentes == 1
-        assert res.telechargees == 1
+        assert res.already_present == 1
+        assert res.downloaded == 1
         # manifest extended, but entry `a` was not duplicated
-        m = lire_manifeste(tmp_path)
+        m = read_manifest(tmp_path)
         assert "a:Large" in m and "b:Large" in m
 
 
@@ -312,11 +312,11 @@ class TestAfterInclusif:
 class TestRessourceManquante:
     def test_element_sans_url_est_ignoree(self, tmp_path):
         options = Options(
-            dossier=tmp_path, site="https://x.example", delai=0,
-            classement="date", type_source="djangoplicity",
-            format_image="Large",
+            target_dir=tmp_path, site="https://x.example", delay=0,
+            sort_mode="date", source_type="djangoplicity",
+            image_format="Large",
         )
-        moteur = Moteur(options)
+        moteur = Engine(options)
 
         # two entries: one good, one without a usable format (only
         # Icon / Thumbnail)
@@ -330,10 +330,10 @@ class TestRessourceManquante:
 
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
-             patch.object(moteur, "telecharger",
+             patch.object(moteur, "download",
                           return_value=("ok", {"taille": 3_500_000, "etag": "",
                                                "modifie": "", "url": "u"}, None)):
-            res = moteur.executer()
+            res = moteur.run()
         # good: downloaded; bad: ignored
-        assert res.telechargees == 1
-        assert res.ignorees == 1
+        assert res.downloaded == 1
+        assert res.skipped == 1

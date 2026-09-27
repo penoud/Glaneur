@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Type
 
-from .base import Element, Interrompu, Source, Transport
+from .base import Element, Interrupted, Source, Transport
 from .djangoplicity import Djangoplicity
 from .wordpress import WordPress
 
@@ -41,7 +41,7 @@ def classements_pour(type_source: str) -> frozenset[str]:
 __all__ = [
     "SOURCES",
     "Element",
-    "Interrompu",
+    "Interrupted",
     "Source",
     "Transport",
     "classements_pour",

@@ -19,7 +19,7 @@ PER_PAGE = 100
 
 
 def _nettoyer(titre: str, defaut: str = "divers") -> str:
-    """Local copy of ``engine.nettoyer`` to avoid the import cycle."""
+    """Local copy of ``engine.clean`` to avoid the import cycle."""
     texte = html.unescape(titre or "").strip()
     texte = unicodedata.normalize("NFKD", texte).encode("ascii", "ignore").decode("ascii")
     texte = re.sub(r"[^\w\s-]", "", texte).strip()

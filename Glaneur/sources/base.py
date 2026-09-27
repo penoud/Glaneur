@@ -41,7 +41,7 @@ _STATUTS_DEFINITIFS = frozenset({400, 401, 403, 404, 405, 410})
 
 @dataclass(frozen=True)
 class Classification:
-    """Result of :func:`classer_erreur` — pure value, no I/O.
+    """Result of :func:`classify_error` — pure value, no I/O.
 
     Fields documented inline with ``#:`` comments (same reason as
     :class:`Element`: avoid Sphinx index duplication between autodoc
@@ -87,7 +87,7 @@ def _retry_after(reponse: requests.Response | None) -> float | None:
     return max(0.0, delta)
 
 
-def classer_erreur(
+def classify_error(
     exc: BaseException | None,
     reponse: requests.Response | None = None,
 ) -> Classification:
@@ -139,12 +139,12 @@ def classer_erreur(
     return Classification("transitoire", retry_after)
 
 
-class Interrompu(Exception):
+class Interrupted(Exception):
     """Raised when the user requests a cooperative stop.
 
     Carried by the transport and propagated up to the engine, which
     treats it as a normal end (see
-    :attr:`Glaneur.engine.result.Resultat.interrompu`).
+    :attr:`Glaneur.engine.result.RunResult.interrupted`).
     """
 
 
@@ -163,7 +163,7 @@ class Element:
     ident: str
     #: URL of the resource to download. ``None`` if the source did not
     #: find a resource for the requested format: the engine will count
-    #: the element in :attr:`Glaneur.engine.result.Resultat.ignorees`.
+    #: the element in :attr:`Glaneur.engine.result.RunResult.skipped`.
     url: str | None
     #: File name to give the resource on disk, without directory.
     nom_fichier: str
@@ -173,10 +173,10 @@ class Element:
     #: by-date sort.
     mois: str | None = None
     #: Width in pixels, when the source provides it — used by the
-    #: :attr:`Glaneur.engine.options.Options.largeur_min` filter.
+    #: :attr:`Glaneur.engine.options.Options.min_width` filter.
     largeur: int | None = None
     #: File size in bytes, if announced by the source (allows
-    #: :meth:`Glaneur.engine.core.Moteur.fichier_complet` to validate).
+    #: :meth:`Glaneur.engine.core.Engine.file_complete` to validate).
     taille: int | None = None
     #: Parent identifier (WordPress gallery, Djangoplicity collection)
     #: for the ``galerie`` sort mode.
@@ -208,13 +208,13 @@ class Transport:
         self.session.headers["User-Agent"] = UA
 
     def verifier_arret(self) -> None:
-        """Raise :class:`Interrompu` if ``self.arret`` was set.
+        """Raise :class:`Interrupted` if ``self.arret`` was set.
 
         Raises:
-            Interrompu: If a cooperative stop was requested.
+            Interrupted: If a cooperative stop was requested.
         """
         if self.arret.is_set():
-            raise Interrompu()
+            raise Interrupted()
 
     def pause(self, secondes: float | None = None) -> None:
         """Fragmented wait that reacts quickly to a stop request.
@@ -223,7 +223,7 @@ class Transport:
             secondes: Duration to wait. Uses ``self.delai`` when ``None``.
 
         Raises:
-            Interrompu: If a cooperative stop is requested during the
+            Interrupted: If a cooperative stop is requested during the
                 wait.
         """
         fin = time.monotonic() + (self.delai if secondes is None else secondes)
@@ -258,7 +258,7 @@ class Transport:
         Raises:
             RuntimeError: After the ``essais`` attempts are exhausted
                 without success.
-            Interrompu: If a cooperative stop is requested.
+            Interrupted: If a cooperative stop is requested.
         """
         derniere: Exception | None = None
         for tentative in range(essais):
@@ -346,7 +346,7 @@ class Source(ABC):
 
         Returns:
             A ``{key -> cleaned title}`` table, ready to be passed to
-            :meth:`Glaneur.engine.core.Moteur.dossier_pour`.
+            :meth:`Glaneur.engine.core.Engine.dossier_pour`.
         """
         return dict(connus or {})
 

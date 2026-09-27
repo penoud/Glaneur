@@ -7,7 +7,7 @@ import re
 import unicodedata
 
 
-def nettoyer(titre: str, defaut: str = "divers") -> str:
+def clean(titre: str, defaut: str = "divers") -> str:
     """Turn an HTML title into a folder name safe on every OS.
 
     Decodes HTML entities, transliterates to ASCII, replaces spaces with

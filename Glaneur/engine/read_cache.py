@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .cache_path import chemin_cache
+from .cache_path import cache_path
 
 
-def lire_cache(dossier: Path) -> dict:
+def read_cache(dossier: Path) -> dict:
     """Load the JSON cache if present, an empty dict otherwise.
 
     Like :func:`Glaneur.engine.read_manifest`, tolerates a missing or
@@ -21,7 +21,7 @@ def lire_cache(dossier: Path) -> dict:
         The deserialised content, or ``{}`` if the file is missing or
         unreadable.
     """
-    chemin = chemin_cache(dossier)
+    chemin = cache_path(dossier)
     if not chemin.exists():
         return {}
     try:

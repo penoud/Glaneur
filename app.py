@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """PySide6 interface for the WordPress image downloader.
 
-The UI contains no network logic: it builds an ``Options``, runs a
-``Moteur`` in a ``QThread`` and receives its messages through Qt
+The UI contains no network logic: it builds an ``Options``, runs an
+``Engine`` in a ``QThread`` and receives its messages through Qt
 signals — which are automatically marshalled to the main thread, so no
 widget is ever touched from the worker thread.
 
@@ -74,13 +74,13 @@ from Glaneur.config import (
     Config,
 )
 from Glaneur.engine import (
-    Moteur,
+    Engine,
     Options,
-    Resultat,
-    format_octets,
-    lister_supprimees,
-    restaurer,
-    supprimer_image,
+    RunResult,
+    delete_image,
+    format_bytes,
+    list_deleted,
+    restore,
 )
 from Glaneur.scheduler import Planificateur
 from Glaneur.scheduler_labels import texte_prochaine
@@ -158,14 +158,14 @@ class Travailleur(QThread):
         self.arret = arret
 
     def run(self) -> None:
-        """Instantiate the engine and start the run; emit ``fini(Resultat)`` on exit."""
-        moteur = Moteur(
+        """Instantiate the engine and start the run; emit ``fini(RunResult)`` on exit."""
+        moteur = Engine(
             self.options,
             journal=self.journal.emit,
             progression=lambda fait, total, etq: self.progres.emit(fait, total, etq),
             arret=self.arret,
         )
-        self.fini.emit(moteur.executer())
+        self.fini.emit(moteur.run())
 
 
 # --------------------------------------------------------------------------- #
@@ -1047,7 +1047,7 @@ class Fenetre(QMainWindow):
 
     def _gerer_supprimees(self) -> None:
         dossier = Path(self.cfg.dossier).expanduser()
-        entrees = lister_supprimees(dossier)
+        entrees = list_deleted(dossier)
         if not entrees:
             QMessageBox.information(
                 self, self.tr("Images supprimées"),
@@ -1056,7 +1056,7 @@ class Fenetre(QMainWindow):
         dialogue = DialogueSupprimees(self, entrees)
         if dialogue.exec() != QDialog.Accepted or not dialogue.choix():
             return
-        n = restaurer(dossier, dialogue.choix())
+        n = restore(dossier, dialogue.choix())
         self._ecrire(self.tr("{n} image(s) seront retéléchargées à la prochaine mise à jour.").format(n=n))
 
     def _supprimer_fond(self) -> None:
@@ -1090,7 +1090,7 @@ class Fenetre(QMainWindow):
                 fond=fond))
         if reponse != QMessageBox.Yes:
             return
-        if supprimer_image(dossier, fond):
+        if delete_image(dossier, fond):
             avancer_diaporama()
             self._ecrire(self.tr("Fond d'écran supprimé : {fond}").format(fond=fond))
         else:
@@ -1122,14 +1122,14 @@ class Fenetre(QMainWindow):
             horodatage=f"{datetime.now():%d/%m/%Y %H:%M}"))
 
         options = Options(
-            dossier=dossier,
+            target_dir=dossier,
             site=self.cfg.site,
-            classement=self.cfg.classement,
-            largeur_min=self.cfg.largeur_min,
-            delai=self.cfg.delai_requetes,
-            verifier=self.cfg.verifier_integrite,
-            type_source=self.cfg.type_source,
-            format_image=self.cfg.format_image,
+            sort_mode=self.cfg.classement,
+            min_width=self.cfg.largeur_min,
+            delay=self.cfg.delai_requetes,
+            verify=self.cfg.verifier_integrite,
+            source_type=self.cfg.type_source,
+            image_format=self.cfg.format_image,
         )
         self.travailleur = Travailleur(options, self.arret)
         self.travailleur.journal.connect(self._ecrire)
@@ -1164,43 +1164,43 @@ class Fenetre(QMainWindow):
         self.label_statut.setText(self.tr("{fait}/{total} — {etiquette}").format(
             fait=fait, total=total, etiquette=etiquette))
 
-    def _terminer(self, res: Resultat) -> None:
+    def _terminer(self, res: RunResult) -> None:
         self.bouton_lancer.setEnabled(True)
         self.action_maj.setEnabled(True)
         self.action_maj_tray.setEnabled(True)
         self.bouton_arreter.setEnabled(False)
         self.action_arreter_menu.setEnabled(False)
         self.barre.setRange(0, 100)
-        self.barre.setValue(0 if res.interrompu else 100)
+        self.barre.setValue(0 if res.interrupted else 100)
 
         self.label_statut.setText(res.message)
         self._ecrire(res.message)
-        if res.deja_presentes:
+        if res.already_present:
             self._ecrire(self.tr("{n} image(s) déjà présentes, non retéléchargées.").format(
-                n=res.deja_presentes))
-        if res.ignorees:
+                n=res.already_present))
+        if res.skipped:
             self._ecrire(self.tr(
                 "{n} image(s) que vous aviez supprimée(s), ignorée(s) — "
-                "bouton « Images supprimées… » pour en recharger.").format(n=res.ignorees))
-        if res.echecs and not res.reporte:
-            # Sur report, `res.message` explique déjà la coupure et donne
-            # l'échéance — pas de « seront retentés » redondant/trompeur.
+                "bouton « Images supprimées… » pour en recharger.").format(n=res.skipped))
+        if res.failures and not res.deferred:
+            # On defer, `res.message` already explains the cut and gives
+            # the deadline — no redundant/misleading "will be retried".
             self._ecrire(self.tr("{n} échec(s) — seront retentés à la prochaine mise à jour.").format(
-                n=res.echecs))
+                n=res.failures))
 
-        if res.reporte:
+        if res.deferred:
             self.planificateur.differer(res)
-        elif not res.interrompu:
+        elif not res.interrupted:
             self.planificateur.marquer_execution()
         self._rafraichir_echeance()
 
         # info bubble only if the user was not watching
         if (self.tray and self.auto_en_cours and self.cfg.notifications
-                and res.telechargees and not self.isVisible()):
+                and res.downloaded and not self.isVisible()):
             self.tray.showMessage(
                 "Glaneur",
                 self.tr("{n} nouvelle(s) image(s) — {taille}").format(
-                    n=res.telechargees, taille=format_octets(res.octets)),
+                    n=res.downloaded, taille=format_bytes(res.bytes)),
                 icone_application(), 5000)
         self.auto_en_cours = False
 
