@@ -1,479 +1,394 @@
-# Évolution : support de plusieurs types de sites
+# Multi-source evolution — stage 2: profiles, filters, resizing
 
-> **Note d'archivage (2026-09-26).** L'adaptateur Djangoplicity décrit ici a
-> été livré : `Glaneur/sources/djangoplicity.py` existe, le contrat
-> `sources/base.py` est en place et le moteur consomme des `Element`
-> normalisés. Ce document reste conservé comme trace de l'analyse et des
-> décisions initiales ; il n'est plus la référence à jour. Les invariants et
-> frontières applicables sont ceux de `CLAUDE.md` et du code.
-
-> Étude d'architecture. Objectif : pouvoir ajouter d'autres types de sites que
-> WordPress (premier cas : le site public de l'ESO) sans casser le moteur actuel,
-> ses invariants ni ses frontières. Rien n'est implémenté ici.
+> **Status (2026-09-28, revision 2).** Replaces the 2026-09-24 version (initial
+> Djangoplicity study, kept in the git history). Incorporates the decisions of
+> 2026-09-28 (§6) and follows `docs/feuille-de-route.md`: steps are now filed
+> under its lots. Nothing is implemented here.
 
 ---
 
-## 0. En bref
+## 0. Summary
 
-- Le moteur actuel mélange deux choses : une **mécanique de synchronisation
-  générique** (manifeste, reprise `.part`, revalidation 304, suppressions,
-  sauvegardes atomiques) et une **connaissance de WordPress** (URL de l'API,
-  pagination `X-WP-TotalPages`, `media_details`, résolution des parents,
-  arborescence `/uploads/AAAA/MM/`).
-- Proposition : garder la première dans `engine.py` et déplacer la seconde dans
-  un **adaptateur de source**. Chaque type de site fournit un adaptateur qui
-  produit une liste d'éléments normalisés ; le moteur ne connaît plus que ces
-  éléments.
-- L'ESO tourne sur **Djangoplicity** (CMS Django open source, aussi utilisé par
-  ESA/Hubble et ESA/Webb). Djangoplicity expose un flux JSON paginé
-  (`images/d2d/`) qui ressemble beaucoup à ce que l'API WordPress nous donne :
-  un adaptateur propre est réaliste **sans parsing HTML**. Le flux est actif
-  chez l'ESO : 15 741 images annoncées (§3.1, mesures sur la première page).
-- Migration en 4 étapes, dont la première ne change aucun comportement.
-
----
-
-## 1. Ce qui a été vérifié, et ce qui ne l'a pas été
-
-**Vérifié :**
-
-| Fait | Source |
-|---|---|
-| Djangoplicity définit une vue `images/d2d/` (Django REST Framework) : pagination `page`, taille `count` (100 par défaut), tri `order_by` ∈ `priority`, `-priority`, `release_date`, `-release_date` (défaut `-release_date`), filtres `after` / `before` au format `AAAAMMJJhhmmss`, filtre `after` **inclusif** (`>=`) | Code source `djangoplicity/media/d2d/views.py`, `utils/d2d.py` (dépôt GitHub, commit du 22/09/2026) |
-| La réponse a la forme `{Count, Next, Previous, Collections: [...]}` ; `Previous`/`Next` absents quand ils valent `None` | idem (`D2dDict` supprime les clés nulles) |
-| Le flux peut être désactivé par l'exploitant (`ENABLE_D2D_FEEDS`) | `media/urls_images.py` |
-| Le flux fonctionne en réel sur `esahubble.org/images/d2d/` : `Count` = 5518, `Next` en URL absolue, chaque entrée a `ID` (chaîne), `PublicationDate`, `Credit`, `Rights`, `Assets[0].Resources[]` | Requête du 24/09/2026 |
-| Chaque ressource donne `ResourceType` (`Original`, `Large`, `Small`, `Thumbnail`, `Icon`), `URL`, `FileSize`, `Dimensions`, parfois `Checksum` (64 caractères hexadécimaux) | idem, et `eso.org/public/images/archive/top100/json/` |
-| Côté ESO, les originaux sont des TIFF, parfois énormes : 1,56 Go pour `eso1740a`, 1,22 Go pour `eso1625a` ; même le JPEG `Large` atteint 155 Mo | `eso.org/public/images/archive/top100/json/` |
-| Licence des images ESO : CC BY 4.0, avec un champ `Credit` par image | idem |
-| Un bug connu de certaines installations Djangoplicity renvoie des textes sous la forme `"b'...'"` (repr Python de bytes) dans l'endpoint par image `…/api/json/` | Issue djangoplicity #147, et correctif dans `toasty` (WorldWideTelescope) |
-
-**Non vérifié** (le bac à sable n'a pas accès à `eso.org` en direct) :
-
-- que `cdn.eso.org` réponde `304` à une requête conditionnelle (`If-None-Match`) ;
-- le comportement de `www.eso.org/public/archives/…`, qui sert 2 % des fichiers ;
-- le comportement des gros `Original` (plusieurs centaines de Mo), dont l'`ETag`
-  pourrait avoir une autre forme ;
-- l'algorithme du champ `Checksum` (la longueur suggère SHA-256, sans preuve) ;
-- le nombre total d'images de l'ESO.
-
-À noter : l'endpoint `archive/top100/json/` de l'ESO n'a **pas** la même forme
-que `d2d/` (ressources à plat, champ `Date`, alors que `d2d` a `Assets` et
-`PublicationDate`). L'adaptateur doit viser un seul format, `d2d`.
+- The `Source` / `Transport` / `Element` contract and both adapters are
+  shipped. What is still single-site: **configuration, UI and scheduler** —
+  lot 5 of the roadmap.
+- The UI is prepared **before** the configuration format changes (new sub-lot
+  5.0), but **after** lot 2, which rewrites every `tr()` string and introduces
+  the structured events the profile list needs.
+- **Global interval**, profiles **started at staggered times** so the PC is not
+  loaded in one block. **A single profile** feeds the Windows slideshow.
+- **Filters**: an image is kept if it meets the filter; if the source does not
+  provide the information, it is read from the file header. Changing a filter
+  touches no existing file, but forces a full inventory.
+- **Resizing** through server-provided variants only for now, set by the
+  **longest edge**. An explicit "Reapply to folder" action replaces existing
+  files, after a warning: irreversible, image quality changes.
 
 ---
 
-## 2. État des lieux : où WordPress est câblé dans le code
+## 1. Review: the initial study against the current code
 
-Lecture de `engine.py` et `config.py` de la base de connaissances :
+**Read** = observed in the code or tests; **assumed** = not confirmed.
 
-| Élément | Générique | Spécifique WordPress |
+| Planned by the initial study | Status | Evidence |
 |---|---|---|
-| `Options`, `Resultat` | oui (sauf libellés) | — |
-| `nettoyer`, `format_octets`, manifeste, cache (lecture/écriture atomique) | oui | — |
-| `supprimer_image`, `restaurer`, `lister_supprimees` | oui | — |
-| `Moteur.__init__` | session, callbacks, `arret` | `self.api = …/wp-json/wp/v2` |
-| `_api` | rejeux, pause, arrêt | « 400 = fin de pagination » |
-| `lister_medias` | déduplication, progression | paramètres WP, `X-WP-TotalPages`, `after`/`before` ISO |
-| `_bases_rest`, `resoudre_parents` | — | entièrement |
-| `dossier_pour` | le choix plat/date/galerie | regex `/uploads/AAAA/MM/`, champ `post` |
-| `chemin_libre` | oui | `media_id: int` (typage seulement) |
-| `telecharger` | oui (Range/206, 304, 416, `.part`) | — |
-| `executer` | orchestration, compteurs, sauvegardes | lit `m["id"]`, `m["source_url"]`, `m["post"]`, `media_details.width/filesize` ; filtre `isdigit()` sur les clés de `titres_parents` |
+| `sources/base.py`: `Element`, `Source`, `Transport` | Done. Methods in English (`inventory`, `resolve_groups`, `sort_modes`); `Element` fields still in French (known gap) | read |
+| WordPress and Djangoplicity adapters | Done. `fin_si={400}` on the WordPress side; `ident = "<ID>:<format>"`, filename taken from the URL, `Credit`/`Rights`/`Checksum` in `extra`, `b'…'` texts cleaned on the Djangoplicity side | read |
+| Static `SOURCES` registry, `sort_modes_for` | Done | read |
+| `source_type`, `image_format`, validation, sort-mode fallback | Done; JSON keys already in English, legacy keys still read | read: `_LEGACY_FIELD_ALIASES` |
+| UI: type, URL, conditional format, greyed-out sort modes | Done | read: `DialoguePreferences` |
+| CLI `--type`, `--format` | Done, but choices hard-coded | read |
+| Credit in the manifest | Done (`extra` copied as is) | read |
+| "Detect" button | Missing → lot 7 | assumed |
+| Q2 several sources | Settled: queued profiles → lot 5 | roadmap |
+| Q3 default format | Settled: `Large`, fallback to `Small`, never `Original`; no usable resource: skipped | read; logging the fallback → lot 0.3 |
+| Q4 subset of the catalogue | Becomes filters (§3.3) | — |
+| Q5 grouping by category | Filter first (decision 7) | — |
+| Q6 other sources | Yes, later (decision 13) | — |
 
-Deux constats :
+### 1.1 State of the lots, as seen from this document
 
-1. Le couplage est **localisé** : les dictionnaires WordPress bruts traversent
-   `executer`, mais toutes les écritures disque et tout le HTTP de fichiers sont
-   déjà génériques. L'extraction est un déplacement de code, pas une réécriture.
-2. Le filtre `str(k).isdigit()` sur le cache des titres et le typage `int` des
-   identifiants supposent des IDs numériques. Les IDs Djangoplicity sont des
-   chaînes (`eso1907a`). C'est le seul vrai piège de modèle de données.
+Without a full review, only what affects what follows:
 
----
-
-## 3. Le cas ESO / Djangoplicity
-
-Ce que la source apporte, mis en regard de WordPress :
-
-| Besoin du moteur | WordPress | Djangoplicity `d2d` |
+| Lot | Observation | Evidence |
 |---|---|---|
-| Inventaire paginé | `/wp-json/wp/v2/media?page=N` | `/public/images/d2d/?page=N` |
-| Signal de fin | `X-WP-TotalPages` | absence de `Next` (et `Count`) |
-| Delta incrémental | `after=` ISO, exclusif | `after=AAAAMMJJhhmmss`, **inclusif** |
-| Identifiant | entier | chaîne |
-| URL du fichier | `source_url` (original) | une ressource à choisir parmi `Original` / `Large` / `Small`… |
-| Largeur pour le filtre | `media_details.width` | `Dimensions[0]` (parfois flottant : `1280.0`) |
-| Taille attendue | `media_details.filesize` | `FileSize` |
-| Regroupement « galerie » | parent (`post`) à résoudre par requêtes | pas d'album ; mais `Subject.Category` (hiérarchie AVM, ex. `Unspecified : Technology : Observatory : Instrument`) est présent en ligne, sans requête supplémentaire |
-| Crédit / licence | — | `Credit`, `Rights` |
+| 1 | Coverage floors in place (`tools/check_coverage.py`) | read |
+| 2 | Identifiers and configuration keys in English; **`tr()` source strings still French, engine still translated through `QCoreApplication`** | read: known gaps in CLAUDE.md |
+| 3 | Scheduler deferral and backoff present; `Transport.get_json` still retries 4xx and ignores `Retry-After` | read from an excerpt |
+| 4 | Not done: `_locks.py` is an in-process `threading.Lock` | read |
+| 0.2 | Host check on `Next`: missing according to the roadmap, not reviewed here | — |
 
-### 3.1 Mesures sur la première page réelle de l'ESO (`d2d/`, 24/09/2026)
+### 1.2 Gaps between the roadmap and the code (fixed in the roadmap)
 
-| Mesure | Valeur |
-|---|---|
-| `Count` | 15 741 images, soit environ 158 pages de 100 |
-| `Next` | URL absolue `https://www.eso.org/public/images/d2d/?page=2` ; pas de `Previous` en page 1 |
-| Ordre | `PublicationDate` strictement décroissante (du 21/09/2026 au 03/06/2026) |
-| Structure | 100 entrées, chacune avec exactement un `Asset` de type `Image` et les cinq ressources `Original`, `Large`, `Small`, `Thumbnail`, `Icon` |
-| Extensions | `Original` toujours `.tif`, les autres `.jpg` |
-| Taille `Original` | médiane 36,5 Mo, max 1 564 Mo, total de la page 10,7 Go |
-| Taille `Large` | médiane 3,7 Mo, max 277 Mo, total de la page 1,08 Go |
-| Taille `Small` | total de la page 25 Mo |
-| `Checksum` | sur 30 `Original` et 3 `Large` seulement |
-| `Dimensions` | entiers pour `Original`/`Large`, flottants pour `Small`/`Thumbnail`/`Icon` |
-| Hôtes | `cdn.eso.org` pour 98 %, `www.eso.org/public/archives/…` pour 2 entrées |
-| `Subject.Category` | présent sur les 100 ; `Subject.Name` sur 69 |
-| Licence | CC BY 4.0 partout |
-| Textes `b'…'` | aucun sur cette page |
-| Largeur `Large` < 800 px | 1 image (602 px) |
-
-### 3.2 Comportement du CDN (`cdn.eso.org`, mesuré le 24/09/2026)
-
-Sur `images/large/potw2638a.jpg` :
-
-| Requête | Résultat |
-|---|---|
-| `HEAD` | `200`, `content-length: 5294315` — identique au `FileSize` du flux `d2d` |
-| En-têtes de validation | `ETag` présent (32 caractères hexadécimaux entre guillemets), `Last-Modified` présent |
-| `Range: bytes=0-99` | `206`, `content-range: bytes 0-99/5294315` |
-| Divers | `accept-ranges: bytes`, CDN77 devant un stockage de type S3 (`x-amz-meta-*`, `x-rgw-object-type`), réponse servie depuis le cache (`x-77-cache: HIT`) |
-
-Conséquences : `telecharger` fonctionne tel quel. La reprise `.part` sur 206
-est possible, `fichier_complet` peut comparer à `FileSize`, et `--verifier`
-dispose d'un `ETag` à envoyer. Il ne faut **pas** traiter l'`ETag` comme une
-somme MD5 du fichier : sur un stockage S3 cela n'est vrai que pour les objets
-envoyés en une fois, et rien ne garantit la forme sur les gros TIFF.
-
-Extrapolation grossière (la page 1 ne contient que des images récentes, donc
-probablement plus grandes que la moyenne) : de l'ordre de 60 à 170 Go en
-`Large`, de l'ordre du téraoctet en `Original`.
-
-**Piège repéré : l'`ID` n'est pas toujours le nom du fichier.** Sept entrées
-ont un `ID` suffixé par la langue (`annlang26007b-es-cl-en`) alors que le fichier
-s'appelle `annlang26007b-es-cl.jpg`. Il est probable qu'une autre entrée (la
-version dans la langue d'origine) pointe vers le même fichier ou un homonyme :
-l'adaptateur doit prendre le nom de fichier dans l'URL, et `chemin_libre`
-suffixera un éventuel doublon. À vérifier sur les pages suivantes avant de
-décider s'il faut dédupliquer par URL.
-
-Conséquences de conception :
-
-- **Choix du format obligatoire.** Télécharger `Original` par défaut sur l'ESO
-  reviendrait à rapatrier des TIFF de plusieurs centaines de Mo, voire plus d'un
-  Go. Il faut un réglage « format » propre à ce type de source.
-- **Le classement « par galerie » n'a pas d'équivalent direct.** Chaque source
-  déclare les classements qu'elle sait faire ; l'interface grise les autres.
-- **Le crédit mérite d'être conservé** dans le manifeste : c'est la seule
-  obligation de la licence, et cela nourrit directement l'item 4 du backlog
-  (export de catalogue).
-
-Plan B si `d2d` est désactivé chez l'ESO : `toasty` liste les images en lisant
-une variable JavaScript `var images = [...]` embarquée dans les pages
-`archive/search/…/N/`, puis interroge `…/<id>/api/json/` image par image. C'est
-exactement le parsing HTML que le projet a choisi d'éviter, et c'est une requête
-par image en plus : à ne faire que si le plan A est fermé.
+- **Lot 5.1 named the fields `folder` and `layout`**, and planned to switch the
+  keys to English during the v2 migration. That is already done, under other
+  names (`target_dir`, `sort_mode`). v2 keeps those names: a second rename
+  would cost one more alias table for nothing.
+- **Lot 5.1 put `interval_hours` in each profile.** Decision 1: it stays global
+  (§3.1).
+- **Lot 2 said "persisted formats unchanged"** whereas configuration keys
+  changed during the renaming sprint. No consequence, but the sentence was
+  wrong.
 
 ---
 
-## 4. Proposition d'architecture
+## 2. Small fixes revealed by the review (→ lot 0)
 
-### 4.1 Principe
+- **0.8** `cli.py`: choices for `--type`, `--format`, `--classement` derived
+  from `SOURCE_TYPES`, `DJANGOPLICITY_FORMATS`, `SORT_MODES`. Boundary 3.
+  *Read.*
+- **0.9** Contract test "lower `min_width`, then run again". *Assumed*: the
+  `after` delta does not re-read old images that were previously excluded. The
+  test pins the current behaviour; the fix comes with filters (§3.3).
 
-```
-                 ┌──────────────────────────── engine.py ─────────────────────────────┐
-app.py / cli.py ─┤ Moteur : manifeste, filtre largeur, classement, chemins, telecharger │
-   (Options)     │           ▲ Element (normalisé)                                      │
-                 │           │                                                          │
-                 │   Source (adaptateur)  ◄── Transport (session, délai, arrêt, rejeux)│
-                 └───────────┼──────────────────────────────────────────────────────────┘
-                             ├── sources/wordpress.py
-                             └── sources/djangoplicity.py
-```
+---
 
-- Le **moteur** ne voit que des `Element`. Il ne sait plus ce qu'est un `post`
-  ni un `ResourceType`.
-- La **source** traduit un site en `Element`, et elle seule interprète les
-  signaux de son serveur (codes d'erreur, en-têtes, liens `Next`).
-- Le **transport** est fourni par le moteur à la source. Il porte le délai entre
-  requêtes, l'arrêt coopératif et les rejeux ; une source ne crée jamais sa
-  propre session. C'est ce qui garantit que le plancher de 0,2 s s'applique à
-  tous les types de sites sans qu'un adaptateur puisse l'oublier.
+## 3. Target
 
-Pas de dépendance nouvelle, pas de Qt : tout reste du côté moteur de la
-frontière 1.
+### 3.1 Settings: application, defaults, profile
 
-### 4.2 Le contrat
+| Level | Content |
+|---|---|
+| Application | language, notification area, updates, run at startup, `request_delay` (0.2 s floor), **`interval_hours`**, **`schedule_anchor`** (`"HH:MM"`), **`slideshow_profile`** |
+| Defaults | inherited values: minimum width, integrity check, filters, resizing |
+| Profile | type, URL, format, folder, sort mode; overrides of the defaults (`None` = inherit); scheduler state |
+
+Rule: **a profile field set to `None` inherits the default**, resolved by a
+pure function in `config.py`. A default is never copied into a profile.
+
+**Staggered runs (decisions 1, 3 and 14).** The interval is shared, and
+profile start times are **spread across the interval**: with 24 h and three
+profiles, one start every 8 h. Lot 5.2 already guarantees "one profile at a
+time"; spreading additionally keeps the PC from being busy in one block.
+
+Computation, entirely in `scheduler.py` (pure, no internal clock: the current
+time is a parameter):
+
+- `n` = number of scheduled profiles, `k` = rank of the profile in the list
+  (0 to n-1), `I` = interval;
+- each profile has a **grid** of slots:
+  `anchor + k × I / n + m × I`, for every integer `m`;
+- the **anchor** is a time of day, in naive local time like `retry_after`. It
+  is recorded at the v2 migration from the time of the current `last_run`,
+  which keeps today's rhythm for the first profile;
+- due time of a profile = first slot of its grid **≥ `last_run` + I/2**, then
+  `max(slot, retry_after)` when a deferral is active (lot 3). The I/2 margin is
+  what makes the computation robust:
+  - a run made on time lands on the next slot, exactly +I;
+  - a late catch-up run (PC was off) realigns with the grid within 0.5 to 1.5
+    intervals, without a double run;
+  - adding, removing or reordering profiles changes the phases, without ever
+    restarting a profile less than I/2 after its last run;
+- empty `last_run` (new profile): due at the first slot of its grid, or
+  immediately if the user starts the profile by hand;
+- interval 0 (manual only): no grid.
+
+Accepted edge case: if the PC was off for several slots, overdue profiles run
+at startup **one after the other** in the queue, never at the same time. The
+spread then restores itself thanks to the I/2 rule.
+
+The CLI without `--profile` runs all profiles; with `--due` (lot 8), only those
+whose slot has come. The hourly scheduled task of lot 8 is enough: with a
+one-hour step, a slot is honoured at most one hour late.
+
+**Slideshow (decision 2).** `slideshow_profile` holds the `id` of one profile.
+Deleting that profile clears the setting; `validate()` does the same for an
+unknown `id`.
+
+### 3.2 Profile
 
 ```python
-# sources/base.py
-from __future__ import annotations
+@dataclass
+class Profile:
+    """One sync job: a site, a source type, a target directory."""
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import Callable, ClassVar, Iterator
+    #: Stable ``uuid4().hex``; key of scheduler state, never the name.
+    id: str
+    name: str
+    source_type: str = "wordpress"
+    site: str = ""
+    target_dir: str = ""
+    sort_mode: str = "galerie"
+    image_format: str = "Large"
+    #: Overrides; ``None`` inherits from ``Config.defaults``.
+    min_width: int | None = None
+    verify_integrity: bool | None = None
+    filters: FilterSpec | None = None
+    resize: ResizeSpec | None = None
+    #: Scheduler state, per profile (lot 5.1, lot 6).
+    last_run: str = ""
+    retry_after: str = ""
+    backoff_level: int = 0
+    full_check_every: int = 10
+    runs_since_full_check: int = 0
+```
 
+Manifest and cache stay per folder; folders are unique and not nested
+(lot 5.1).
 
+### 3.3 Filters
+
+Fixed fields, no mini-language (consistent with the rejected proposals):
+
+```python
 @dataclass(frozen=True)
-class Element:
-    """Une image à synchroniser, telle que le moteur la comprend."""
-    ident: str               # unique au sein de la source ; clé du manifeste
-    url: str
-    nom_fichier: str
-    date: str | None         # ISO 8601 ; sert au delta et au classement par date
-    mois: str | None         # "AAAA-MM" pour le classement par date
-    largeur: int | None
-    taille: int | None       # taille annoncée, pour détecter un fichier tronqué
-    groupe: str | None       # clé de regroupement « galerie », résolue plus tard
-    extra: dict = field(default_factory=dict)   # crédit, titre, somme de contrôle…
+class FilterSpec:
+    """Selection criteria applied by the engine to each Element."""
 
+    min_width: int | None = None
+    min_height: int | None = None
+    orientation: str | None = None     # "landscape" | "portrait" | "square"
+    max_bytes: int | None = None
+    since: str | None = None           # YYYY-MM-DD
+    until: str | None = None
+    categories: frozenset[str] = frozenset()
 
-class Source(ABC):
-    type: ClassVar[str]
-    classements: ClassVar[frozenset[str]]       # sous-ensemble de config.CLASSEMENTS
-
-    def __init__(self, base: str, transport: "Transport", reglages: dict,
-                 progression: Callable[[int, int, str], None]) -> None: ...
-
-    @abstractmethod
-    def inventaire(self, depuis: str | None, jusqua: str | None) -> Iterator[Element]:
-        """Parcourt le catalogue dans l'ordre chronologique si possible."""
-
-    def resoudre_groupes(self, cles: set[str], connus: dict[str, str]) -> dict[str, str]:
-        """Clé de groupe → nom de dossier. Par défaut : aucun regroupement."""
-        return dict(connus)
+    def fingerprint(self) -> str:
+        """Stable digest of every non-default criterion."""
 ```
 
-Correspondance pour les deux sources :
+- Pure module `Glaneur/filters.py`, 100 % branch coverage.
+- `Element` gains the height (`media_details.height`, `Dimensions[1]`) and, for
+  Djangoplicity, `Subject.Category` in `extra`. Renaming `Element` fields to
+  English comes first: adding `hauteur` would widen the gap.
+- Category is **a filter, not a sort mode** (decision 7). It arrives with
+  lot 11.2, where the roadmap justifies source capabilities.
 
-| Champ | WordPress | Djangoplicity |
-|---|---|---|
-| `ident` | `str(m["id"])` | `f"{ID}:{format}"` |
-| `url` | `source_url` | `URL` de la ressource du format choisi |
-| `nom_fichier` | nom du chemin de l'URL | idem (`eso1907a.jpg`) |
-| `date` | `date` | `PublicationDate` |
-| `mois` | extrait de `/uploads/AAAA/MM/` (comportement actuel conservé) | extrait de `PublicationDate` |
-| `largeur` / `taille` | `media_details.width` / `filesize` | `int(Dimensions[0])` / `FileSize` |
-| `groupe` | `str(post)` ou `None` | `None` (voir question 5) |
-| `extra` | — | `credit`, `titre`, `checksum` |
+**Missing information: reading the header (decision 5).** If the source does
+not give the dimensions, the engine reads them from the file:
 
-Deux choix à signaler :
+1. request the beginning of the file (`Range: bytes=0-65535`); if the server
+   answers 200, read the first 64 KiB of the stream and close. Same request,
+   same delay floor, same retry policy (lot 3.1);
+2. read the dimensions with the standard library, in the magic-bytes module of
+   lot 3.3: PNG (`IHDR`), GIF, JPEG (`SOFn` segments), WebP;
+3. if the header is not enough (TIFF with its IFD at the end of the file, JPEG
+   with a large EXIF block): full download, measurement, and the file is
+   removed if it does not meet the filter;
+4. measured dimensions are **stored in the manifest**, with the `filtered`
+   status when the image is excluded: a later filter change is re-evaluated
+   without any new request.
 
-- **`ident` WordPress reste `str(id)`**, exactement la clé actuelle du
-  manifeste : les dossiers existants sont repris tels quels, sans migration.
-- **`ident` Djangoplicity inclut le format.** Si l'utilisateur passe de `Large`
-  à `Original`, les nouvelles versions se téléchargent et les anciennes restent
-  en place — même logique que « changer de classement ne déplace rien ». Sans
-  cela, le manifeste considérerait l'image comme déjà faite dans l'autre format.
+Rare in practice: WordPress gives `media_details.width/height` and
+Djangoplicity gives `Dimensions` almost always (*assumed* for WordPress on
+non-image files, read for Djangoplicity). The manifest fields (`width`,
+`height`, `status`) go into the **single manifest v2 migration of lot 6**, not
+into an extra migration.
 
-### 4.3 Le transport
+Rules:
+
+1. The cache fingerprint includes `filters.fingerprint()`: any filter change
+   forces a full inventory on the next run, then the delta resumes.
+2. **Changing a filter touches no existing file** (decision 6), whether it
+   tightens or loosens.
+3. An image excluded by a filter is never marked `remote_missing_since`. That
+   mark only applies to entries that meet the current filter.
+
+### 3.4 Resizing
 
 ```python
-class Transport:
-    """Plomberie HTTP partagée : une session, un délai, un arrêt."""
+@dataclass(frozen=True)
+class ResizeSpec:
+    """Target size for stored images, by longest edge."""
 
-    def __init__(self, delai: float, arret: threading.Event) -> None: ...
-    def verifier_arret(self) -> None: ...
-    def pause(self, secondes: float | None = None) -> None: ...        # défaut : délai
-    def get_json(self, url: str, params: dict | None = None,
-                 fin_si: frozenset[int] = frozenset()) -> tuple[object | None, Mapping]:
-        """Rejeux et pause inclus. Un code de `fin_si` renvoie (None, en-têtes)."""
+    enabled: bool = False
+    #: Longest edge in pixels (decision 9).
+    max_edge: int = 0
 ```
 
-`_verifier_arret`, `_pause` et le cœur de `_api` actuels y migrent. La règle
-« 400 = page au-delà de la dernière » devient `fin_si={400}` passé par
-l'adaptateur WordPress : elle n'est plus imposée aux autres sources.
-`telecharger` reste dans le moteur et emprunte la session du transport.
+Presets in `config.py`, single source of the labels, expressed as the longest
+edge: for example 1920, 2560, 3840 px. The label names the use ("HD screen",
+"4K"), the value stays a longest edge so that portraits are handled like
+landscapes.
 
-### 4.4 Arborescence
+**Server variants only.** The source picks the smallest variant whose longest
+edge covers `max_edge`. No local computation, no dependency, and lot 3.3
+validation stays exact since the stored file is the server's. Local resizing
+is **deferred** (decision 12): it will be discussed again after this lot, based
+on what the sites expose.
 
-```
-Glaneur/
-  engine.py              Moteur générique, manifeste, cache, telecharger
-  sources/
-    __init__.py          SOURCES = {"wordpress": WordPress, "djangoplicity": Djangoplicity}
-    base.py              Element, Source, Transport
-    wordpress.py         lister_medias, _bases_rest, resoudre_parents actuels
-    djangoplicity.py     nouveau
-```
+- **Djangoplicity (decision 11).** Resizing enabled: `max_edge` picks the
+  variant and the UI greys out the format. Disabled: `image_format` as today.
+  `max_edge` never picks `Original`.
+- **WordPress.** Variants from `media_details.sizes`. *Assumed*, to be
+  confirmed by `server-prober` on the club's site: presence of `sizes`,
+  `filesize` per variant, cropped variants (to exclude: aspect ratio differs
+  from the original), `source_url` already `-scaled` to 2560 px with
+  `original_image` (WordPress ≥ 5.3).
+- **Identifier.** WordPress keeps `str(id)` for the original, and uses
+  `f"{id}:{size}"` for a variant. Djangoplicity already includes the format.
+- **Changing the setting replaces nothing automatically** (decision 8): new
+  images follow the setting, existing ones stay.
 
-Registre **statique** : un dictionnaire importé explicitement. Pas de découverte
-par `entry_points` ni d'import dynamique — PyInstaller ne verrait pas les modules
-et on retomberait sur un `ImportError` qui n'existe que dans l'exécutable.
+**Reapply to folder (decision 10).** Explicit action that replaces existing
+files with the variant of the current setting.
 
-### 4.5 Les invariants, un par un
+- Before starting: warning dialog. The operation **cannot be undone** once
+  started (replaced files are not kept) and **image quality changes**. The
+  dialog shows the estimate: volume to download, space freed (announced sizes;
+  same mechanism as the lot 10 estimate). Default button: Cancel.
+- Per image: the new variant is downloaded to `.part`, validated (lot 3.3),
+  renamed; **then** the manifest is updated and saved; **then** the old file is
+  deleted. An interruption between the last two steps leaves a logged orphan
+  file, never an entry pointing to nothing.
+- "Cannot be undone" applies to the result, not to the run: the Stop button
+  interrupts between two images, and running again resumes where it stopped
+  (entries already at the right variant are skipped).
+- Requires the lot 4 lock. CLI: `--reapply`, which requires `--yes` in silent
+  mode.
+- Images smaller than `max_edge` and images without a suitable variant are left
+  untouched.
 
-| Invariant | Devenir |
+---
+
+## 4. Steps, filed under the roadmap
+
+| Step | Lot | Content | Validation |
+|---|---|---|---|
+| E0 | 0.8, 0.9 | §2 | `local` |
+| — | 2 | End of the lot: `tr()` strings in English, **structured events** from the engine | `full` |
+| — | 4 | Lock | `subsystem` |
+| E1 | **5.0** (new) | Preferences in tabs | `module` |
+| E2 | **5.0** | Banner → profile list | `module` |
+| E3 | 5.1–5.3 | Profile model, v2 migration, start times spread across the interval | `full` |
+| E4 | 5.1 | `None` inheritance | `module` |
+| E5 | 11.2 widened | Filters | `subsystem` |
+| E6 | **11.5** (new) | Resizing through server variants | source + contract |
+| E7 | **11.6** (new) | Reapply to folder | `full` |
+
+### 5.0 — Prepare the UI without changing the format
+
+**E1 — Preferences in tabs.**
+
+- `config.py`: `PROFILE_FIELDS`, single source of the application / profile
+  split. The "Site" tab depends on it today, the v2 migration tomorrow.
+
+  ```python
+  #: Fields that belong to a sync profile rather than to the application.
+  #: Drives the "Site" tab today and the v1 → v2 migration later.
+  PROFILE_FIELDS: tuple[str, ...] = (
+      "source_type", "site", "image_format", "target_dir",
+      "sort_mode", "min_width", "verify_integrity",
+  )
+  ```
+- `app.py`: `QTabWidget` "General" / "Site". The "Filters" and "Images" tabs are
+  created hidden.
+- System logic of `appliquer` (run at startup, slideshow) moved to
+  `systeme.py` / `system.py`.
+- Test: `config.json` unchanged byte for byte after OK without edits.
+
+**E2 — One-row profile list.** The "Site / Folder" banner becomes a
+`QTableView` with its model: name, type, site, folder, last run, status. The
+status is built from the structured events of lot 2, hence the order. "Update
+now" acts on the selection. With a single row, the user sees no difference.
+
+### E3 to E7
+
+- **E3** follows lot 5 as is, with the corrections of §1.2.
+- **E5**: `filters.py`, height in `Element`, header reading (after lot 3.3 and
+  the manifest v2 of lot 6), "Filters" tab visible. The lot 0.9 test changes
+  its expected result.
+- **E6**: prerequisite, the `server-prober` verdict on `media_details.sizes`.
+- **E7**: prerequisites, E6 and the lot 10 volume estimate.
+
+---
+
+## 5. Invariants to add to CLAUDE.md
+
+| Invariant | Why |
 |---|---|
-| Pagination par `X-WP-TotalPages` | Reste dans `wordpress.py`, avec ses tests. Djangoplicity applique la même règle à sa façon : on suit `Next` tel que renvoyé, jamais le nombre d'entrées reçues. |
-| Mode d'ouverture du `.part` selon le 206 | Inchangé, `telecharger` ne bouge pas. Encore plus critique avec des fichiers de 1 Go. |
-| `__init__.py` présent | S'applique aussi à `sources/`. |
-| Plancher de 0,2 s | Garanti par construction : seul le transport fait des requêtes d'inventaire. |
-| Écritures atomiques | Inchangé. |
-| Interruption ⇒ pas de `derniere_execution` | Inchangé (géré hors moteur). |
-| Manifeste mémorise le chemin | Inchangé ; une reprise ne sollicite pas la source pour les éléments connus. |
-| Second passage sans résolution de parent | Conservé : `resoudre_groupes` n'est appelé que pour les éléments nouveaux, avec le cache. |
-
-Nouveau point de vigilance : le filtre `after` de Djangoplicity est inclusif,
-donc l'élément le plus récent du cache revient à chaque passage. Le manifeste
-l'écarte déjà, mais le compteur « déjà à jour » en tiendra compte ; les tests
-doivent l'attendre.
-
-### 4.6 Cache
-
-On garde les clés actuelles (`derniere_date_media`, `titres_parents`) pour ne
-pas invalider les caches existants, avec trois ajustements :
-
-- l'empreinte devient `site` **et** `type` ;
-- les clés de `titres_parents` sont des chaînes quelconques (suppression du
-  filtre `isdigit`) ;
-- la conversion de `derniere_date_media` vers le format de `after` est l'affaire
-  de l'adaptateur, pas du moteur.
-
-### 4.7 Configuration
-
-Dans `config.py`, source unique de vérité, sur le modèle de `CLASSEMENTS` :
-
-```python
-TYPES_SOURCE: dict[str, str] = {
-    "WordPress (API REST)": "wordpress",
-    "Djangoplicity (ESO, ESA/Hubble…)": "djangoplicity",
-}
-
-FORMATS_DJANGOPLICITY: dict[str, str] = {
-    "Grand JPEG": "Large",
-    "Original (TIFF, très lourd)": "Original",
-    "Écran (1280 px)": "Small",
-}
-```
-
-et deux champs dans `Config` : `type_source = "wordpress"` et
-`format_image = "Large"` (valeur par défaut à confirmer, question 3).
-`valider()` ramène un type inconnu à `wordpress`, un format inconnu au défaut,
-et un classement non supporté par la source à `date`. Une configuration
-existante sans ces champs se charge donc à l'identique.
-
-`Options` gagne `type_source` et `format_image` ; `Moteur` choisit l'adaptateur
-dans `SOURCES`. L'UI ne connaît que les libellés.
-
-### 4.8 Interface
-
-Dans le dialogue des préférences : le groupe « Site WordPress » devient « Site »,
-avec une liste déroulante de type au-dessus du champ URL, et un champ « Format »
-visible seulement pour Djangoplicity. Les classements non supportés sont grisés
-(l'info vient de `Source.classements`, exposée par une fonction du moteur pour
-que `app.py` n'importe pas les adaptateurs). Rien d'autre ne change dans
-`app.py` : il construit toujours un `Options` et lance un `QThread`.
+| The cache fingerprint includes the type, the site **and the filter fingerprint** | Otherwise loosening a filter never recovers old images |
+| Changing a filter or a size setting moves, replaces or deletes no file | Same rule as the sort mode |
+| `remote_missing_since` only applies to entries that meet the current filter | A filter is not a server-side deletion |
+| A profile field set to `None` inherits the default; a default is never copied | Otherwise changing a default would have no effect |
+| Only the "Reapply to folder" action replaces an existing file; the new version is validated and in the manifest **before** the old one is deleted | It is the only deletion initiated by the engine |
+| Header reading goes through the `Transport` and reads at most 64 KiB | Delay floor and server load |
+| A profile is never restarted automatically less than I/2 after its last run | Adding, removing or reordering profiles must not cause a double run |
 
 ---
 
-## 5. Décisions et alternatives écartées
+## 6. Decisions of 2026-09-28
 
-- **Adaptateurs plutôt qu'un moteur par site.** Dupliquer `executer` par site
-  doublerait le code le plus délicat (reprise, suppressions) et donc les
-  endroits où un invariant peut se perdre.
-- **Type explicite plutôt que détection automatique.** La détection coûte des
-  requêtes à chaque lancement et peut se tromper sur un site derrière un proxy.
-  On peut proposer un bouton « Détecter » dans les préférences, qui sonde
-  `/wp-json/` puis `…/images/d2d/` une seule fois et remplit le champ.
-- **Une source par dossier de destination.** Le manifeste et le cache sont par
-  dossier ; mélanger deux sources dans un même dossier mélangerait deux espaces
-  d'identifiants. Si plusieurs sources simultanées sont voulues (question 2),
-  la bonne forme est une liste de « profils » site + dossier, pas un dossier
-  partagé.
-- **Pas de framework de plugins.** Deux ou trois adaptateurs connus ne
-  justifient pas plus qu'un dictionnaire.
+| # | Question | Decision |
+|---|---|---|
+| 1 | Interval per profile? | Global, with staggered profile runs to spare the PC |
+| 2 | Slideshow | A single profile |
+| 3 | CLI without `--profile` | All profiles, staggered |
+| 4 | Structured events | Planned in lot 2, hence before 5.0 |
+| 5 | Unknown value in a filter | Keep if the criterion is met; otherwise read the information from the image |
+| 6 | Existing files when the filter changes | Leave them untouched |
+| 7 | ESO category | Filter first |
+| 8 | Automatic replacement when the size changes | No, not now |
+| 9 | Unit of the setting | Longest edge |
+| 10 | Reapply to folder | Yes, with a warning: irreversible, quality changes |
+| 11 | `max_edge` and Djangoplicity format | `max_edge` picks the variant when enabled |
+| 12 | Local resizing | Deferred |
+| 13 | Other site types | Yes, later |
+| 14 | Shape of the staggering | Start times spread across the interval (24 h, 3 profiles → every 8 h) |
+| — | Confirmations | 4 in lot 2; 5 (header reading, dimensions in manifest v2); 10 (order validate → manifest → delete, stop between two images) |
 
----
-
-## 6. Plan de migration
-
-Chaque étape est livrable seule et passe les tests.
-
-1. **Extraction sans changement de comportement.** Créer `sources/base.py`
-   (`Element`, `Source`, `Transport`) et `sources/wordpress.py` avec le code
-   déplacé ; `executer` consomme des `Element`. Coût réel : les tests actuels
-   patchent `Moteur.lister_medias`, `_api`, `_bases_rest` et `resoudre_parents` ;
-   il faudra les recibler sur l'adaptateur ou sur un faux transport. C'est
-   l'essentiel du travail de l'étape.
-2. **Configuration.** `type_source`, `format_image`, `TYPES_SOURCE`, validation,
-   empreinte de cache. Toujours aucun changement visible.
-3. **Adaptateur Djangoplicity** et ses tests contre un faux serveur `d2d`.
-4. **Interface et CLI** (`--type`, `--format`), bouton « Détecter » optionnel.
+Rejected alternatives, unchanged since revision 1: full copy of the settings
+per profile (defaults become useless), comparing the strictness of two filters
+(fragile), `QImage` in the engine (boundary 1).
 
 ---
 
-## 7. Tests
+## 7. Verified / assumed
 
-Les cinq scénarios du projet deviennent des **tests de contrat** paramétrés par
-type de source : un faux serveur WordPress et un faux serveur `d2d`, les mêmes
-assertions.
+**Assumed, to be confirmed before the relevant step:**
 
-1. premier passage complet ;
-2. second passage : zéro requête fichier, zéro résolution de groupe ;
-3. fichier tronqué et fichier supprimé : seuls ceux-là repassent ;
-4. `--verifier` : 304 partout, aucun octet ;
-5. interruption puis reprise : total exact.
-
-Spécifiques à Djangoplicity :
-
-- fin de pagination sur absence de `Next`, y compris si une page renvoie moins
-  de `count` entrées avant la dernière ;
-- `after` inclusif : l'élément frontière n'est pas retéléchargé ;
-- `Dimensions` flottantes ; ressource du format demandé absente pour une image
-  (compter un échec ou l'ignorer ? question 3) ;
-- textes `"b'...'"` nettoyés avant d'en faire un nom de dossier.
+- cache delta and loosened `min_width` — local test, lot 0.9;
+- `media_details.sizes`, `filesize` per variant, cropped variants,
+  `-scaled` / `original_image` on the club's site — `server-prober`, E6;
+- dimensions almost always present in both APIs — to be measured on one page of
+  each source before writing the header reader;
+- position of the dimensions in ESO TIFFs (start or end of file) — one `Range`
+  request on an `Original`, 64 KiB only.
 
 ---
 
-## 8. Risques
+## 8. Open questions
 
-- **Volume.** Plusieurs milliers d'images côté ESA/Hubble ; l'ESO est
-  probablement du même ordre. En `Original`, on parle de téraoctets. Le format
-  par défaut et un avertissement dans l'UI ne sont pas optionnels.
-- **Reprise et revalidation.** Le CDN honore `Range` et fournit `ETag` et
-  `Last-Modified` (§3.2) : le risque principal est levé pour `cdn.eso.org`. Il
-  reste le `304` à confirmer, et l'hôte `www.eso.org`, qui n'a pas été mesuré.
-  L'invariant 206 continue de protéger ce second hôte s'il ignorait `Range`.
-- **Lien `Next` absolu.** On le suit tel quel ; s'il pointait un jour vers un
-  autre hôte ou schéma que la base configurée, mieux vaut s'arrêter en erreur
-  que suivre aveuglément.
-- **Nom du produit.** « WP Image Downloader » décrit mal un outil multi-sources.
-  Sans impact technique, mais le nom est dans `NOM_APP`, le dossier de config et
-  l'installeur : le changer plus tard coûte une migration de `%APPDATA%`.
-
----
-
-## 9. Questions ouvertes
-
-1. ~~Le flux `d2d` de l'ESO répond-il ?~~ Oui (§3.1). ~~Le CDN gère-t-il `Range`
-   et les validateurs ?~~ Oui (§3.2). Reste le `304` sur `If-None-Match`.
-2. Une source à la fois (on ajoute juste un type), ou plusieurs sources
-   synchronisées en parallèle (profils site + dossier) ? La seconde option
-   touche `Config`, le planificateur et l'UI bien plus largement.
-3. Quel format par défaut pour l'ESO, et que faire d'une image dont ce format
-   manque : l'ignorer, ou se rabattre sur le format inférieur ?
-4. Tout le catalogue ESO, ou un sous-ensemble ? `d2d` ne filtre que par date ;
-   un filtrage par catégorie demanderait autre chose.
-5. Faut-il un regroupement pour l'ESO ? Candidat naturel : le premier niveau
-   significatif de `Subject.Category`, disponible sans requête. Ou le classement
-   par date suffit-il ?
-6. As-tu d'autres types de sites en tête ? Si c'est seulement WordPress et
-   Djangoplicity, le contrat ci-dessus suffit ; s'il y a des sites sans API, il
-   faudra prévoir une source « HTML » et le contrat restera valable, mais
-   l'adaptateur sera d'une autre nature.
-
----
-
-## Annexe : écarts relevés entre les instructions du projet et le code
-
-À corriger d'un côté ou de l'autre, sinon je raisonnerai sur une mauvaise carte :
-
-- Les instructions parlent du paquet `servette/` ; le code importé est dans
-  `Glaneur/` (et c'est ce que `app.py` et `cli.py` importent).
-- Les instructions disent « pas de framework de tests » ; le dépôt utilise
-  `pytest` et `pytest-qt` (README et `tests/`).
-- La docstring d'`engine.py` mentionne encore l'UI Tkinter.
-- Le cache API (`.cache.json`) et le mode `--pas-cache` existent dans le code
-  mais pas dans les invariants des instructions ; « une interruption n'écrit pas
-  le cache » mériterait d'y figurer.
+1. **Future sources**: will they need authentication (API key)? The
+   `Transport` carries none today, and where to store it would have to be
+   decided. To be handled when a concrete site comes up.
