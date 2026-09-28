@@ -4,6 +4,9 @@ on:
   pull_request:
   workflow_call:
 
+permissions:
+  contents: read
+
 concurrency:
   # Sur une PR, un nouveau push rend l'exécution précédente sans intérêt.
   # `head_ref` est vide en `workflow_call` (appel depuis un push) : on
