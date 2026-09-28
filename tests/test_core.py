@@ -16,6 +16,7 @@ import requests
 
 from Glaneur.engine import (
     Engine,
+    EngineEvent,
     Interrupted,
     Options,
     cache_path,
@@ -469,7 +470,7 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(
             200, {"ETag": "e1", "Last-Modified": "m1"}, b"payload")
         dest = tmp_path / "out.jpg"
-        statut, infos, _ = m.download("https://x/f.jpg", dest, None)
+        statut, infos, _, _ = m.download("https://x/f.jpg", dest, None)
         assert statut == "ok"
         assert dest.read_bytes() == b"payload"
         assert infos["taille"] == 7
@@ -482,7 +483,7 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(304)
         dest = tmp_path / "existe.jpg"
         dest.write_bytes(b"deja")
-        statut, infos, _ = m.download("https://x/f.jpg", dest,
+        statut, infos, _, _ = m.download("https://x/f.jpg", dest,
                                          {"etag": "e1", "taille": 4})
         assert statut == "inchangé"
         # the returned state is the one passed in, unaltered
@@ -493,7 +494,7 @@ class TestTelecharger:
         m.session = MagicMock()
         m.session.get.return_value = FakeResponse(404)
         dest = tmp_path / "sortie.jpg"
-        statut, infos, _ = m.download("https://x/f.jpg", dest, None)
+        statut, infos, _, _ = m.download("https://x/f.jpg", dest, None)
         assert statut == "introuvable"
         assert infos is None
         assert not dest.exists()
@@ -505,7 +506,7 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(206, {}, b"XYZ")
         dest = tmp_path / "reprise.jpg"
         (dest.with_suffix(dest.suffix + ".part")).write_bytes(b"AB")
-        statut, _infos, _ = m.download("https://x/f.jpg", dest, None)
+        statut, _infos, _, _ = m.download("https://x/f.jpg", dest, None)
         assert statut == "repris"
         # the final content concatenates the .part and the downloaded remainder
         assert dest.read_bytes() == b"ABXYZ"
@@ -523,7 +524,7 @@ class TestTelecharger:
         ]
         dest = tmp_path / "r.jpg"
         (dest.with_suffix(dest.suffix + ".part")).write_bytes(b"AB")
-        statut, _infos, _ = m.download("https://x/f.jpg", dest, None)
+        statut, _infos, _, _ = m.download("https://x/f.jpg", dest, None)
         assert statut == "ok"
         assert dest.read_bytes() == b"neuf"
 
@@ -534,7 +535,7 @@ class TestTelecharger:
         m.session.get.return_value = FakeResponse(304)
         dest = tmp_path / "x.jpg"
         dest.write_bytes(b"deja")
-        _statut, _infos, _classification = m.download(
+        _statut, _infos, _classification, _error = m.download(
             "https://x/f.jpg", dest,
             {"modifie": "Wed, 01 Jan 2026 00:00:00 GMT", "taille": 4})
         _, kw = m.session.get.call_args
@@ -542,16 +543,22 @@ class TestTelecharger:
             "Wed, 01 Jan 2026 00:00:00 GMT"
 
     def test_erreur_reseau(self, tmp_path):
+        """Network exception yields status ``"erreur"`` and raw error text."""
         m = _moteur(tmp_path)
         m.session = MagicMock()
         m.session.get.side_effect = requests.ConnectionError("boum")
         dest = tmp_path / "s.jpg"
-        statut, infos, classification = m.download("https://x/f.jpg", dest, None)
-        assert statut.startswith("erreur")
+        statut, infos, classification, error_text = m.download(
+            "https://x/f.jpg", dest, None)
+        assert statut == "erreur"
         assert infos is None
         assert not dest.exists()
         assert classification is not None
         assert classification.category in {"coupure", "transitoire", "definitif"}
+        # Error text carries the raw exception message for the ``file-failed``
+        # event; no French translation happens inside ``Engine.download``.
+        assert error_text is not None
+        assert "boum" in error_text
 
     def test_interruption_conserve_part(self, tmp_path):
         # the stop mid-read must leave the .part for the resume
@@ -644,7 +651,8 @@ class TestExecuter:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 12, "etag": "e",
-                                               "modifie": "m", "url": "u"}, None)):
+                                               "modifie": "m", "url": "u"},
+                                        None, None)):
             res = moteur.run()
         assert res.downloaded == 1
         assert res.bytes == 12
@@ -659,26 +667,37 @@ class TestExecuter:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
                           return_value=("repris", {"taille": 3, "etag": "",
-                                                   "modifie": "", "url": "u"}, None)):
+                                                   "modifie": "", "url": "u"},
+                                        None, None)):
             res = moteur.run()
         assert res.resumed == 1
         assert res.bytes == 3
 
     def test_echec_reseau(self, tmp_path):
+        """A failed download counts as a failure and emits ``file-failed``."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = _element(5, url="https://x/wp-content/uploads/2026/03/f.jpg",
                       mois="2026-03")
+        journal: list[EngineEvent] = []
+        moteur._journal = journal.append
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
-                          return_value=("erreur : boum", None, None)):
+                          return_value=("erreur", None, None, "boum")):
             res = moteur.run()
         assert res.failures == 1
+        # The engine emits the failure through a structured event, no
+        # translation happens on this path.
+        failed = [ev for ev in journal if ev.code == "file-failed"]
+        assert len(failed) == 1
+        assert failed[0].params.get("error") == "boum"
 
     def test_aucune_image(self, tmp_path):
+        """``nothing-matches`` is the structured summary when the inventory is empty."""
         moteur = _moteur(tmp_path)
         with _patch_inventaire(moteur, []):
             res = moteur.run()
-        assert "Aucune image" in res.message
+        assert res.message_event is not None
+        assert res.message_event.code == "nothing-matches"
 
     def test_filtre_largeur_min(self, tmp_path):
         moteur = _moteur(tmp_path, sort_mode="date", min_width=1000)
@@ -688,11 +707,13 @@ class TestExecuter:
         with _patch_inventaire(moteur, [petit, grand]), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                                               "modifie": "", "url": "u"},
+                                        None, None)):
             res = moteur.run()
         assert res.downloaded == 1   # only the big one was processed
 
     def test_interruption(self, tmp_path):
+        """An ``Interrupted`` mid-run surfaces as ``message_event.code == "interrupted"``."""
         moteur = _moteur(tmp_path)
         moteur.arret.set()
 
@@ -702,15 +723,24 @@ class TestExecuter:
         with patch.object(moteur.source, "inventory", side_effect=leve):
             res = moteur.run()
         assert res.interrupted is True
-        assert "Interrompu" in res.message
+        assert res.message_event is not None
+        assert res.message_event.code == "interrupted"
 
     def test_erreur_api_capturee(self, tmp_path):
+        """A ``RuntimeError`` from the source is journalled as ``runtime-error``."""
         moteur = _moteur(tmp_path)
+        journal: list[EngineEvent] = []
+        moteur._journal = journal.append
         with patch.object(moteur.source, "inventory",
                           side_effect=RuntimeError("API HS")):
             res = moteur.run()
+        # ``res.message`` still carries the raw error text so historical
+        # summary consumers keep working.
         assert "API HS" in res.message
         assert res.failures == 0   # RuntimeError ≠ per-image failure
+        runtime_events = [ev for ev in journal if ev.code == "runtime-error"]
+        assert len(runtime_events) == 1
+        assert runtime_events[0].params.get("error") == "API HS"
 
     def test_force_ignore_manifeste(self, tmp_path):
         # with force, an image marked deleted must be re-downloaded
@@ -724,7 +754,8 @@ class TestExecuter:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)) as tel:
+                                               "modifie": "", "url": "u"},
+                                        None, None)) as tel:
             res = moteur.run()
         assert res.downloaded == 1
         assert tel.call_count == 1
@@ -742,7 +773,8 @@ class TestCoupeCircuit:
     no real waiting on backoffs.
     """
 
-    _OK = ("ok", {"taille": 1, "etag": "", "modifie": "", "url": "u"}, None)
+    _OK = ("ok", {"taille": 1, "etag": "", "modifie": "", "url": "u"},
+           None, None)
 
     @staticmethod
     def _elements(nombre):
@@ -759,7 +791,7 @@ class TestCoupeCircuit:
         elements = self._elements(3)
         reponses = [
             self._OK,
-            ("erreur : coupure", None, ErrorClassification("coupure", None)),
+            ("erreur", None, ErrorClassification("coupure", None), "coupure"),
         ]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download", side_effect=reponses) as tel:
@@ -773,8 +805,8 @@ class TestCoupeCircuit:
         """Five consecutive ``transitoire`` failures trigger a defer."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
-        transitoire = ("erreur : timeout", None,
-                       ErrorClassification("transitoire", None))
+        transitoire = ("erreur", None,
+                       ErrorClassification("transitoire", None), "timeout")
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           side_effect=[transitoire] * 5) as tel:
@@ -787,8 +819,8 @@ class TestCoupeCircuit:
         """A success between two runs of ``transitoire`` failures resets the counter."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
-        transitoire = ("erreur : timeout", None,
-                       ErrorClassification("transitoire", None))
+        transitoire = ("erreur", None,
+                       ErrorClassification("transitoire", None), "timeout")
         reponses = [transitoire] * 4 + [self._OK] + [transitoire] * 4 + [self._OK]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download", side_effect=reponses):
@@ -801,9 +833,10 @@ class TestCoupeCircuit:
         """Une erreur ``definitif`` (404) ne fait pas monter le compteur de ``transitoire``."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
-        transitoire = ("erreur : timeout", None,
-                       ErrorClassification("transitoire", None))
-        introuvable = ("introuvable", None, ErrorClassification("definitif", None))
+        transitoire = ("erreur", None,
+                       ErrorClassification("transitoire", None), "timeout")
+        introuvable = ("introuvable", None,
+                       ErrorClassification("definitif", None), None)
         reponses = ([transitoire] * 4 + [introuvable] + [transitoire] * 4
                     + [self._OK])
         with _patch_inventaire(moteur, elements), \
@@ -815,7 +848,8 @@ class TestCoupeCircuit:
         """A ``Retry-After`` of 3600 s produces an ISO 8601 about 1 h in the future."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = self._elements(1)[0]
-        reponse = ("erreur : quota", None, ErrorClassification("coupure", 3600.0))
+        reponse = ("erreur", None,
+                   ErrorClassification("coupure", 3600.0), "quota")
         avant = datetime.now(timezone.utc)
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download", return_value=reponse):
@@ -833,7 +867,8 @@ class TestCoupeCircuit:
         """Without ``Retry-After``, ``res.retry_after`` stays empty: the scheduler decides."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = self._elements(1)[0]
-        reponse = ("erreur : boum", None, ErrorClassification("coupure", None))
+        reponse = ("erreur", None,
+                   ErrorClassification("coupure", None), "boum")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download", return_value=reponse):
             res = moteur.run()
@@ -844,7 +879,8 @@ class TestCoupeCircuit:
         """The on-disk manifest keeps the entries downloaded before the cut."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(3)
-        coupure = ("erreur : coupure", None, ErrorClassification("coupure", None))
+        coupure = ("erreur", None,
+                   ErrorClassification("coupure", None), "coupure")
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           side_effect=[self._OK, coupure]):
@@ -857,7 +893,8 @@ class TestCoupeCircuit:
         """A cut does not write the engine cache (same as ``Interrupted``)."""
         moteur = _moteur(tmp_path, site="https://x", sort_mode="date")
         elements = self._elements(3)
-        coupure = ("erreur : coupure", None, ErrorClassification("coupure", None))
+        coupure = ("erreur", None,
+                   ErrorClassification("coupure", None), "coupure")
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           side_effect=[self._OK, coupure]):
@@ -871,9 +908,10 @@ class TestCoupeCircuit:
 
 class TestEngineInit:
     def test_callbacks_par_defaut_sont_no_op(self, tmp_path):
+        """Default callbacks accept an :class:`EngineEvent` without raising."""
         # without callbacks: the engine does not explode when it "logs"
         m = Engine(Options(target_dir=tmp_path, delay=0))
-        m._journal("un message")
+        m._journal(EngineEvent("all-up-to-date"))
         m._progression(1, 2, "étiquette")   # nothing raises
 
     def test_arret_par_defaut(self, tmp_path):
@@ -940,12 +978,13 @@ class TestChargerManifeste:
         assert m.load_manifest() == {}
 
     def test_illisible_journalise(self, tmp_path):
+        """An unreadable manifest emits a ``manifest-unreadable`` event."""
         manifest_path(tmp_path).write_text("{invalid")
-        journal = []
+        journal: list[EngineEvent] = []
         m = _moteur(tmp_path)
         m._journal = journal.append
         assert m.load_manifest() == {}
-        assert any("illisible" in j for j in journal)
+        assert any(ev.code == "manifest-unreadable" for ev in journal)
 
 
 # --------------------------------------------------------------------------- #
@@ -971,7 +1010,8 @@ class TestExecuterExtra:
         with _patch_inventaire(moteur, [_element(1, taille=5)]), \
              patch.object(moteur, "download",
                           return_value=("inchangé",
-                                        {"fichier": "ok.jpg", "taille": 5, "etag": "e"}, None)):
+                                        {"fichier": "ok.jpg", "taille": 5,
+                                         "etag": "e"}, None, None)):
             res = moteur.run()
         assert res.unchanged == 1
 
@@ -983,7 +1023,8 @@ class TestExecuterExtra:
                           return_value={"42": "match-42"}) as res_parents, \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                                               "modifie": "", "url": "u"},
+                                        None, None)):
             res = moteur.run()
         assert res.downloaded == 1
         res_parents.assert_called_once()
@@ -1003,25 +1044,41 @@ class TestExecuterExtra:
              patch.object(moteur.source, "resolve_groups") as res_g, \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                                               "modifie": "", "url": "u"},
+                                        None, None)):
             moteur.run()
         res_g.assert_not_called()
 
     def test_oserror_capturee(self, tmp_path):
+        """An ``OSError`` becomes a ``write-problem`` structured event."""
         moteur = _moteur(tmp_path)
+        journal: list[EngineEvent] = []
+        moteur._journal = journal.append
         with patch.object(moteur.source, "inventory",
                           side_effect=OSError("disque plein")):
             res = moteur.run()
-        assert "disque plein" in res.message
+        assert res.message_event is not None
+        assert res.message_event.code == "write-problem"
+        assert res.message_event.params.get("error") == "disque plein"
+        # same event is also emitted on the journal callback
+        assert any(
+            ev.code == "write-problem"
+            and ev.params.get("error") == "disque plein"
+            for ev in journal
+        )
 
     def test_journalise_filtrage_largeur(self, tmp_path):
+        """Width-filtered elements are reported as ``discarded-below-min-width``."""
         moteur = _moteur(tmp_path, sort_mode="date", min_width=1000)
-        journal = []
+        journal: list[EngineEvent] = []
         moteur._journal = journal.append
         with _patch_inventaire(moteur, [_element(1, largeur=200),
                                         _element(2, largeur=300)]):
             moteur.run()
-        assert any("écarté" in m for m in journal)  # localized "excluded"
+        events = [ev for ev in journal
+                  if ev.code == "discarded-below-min-width"]
+        assert len(events) == 1
+        assert events[0].params == {"count": 2, "min_width": 1000}
 
     def test_sauvegarde_periodique(self, tmp_path):
         # 26 images: save_manifest must be called at least at the 25th
@@ -1035,7 +1092,8 @@ class TestExecuterExtra:
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)), \
+                                               "modifie": "", "url": "u"},
+                                        None, None)), \
              patch.object(moteur, "save_manifest") as sauver:
             moteur.run()
         # at least 2 calls: periodic + finally
@@ -1052,7 +1110,8 @@ class TestExecuterExtra:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                                               "modifie": "", "url": "u"},
+                                        None, None)):
             moteur.run()
         stocke = read_manifest(tmp_path)["7"]
         assert stocke.get("extra", {}).get("credit") == "ESO/T. Preibisch"
@@ -1156,7 +1215,8 @@ class TestCacheAPI:
         with _patch_inventaire(m, elements), \
              patch.object(m, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                                               "modifie": "", "url": "u"},
+                                        None, None)):
             m.run()
         cache = read_cache(tmp_path)
         assert cache["derniere_date_media"] == "2026-06-20T09:30:00"
@@ -1171,7 +1231,8 @@ class TestCacheAPI:
                           return_value={"42": "match-a"}) as res_p, \
              patch.object(m, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                                               "modifie": "", "url": "u"},
+                                        None, None)):
             m.run()
         assert read_cache(tmp_path)["titres_parents"] == {"42": "match-a"}
         res_p.assert_called_once()
@@ -1201,7 +1262,8 @@ class TestCacheAPI:
              patch.object(m.source, "resolve_groups", side_effect=faux_resoudre), \
              patch.object(m, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                                               "modifie": "", "url": "u"},
+                                        None, None)):
             m.run()
         # the adapter received the cache: it's up to it to short-circuit.
         assert appels and appels[0][1] == {"42": "match-cache"}
@@ -1366,7 +1428,8 @@ class TestSauverManifesteFusion:
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"}, None)), \
+                                               "modifie": "", "url": "u"},
+                                        None, None)), \
              patch.object(moteur, "save_manifest") as sauver:
             moteur.run()
         assert sauver.call_count >= 2

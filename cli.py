@@ -14,9 +14,11 @@ from pathlib import Path
 from Glaneur.config import Config
 from Glaneur.engine import (
     Engine,
+    EngineEvent,
     Options,
     format_bytes,
     list_deleted,
+    render_en,
     restore,
 )
 from Glaneur.scheduler import Scheduler
@@ -102,7 +104,11 @@ def main() -> int:
             sys.stdout.flush()
             dernier[0] = ligne
 
-    moteur = Engine(options, journal=lambda m: print(f"\n{m}"), progression=progression)
+    def journal(event: EngineEvent) -> None:
+        """Render an engine event in English and print it on stdout."""
+        print(f"\n{render_en(event)}")
+
+    moteur = Engine(options, journal=journal, progression=progression)
     try:
         res = moteur.run()
     except KeyboardInterrupt:

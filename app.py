@@ -19,7 +19,7 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtCore import QCoreApplication, QSize, Qt, QThread, QTimer, QUrl, Signal
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -75,6 +75,7 @@ from Glaneur.config import (
 )
 from Glaneur.engine import (
     Engine,
+    EngineEvent,
     Options,
     RunResult,
     delete_image,
@@ -103,6 +104,100 @@ PERIODE_ECHEANCE = 30_000   # ms between two due-time checks
 PERIODE_AFFICHAGE = 1_000   # ms between two countdown refreshes
 
 DEPOT_URL = "https://github.com/penoud/Glaneur"
+
+
+# --------------------------------------------------------------------------- #
+# Engine event rendering
+# --------------------------------------------------------------------------- #
+
+def _render_ui(event: EngineEvent) -> str:
+    """Render a structured engine event in French for the UI.
+
+    The context ``UiJournal`` is intentionally new: it isolates these
+    translations from the historical ``Moteur`` context (removed by
+    US-VERIF-04) so old ``.qm`` files never accidentally resolve stale
+    keys against the new codes.
+
+    Each ``translate()`` call passes literal context and source so that
+    ``lupdate`` can extract them; a dict lookup would be more compact but
+    would break the translation extractor.
+
+    Unknown codes fall back to ``"<code> <params>"`` — a missing entry
+    never silently drops information.
+    """
+    p = event.params
+    match event.code:
+        case "source-message":
+            # Source adapters still emit already-French free text; pass
+            # it through unchanged (their migration is a future US).
+            return str(p.get("text", ""))
+        case "manifest-unreadable":
+            return QCoreApplication.translate(
+                "UiJournal", "Manifeste illisible, reconstruction complète.")
+        case "already-known":
+            return QCoreApplication.translate(
+                "UiJournal", "{count} image(s) déjà connues.").format(**p)
+        case "cache-since-date":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "Cache : ne redemande à l'API que les médias postérieurs à {date}.",
+            ).format(**p)
+        case "discarded-below-min-width":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{count} vignette(s) ou logo(s) écarté(s) (moins de {min_width} px).",
+            ).format(**p)
+        case "nothing-matches":
+            return QCoreApplication.translate(
+                "UiJournal", "Aucune image ne correspond aux critères.")
+        case "known-and-todo":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{known} déjà à jour, {todo} à traiter.",
+            ).format(**p)
+        case "n-files-erased-locally":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{count} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées.",
+            ).format(**p)
+        case "all-up-to-date":
+            return QCoreApplication.translate(
+                "UiJournal", "Tout est déjà à jour.")
+        case "identifying-galleries":
+            return QCoreApplication.translate(
+                "UiJournal", "Identification des galeries…")
+        case "file-not-found":
+            return QCoreApplication.translate(
+                "UiJournal", "{filename} : introuvable").format(**p)
+        case "file-failed":
+            return QCoreApplication.translate(
+                "UiJournal", "{filename} : erreur {error}").format(**p)
+        case "n-new-images":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{count} nouvelle(s) image(s), {size} téléchargés.",
+            ).format(**p)
+        case "interrupted":
+            return QCoreApplication.translate(
+                "UiJournal", "Interrompu — la reprise repartira d'ici.")
+        case "runtime-error":
+            return QCoreApplication.translate(
+                "UiJournal", "Erreur : {error}").format(**p)
+        case "write-problem":
+            return QCoreApplication.translate(
+                "UiJournal", "Problème d'écriture : {error}").format(**p)
+        case "defer-with-time":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "Serveur indisponible ou quota atteint — reprise après {until}.",
+            ).format(**p)
+        case "defer-no-time":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "Serveur indisponible ou quota atteint — reprise différée.",
+            )
+        case _:
+            return f"{event.code} {dict(p)}"
 
 
 # --------------------------------------------------------------------------- #
@@ -141,7 +236,11 @@ def icone_application() -> QIcon:
 class Travailleur(QThread):
     """Run the engine off the UI thread."""
 
-    journal = Signal(str)
+    #: Structured engine event to render in the journal widget. Emitted
+    #: with the raw :class:`EngineEvent` so the UI (main thread) is the
+    #: one that calls :func:`_render_ui`, i.e. Qt's translation stack is
+    #: only touched from the main thread.
+    journal_event = Signal(object)
     progres = Signal(int, int, str)
     fini = Signal(object)
 
@@ -161,7 +260,7 @@ class Travailleur(QThread):
         """Instantiate the engine and start the run; emit ``fini(RunResult)`` on exit."""
         moteur = Engine(
             self.options,
-            journal=self.journal.emit,
+            journal=self.journal_event.emit,
             progression=lambda fait, total, etq: self.progres.emit(fait, total, etq),
             arret=self.arret,
         )
@@ -1132,10 +1231,14 @@ class Fenetre(QMainWindow):
             image_format=self.cfg.image_format,
         )
         self.travailleur = Travailleur(options, self.arret)
-        self.travailleur.journal.connect(self._ecrire)
+        self.travailleur.journal_event.connect(self._journal_evenement)
         self.travailleur.progres.connect(self._progres)
         self.travailleur.fini.connect(self._terminer)
         self.travailleur.start()
+
+    def _journal_evenement(self, event: EngineEvent) -> None:
+        """Render an engine event and append it to the journal widget."""
+        self._ecrire(_render_ui(event))
 
     def _arreter(self) -> None:
         self.arret.set()
@@ -1173,8 +1276,11 @@ class Fenetre(QMainWindow):
         self.barre.setRange(0, 100)
         self.barre.setValue(0 if res.interrupted else 100)
 
-        self.label_statut.setText(res.message)
-        self._ecrire(res.message)
+        # Prefer the structured event when the engine set one, so the
+        # summary is translated on the fly rather than shown in English.
+        rendu = _render_ui(res.message_event) if res.message_event else res.message
+        self.label_statut.setText(rendu)
+        self._ecrire(rendu)
         if res.already_present:
             self._ecrire(self.tr("{n} image(s) déjà présentes, non retéléchargées.").format(
                 n=res.already_present))

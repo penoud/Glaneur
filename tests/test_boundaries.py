@@ -13,7 +13,8 @@ PACKAGE = ROOT / "Glaneur"
 QT_MODULES = ("PySide6", "shiboken6", "PyQt5", "PyQt6")
 # Debt to shrink, never to extend. Strict xfail turns the fix into a failure
 # until the entry is removed, so the list cannot silently go stale.
-KNOWN_QT_IMPORTS = {"Glaneur/engine/core.py"}
+# Emptied by US-VERIF-04 once engine/core.py stopped importing QCoreApplication.
+KNOWN_QT_IMPORTS: set[str] = set()
 NETWORK_CALLS = {"Session", "get", "post", "head", "put", "delete", "request"}
 
 

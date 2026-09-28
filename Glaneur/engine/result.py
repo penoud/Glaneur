@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .events import EngineEvent
+
 
 @dataclass
 class RunResult:
@@ -44,7 +46,13 @@ class RunResult:
     #: writes nothing to disk in that case; the CLI translates it into
     #: exit code 3.
     busy: bool = False
-    #: Summary ready to display to the user (localized).
+    #: Summary ready to display to the user, rendered in English by the
+    #: engine. Kept for the CLI and for tests that predate structured
+    #: events; the UI uses :attr:`message_event` and translates it.
     message: str = ""
+    #: Structured version of :attr:`message`, populated at every place
+    #: where the engine used to build a translated summary. ``None`` on
+    #: run paths that do not produce a summary (``busy`` short-circuit).
+    message_event: EngineEvent | None = None
     #: Free-form bag for extra information.
     details: dict = field(default_factory=dict)

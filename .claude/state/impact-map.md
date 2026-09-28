@@ -9,137 +9,182 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-**US-VERIF-03 — Verrou OS par dossier cible (lot 4).**
+**US-VERIF-04 — Événements structurés du moteur (lot 2, fin, frontière 1).**
 
-Troisième US du sprint
+Quatrième et dernière US du sprint
 `docs/sprints/2026-09-verifier-lots-1-4-avant-lot-5.md`.
 
-Aujourd'hui, `Glaneur/engine/_locks.py` = un `threading.Lock` de
-processus, dédié à la fusion UI ↔ moteur du manifeste (voir
-`Engine.save_manifest`). Il ne protège **pas** contre deux processus
-Glaneur qui viseraient le même dossier — cas concret dès l'ouverture du
-lot 5.2 : file de profils + tâche planifiée horaire (lot 8) + ancienne
-installation résiduelle.
+Aujourd'hui, `Glaneur/engine/core.py` importe `QCoreApplication` et fait
+17 appels `translate("Moteur", …)`. Conséquences :
 
-Objectif : ajouter un verrou OS par dossier cible, portable (`fcntl.flock`
-sur POSIX, `msvcrt.locking` sur Windows), acquis à l'entrée de
-`Engine.run()` et libéré à la sortie du context manager. Sur verrou
-déjà tenu, `run()` renvoie un `RunResult(busy=True)` sans effet de bord
-sur le manifeste. La CLI convertit ce cas en exit code 3.
+- Frontière 1 violée (CLAUDE.md, section « Écarts connus »), matérialisée
+  par le `xfail(strict=True)` sur cet import dans `tests/test_boundaries.py`.
+- La liste de profils prévue au lot 5.0 E2 (« colonne statut ») n'a rien
+  à consommer : elle lit une chaîne déjà traduite, pas un couple
+  code+params sur lequel construire un état visuel.
+
+Objectif : le moteur émet des `EngineEvent(code, params)` via son
+callback `journal`. L'UI est le seul endroit qui les rend en français
+(via `QCoreApplication.translate("UiJournal", …)`). Le CLI et la CLI-log
+les rendent en anglais via une fonction pure `render_en(event)`.
+L'import `QCoreApplication` disparaît de `engine/core.py`. Le
+`xfail(strict=True)` de la frontière 1 saute.
 
 ## Directly modified
 
-- `Glaneur/engine/_folder_lock.py` (**nouveau**) : module isolé avec la
-  classe d'exception `FolderBusy` et le context manager
-  `folder_lock(target_dir: Path)`. Fichier `.glaneur.lock` posé dans le
-  dossier cible, contenu = PID/host/UTC pour diagnostic (le verrou OS
-  est le vrai garde-fou, pas le contenu du fichier).
-- `Glaneur/engine/result.py` : ajouter le champ `busy: bool = False` à
-  `RunResult`.
-- `Glaneur/engine/core.py::Engine.run` : encapsuler le corps existant
-  dans un `with folder_lock(self.o.target_dir):`. Sur `FolderBusy`,
-  renvoyer un `RunResult(busy=True)` immédiat, sans toucher au manifeste
-  ni ouvrir la session. Le message du result reste vide dans cette US
-  (US-VERIF-04 branchera un événement structuré).
-- `cli.py` : sortir avec exit code **3** lorsque `res.busy` est vrai, un
-  court message sur `stderr`. Positionner ce test avant le calcul de
-  l'exit code habituel (`0/1/2`).
-- `tests/test_folder_lock.py` (**nouveau**) : voir la section « Tests ».
+- **`Glaneur/engine/events.py`** (**nouveau**) : classe frozen
+  `EngineEvent(code: str, params: Mapping[str, object])` et fonction
+  pure `render_en(event) -> str` qui applique les gabarits anglais des
+  17 codes.
+- **`Glaneur/engine/result.py`** : ajout du champ
+  `message_event: EngineEvent | None = None`. Le champ existant
+  `message: str = ""` reste : le moteur y écrit `render_en(event)` pour
+  que la CLI puisse continuer à printer directement.
+- **`Glaneur/engine/core.py`** :
+  - retirer `from PySide6.QtCore import QCoreApplication` ;
+  - callback `journal` typé `Callable[[EngineEvent], None]` ;
+  - chaque `QCoreApplication.translate("Moteur", …)` → `EngineEvent(...)`
+    passé à `self._journal(...)` ou fixé sur `res.message_event` ;
+  - `res.message` toujours mis à jour, avec `render_en(res.message_event)`,
+    afin que le CLI et les tests hérités puissent s'appuyer dessus ;
+  - `Engine.download` renvoie désormais `(status, infos, classification,
+    error_text)` — quatre éléments, `error_text: str | None` fourni sur
+    le chemin d'erreur ; la conversion en chaîne traduite n'est plus dans
+    `download` ;
+  - le libellé de progression pour « Identification des galeries… » et
+    pour le defer utilise `render_en(event)` : en anglais côté engine,
+    l'UI conserve le droit de reconstruire un rendu FR à partir de
+    `message_event` sur son écran principal.
+- **`Glaneur/engine/__init__.py`** : ré-export de `EngineEvent` et
+  `render_en` (surface publique du sous-paquet).
+- **`app.py`** :
+  - `Travailleur.journal = Signal(str)` → `Signal(object)` (portant un
+    `EngineEvent`) ;
+  - un slot rend l'événement en français via
+    `QCoreApplication.translate("UiJournal", <template FR>).format(**params)` ;
+  - la fenêtre principale lit `res.message_event` pour recomposer le
+    statut et le journal en français ; à défaut d'un `message_event`
+    (défer, cas historique inchangé), elle retombe sur `res.message`.
+- **`cli.py`** :
+  - callback `journal` qui imprime `render_en(event)` ;
+  - `res.message` reste utilisé tel quel pour le résumé final.
+- **`tests/test_core.py`** : chaque assertion qui matchait une chaîne
+  française particulière compare désormais `event.code` (et éventuellement
+  un champ de `event.params`). Rédaction déléguée à `test-author`.
+- **`tests/test_boundaries.py`** : `KNOWN_QT_IMPORTS` vidé de
+  `Glaneur/engine/core.py`. Le test devient garant de la frontière 1
+  côté moteur.
+- **`translations/glaneur_fr.ts` et `translations/glaneur_en.ts`** :
+  régénérés via `pyside6-lupdate` après les modifications de code. La
+  compilation `.qm` est produite par `translations/build_translations.py
+  release`.
+- **`docs/sprints/2026-09-verifier-lots-1-4-avant-lot-5.md`** :
+  section US-VERIF-04 non modifiée ; c'est la source de la présente
+  US.
 
 ## Direct dependencies
 
-- `Glaneur/engine/_locks.py` : **inchangé**. Le `threading.Lock` reste
-  dédié à la fusion du manifeste — c'est une autre couche, intra-processus.
-- `Glaneur/engine/__init__.py` : **inchangé**. `FolderBusy` et
-  `folder_lock` restent des symboles privés du sous-paquet ; l'entrée
-  publique reste `Engine.run` renvoyant un `RunResult`.
-- `Glaneur/engine/options.py::Options.target_dir` (type `Path`,
-  ligne 18) : **lu, non modifié** — le context manager attend un `Path`.
-- `Glaneur/engine/core.py::Engine.load_manifest`, `save_manifest`,
-  `save_cache` : appelés uniquement dans la partie protégée du `with`,
-  jamais avant. **Non modifiés.**
-- `cli.py::main` retourne aujourd'hui `0/1/2/130` (`--restaurer` et
-  déferred inclus) ; ajout du chemin `3` sans en retirer.
+- `Glaneur/engine/options.py`, `Glaneur/engine/_folder_lock.py`,
+  `Glaneur/engine/_locks.py`, `Glaneur/scheduler.py`, `Glaneur/config.py`,
+  `Glaneur/sources/*` : **inchangés**. Le refactor est strictement local
+  à la couche journal/message du moteur.
+- `Glaneur/logsetup.py` : non modifié. Le logging fichier n'est pas
+  connecté au callback `journal` aujourd'hui ; le brancher relève d'un
+  lot ultérieur.
+- `tests/test_cli.py` : lecture ; ses stubs `_FauxEngine` acceptent
+  `journal=None` — le contrat de l'argument reste, seul le type de ce
+  qu'on lui passe change. Adaptation seulement si des assertions
+  matchent une chaîne journal historique.
+- `tests/test_folder_lock.py` (US-VERIF-03) : `_FauxBusyEngine.run`
+  renvoie un `RunResult(busy=True)` sans passer par `journal` ni
+  `message_event`. **Non impacté**.
+- `.claude/state/impact-map.md` : cet artéfact de session.
 
 ## Explicitly out of scope
 
-- **Toute file d'attente ou logique de scheduler** liée au lot 5.2 : le
-  verrou est un pré-requis, pas la file. Le lot 5.2 s'en servira dans
-  une future US.
-- **Intégration côté UI Qt** (`app.py`, `Engine` lancé depuis un
-  `QThread`) : la CLI seule couvre le pré-requis du lot 5. Si l'UI
-  lance `Engine.run()` sur un dossier occupé, elle recevra un
-  `RunResult(busy=True)` — le rendu utilisateur côté UI est traité dans
-  US-VERIF-04 ou plus tard.
-- **Suppression du fichier `.glaneur.lock`** après release : le fichier
-  peut rester en place, le verrou OS est libéré à la fermeture du
-  descripteur. L'utilisateur peut le supprimer à la main sans casser la
-  prochaine acquisition (nouveau fichier recréé).
-- **Verrou sur partage SMB** : la roadmap ne l'exige pas ; laisser en
-  note dans la docstring du module.
-- **`Glaneur/engine/_locks.py`** : sa raison d'être (fusion manifeste
-  intra-processus) reste valide et distincte du verrou inter-processus
-  ajouté ici.
+- **Renommage de `journal` en `on_event`** : sprint doc parle de
+  « changement de signature du callback `journal` » — on garde le nom
+  pour ne pas casser tous les appelants et tests. Renommage possible
+  dans un lot ultérieur si utile.
+- **Migration du manifeste ou du cache vers un format v2** : lot 6.
+- **Écarts CLAUDE.md restants** : clés FR du manifeste, champs FR
+  d'`Element`, flags CLI FR, valeurs de dispatch FR (`transitoire`,
+  `coupure`, `definitif`, `galerie`, `date`, `plat`, `wordpress`,
+  `djangoplicity`, statuts moteur `ok`/`repris`/`inchangé`/`introuvable`,
+  marques `supprime`/`restaure`) — laissés tels quels, ces chaînes
+  restent des codes de dispatch, pas des messages utilisateur.
+- **Contextes Qt autres que `Moteur`** (`Planificateur`, `Updater`,
+  `BugReport`) : intacts. Les nouveaux libellés UI arrivent dans le
+  contexte `UiJournal`, séparé.
+- **File log en anglais** (roadmap 2) : partie facultative, non branchée
+  au callback aujourd'hui ; laissée à un lot dédié.
 - **`__version__`** : inchangé.
 
 ## Tests
 
-Nouveau fichier `tests/test_folder_lock.py`. Aucun test existant
-modifié.
+Cible principale : `tests/test_core.py` (~129 tests), où de nombreuses
+assertions matchent aujourd'hui les chaînes françaises journal /
+`res.message`. Rédaction déléguée à `test-author`, qui doit :
 
-Cas :
+- remplacer les match de chaîne « déjà connues », « Aucune image ne
+  correspond aux critères. », « Tout est déjà à jour. »,
+  « nouvelle(s) image(s) », « Interrompu — la reprise repartira d'ici. »,
+  « Erreur : », « Problème d'écriture », etc. par des vérifications
+  `event.code == "..."` sur ce que le callback `journal` a reçu ;
+- vérifier aussi `res.message_event.code` là où la chaîne `res.message`
+  était comparée ;
+- ne pas retester la traduction FR — la traduction vit dans l'UI,
+  couverte par un unique test de rendu ajouté dans
+  `tests/test_ui_journal_render.py` (voir plus bas).
 
-- **Double acquisition intra-processus** : `with folder_lock(dir):`
-  imbriqué → le second bloc lève `FolderBusy`. Fonctionne sur POSIX
-  parce que deux `open()` donnent deux descripteurs indépendants ; à
-  reproduire tel quel sur Windows.
-- **Acquisition séquentielle** : premier `with folder_lock(dir):` puis
-  release, deuxième `with folder_lock(dir):` sur le même dossier → OK.
-- **Multi-processus** : `multiprocessing.get_context("spawn").Process`
-  (spawn explicite pour ne pas hériter du descripteur ouvert). Parent
-  tient le verrou, le fils tente et voit `FolderBusy` ; le parent
-  vérifie via un `multiprocessing.Queue`.
-- **Suppression manuelle** du fichier `.glaneur.lock` entre deux runs :
-  la prochaine acquisition doit fonctionner (recréation du fichier).
-- **Intégration** : `Engine.run()` sur un dossier déjà verrouillé
-  renvoie `RunResult(busy=True)` ; aucun manifeste n'est écrit, aucun
-  appel à la source. Utilise `tmp_path` et une source no-op montée via
-  `SOURCES` ou par patch — cf. le pattern existant dans
-  `tests/test_core.py`.
-- **CLI busy = exit 3** : appel `main()` en patchant `Engine.run` pour
-  renvoyer un `RunResult(busy=True)` ; capturer `sys.exit`.
+Nouveau fichier `tests/test_ui_journal_render.py` (couvert par
+`test-author` ou par la conversation principale, à décider) :
+- pour chacun des 17 codes, `_render(EngineEvent(code, {…}))` renvoie
+  une chaîne non vide et déterministe (deux appels au même code donnent
+  le même rendu). Ne teste pas le contenu FR — trop fragile — juste
+  la présence et la stabilité.
 
-Sleep réel évité. Aucun appel réseau.
+`tests/test_boundaries.py::test_no_qt_outside_ui` : doit passer sur
+`Glaneur/engine/core.py` sans `xfail`.
+
+Suite complète (`pytest -q`) verte. Couverture : `engine/*` reste
+≥ 98.0 %, `sources/*` reste ≥ 98.0 %.
 
 ## Invariants
 
 - `__version__` inchangé.
-- Le contrat de `Engine.run` reste : renvoyer un `RunResult`, ne pas
-  lever d'exception autre que `Interrupted` (qui reste convertie en
-  `RunResult.interrupted=True` dans le corps existant).
-- Le champ `RunResult.busy` est `False` sur tout run non conflictuel :
-  les 26 sites qui construisent un `RunResult` (tous dans
-  `engine/core.py` et les tests) n'ont pas besoin de changer.
-- Sur `busy=True` : ni écriture de manifeste, ni écriture de cache, ni
-  appel à `self.source.inventory`, ni acquisition de session HTTP.
-- Le verrou est libéré même si `Engine.run` lève une exception :
-  garantie par le `with` context manager, indépendamment du corps.
-- Frontière 1 (Qt) : `_folder_lock.py` n'importe ni PySide6 ni Qt.
-- Plafond de couverture `Glaneur/engine/*` (98.0 %) tient.
+- `EngineEvent` est un dataclass gelé — impossibilité de muter `params`
+  après création.
+- La signature publique de `Engine.__init__` conserve les mêmes
+  paramètres (`options`, `journal`, `progression`, `arret`), seul le
+  type de `journal` change de `Callable[[str], None]` à
+  `Callable[[EngineEvent], None]`.
+- `RunResult` reste additif : `message_event` a un défaut `None`, tous
+  les consommateurs existants qui lisent `message` continuent de le
+  faire.
+- **Frontière 1 résolue** : `Glaneur/engine/core.py` n'importe plus
+  aucun module Qt. `tests/test_boundaries.py::test_no_qt_outside_ui`
+  le garantit désormais.
+- Aucun format persisté ne change (manifeste, cache, `config.json`).
+- Aucune chaîne de dispatch persistée ne change (statuts moteur, marques
+  `supprime`/`restaure`, `sort_mode`, etc.).
+- Les plafonds de couverture (US-VERIF-01) tiennent : `sources/*` 98.0,
+  `scheduler.py` 95.0, `config.py` 97.0, `engine/*` 98.0.
 
 ## Validation
 
-Niveau `subsystem`. Un nouveau module dans le moteur, un champ ajouté
-à un dataclass persisté-adjacent, une nouvelle branche dans `Engine.run`,
-un nouvel exit code CLI.
+Niveau `subsystem` — nouveau module dans le moteur, changement de
+signature d'un callback, mais aucun format persisté, aucune API
+externe.
 
 - Rédaction des tests par `test-author` (sous-agent).
 - Rédaction du code de production par la conversation principale.
-- `pytest tests/test_folder_lock.py tests/test_core.py tests/test_cli.py -q`
-  vert.
-- `pytest -q --cov=Glaneur --cov-branch && python tools/check_coverage.py`
-  vert.
-- `ruff check Glaneur/engine/_folder_lock.py Glaneur/engine/result.py Glaneur/engine/core.py cli.py tests/test_folder_lock.py`
-  vert.
-- Relecture `invariant-reviewer` (nouveau module dans le moteur ;
-  frontière moteur ↔ OS ; changement de contrat `Engine.run`).
+- `pytest -q --cov=Glaneur --cov-branch` vert.
+- `python tools/check_coverage.py` vert.
+- `ruff check` propre sur les fichiers touchés (les avertissements
+  `DTZ005` et `EXE001` préexistants, hors périmètre US-VERIF-03,
+  restent — non introduits par cette US).
+- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` vert.
+- Relecture `invariant-reviewer` (frontière 1 est le cœur de l'US).
+- Regénération des `.ts` puis compilation des `.qm` — vérifier que
+  `translations/glaneur_fr.qm` charge dans l'UI.
