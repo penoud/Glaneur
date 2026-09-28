@@ -10,6 +10,9 @@ on:
       - "requirements.txt"
       - ".github/workflows/build-check.yml"
 
+permissions:
+  contents: read
+
 concurrency:
   group: build-check-${{ github.head_ref }}
   cancel-in-progress: true

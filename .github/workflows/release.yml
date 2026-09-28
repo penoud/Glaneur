@@ -7,7 +7,7 @@ on:
 
 permissions:
   actions: write
-  contents: write
+  contents: read
 
 concurrency:
   # Ne jamais couper un tag ou un dispatch en cours : deux pushes rapprochés
@@ -24,6 +24,9 @@ jobs:
     needs: tests
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # git push of the version tag
+      actions: write    # gh workflow run build.yml
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
