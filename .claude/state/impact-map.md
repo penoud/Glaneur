@@ -9,60 +9,73 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-**Sprint « Identifiants FR → EN ». Batch 8 — housekeeping.**
+**Sprint « CI — Valider l'exe avant de tagger ». US-CI-07.**
 
-Le sprint a renommé la surface Python à travers les lots 2 à 6 + 4b.
-Deux artefacts documentaires portent encore les anciens noms et
-doivent être alignés :
+Actuellement, `release.yml` tag puis lance `build.yml` par
+`gh workflow run`. Si le build casse, un tag existe sans release.
+US-CI-07 remplace cette chaîne par : `tests → version → build (+ smoke)
+→ [approbation manuelle] → tag + publish`, tout dans une seule exécution
+de `release.yml`.
 
-1. **`CLAUDE.md` « Écarts connus »** : la ligne « identifiants Python
-   restent en français » n'est plus vraie. La récrire pour lister
-   précisément ce qui reste FR après le sprint (persistance non
-   déplacée + user-facing).
-2. **`README.md`** : sections EN et FR, arbre du projet et description
-   du contrat du moteur, référencent encore `Moteur`, `Resultat`,
-   `lire_cache`, `ecrire_cache`, `nettoyer`, `restaurer`,
-   `supprimer_image`, `lister_supprimees`, `format_octets`,
-   `inventaire`, `derniere_execution`, `retenter_apres`,
-   `intervalle_heures`, `verifier_integrite`, `verifier_maj_demarrage`,
-   `lancer_au_demarrage`, `fermer_dans_barre`, `delai_requetes`,
-   `langue`. Les mettre à jour avec les noms EN adoptés.
+- `build.yml` devient réutilisable (`workflow_call`) et perd `push: tags`.
+- Le job `publish` est déplacé de `build.yml` vers `release.yml`.
+- Le tag est posé sur `$GITHUB_SHA` juste avant la publication.
+- Un job `publish` sous environnement `release` (relecteurs requis)
+  fait pauser l'exécution après le build ; le mainteneur télécharge
+  l'installateur, le teste, puis approuve ou rejette.
+- Un smoke test `--controle-bundle` est ajouté à `build.yml` avant la
+  signature.
 
 ## Directly modified
 
-- CLAUDE.md
-- README.md
+- `.github/workflows/release.yml` (remplacement complet)
+- `.github/workflows/build.yml` (triggers + smoke test + suppression job publish)
+- `docs/sprints/sprint-ci-validation-avant-tag.md` (nouveau, sprint doc)
+- `docs/sprints/sprint-ci-workflows.md` (procédure de reprise)
+- `README.md` (mentions de publication par push de tag)
 
 ## Direct dependencies
 
-Aucune. Édition documentaire pure.
+- `app.py` : `--controle-bundle` (existe déjà, ligne 1312) — non modifié.
+- `.github/workflows/tests.yml` : appelé par `release.yml` via
+  `workflow_call` (déjà en place depuis US-CI-04).
+- `.github/workflows/build-check.yml` : hors périmètre US-CI-07 ;
+  couvert par US-CI-08 (PR séparée), non entreprise ici.
 
 ## Explicitly out of scope
 
-- `WINDOWS_PFX_BASE64` dans README — CLAUDE.md le désigne « lot 9 »,
-  concerne le mécanisme de signature Windows, pas le renommage FR→EN.
-- Métadonnées AppStream `packaging/linux/` — CLAUDE.md dit « en attente
-  avec Linux ».
-- Frontière 1 (`QCoreApplication` dans `engine/core.py`) — reste
-  l'écart connu principal ; distinct du sprint.
-- Traductions `.ts` (contextes `"Moteur"`, `"Planificateur"`,
-  `"Updater"` et strings sources FR) — inchangés.
-- Éléments Python restés FR de manière volontaire : voir la liste
-  détaillée que ce lot ajoute à CLAUDE.md.
+- **`__version__`** : ne change pas. Les PR de ce sprint ne publient rien.
+- **US-CI-08** : PR séparée, non traitée dans ce lot.
+- **Réactivation Linux/macOS** : les blocs restent commentés, seul le
+  commentaire pointe désormais vers `release.yml`.
+- **Réglage GitHub `environment: release`** : responsabilité du
+  mainteneur avant la fusion.
+- **Signature `WINDOWS_PFX_*`** : inchangée (relève du lot 9).
+- **AppStream metainfo** : inchangé (en attente avec Linux).
+- **Frontière 1 (`QCoreApplication`)** : distinct du sprint.
 
 ## Tests
 
-Aucun. Docs pures. Vérification qu'aucun rôle Sphinx cassé n'est
-introduit (les identifiants nommés dans le README sont en prose et
-non `:class:` / `:meth:`).
+Aucun test unitaire à ajouter — les workflows ne s'exécutent pas contre
+le faux serveur. Vérifications :
+
+- `actionlint` local si disponible (non installé sur ce poste).
+- Critères d'acceptation observés après fusion (voir sprint doc).
 
 ## Invariants
 
-- Comportement inchangé.
-- Aucun code Python modifié.
-- CLAUDE.md « Écarts connus » reste une liste courte et fidèle à ce
-  qui reste divergent entre le code et l'état visé.
+- `__version__` inchangé.
+- Aucun code applicatif Python modifié.
+- La release publie **exactement les octets testés** au smoke test et
+  à l'essai manuel.
+- Le tag désigne le commit qui a été construit (`GITHUB_SHA`), jamais
+  un commit plus récent.
+- Un rejet ne consomme pas la version : ni tag ni release.
 
 ## Validation
 
-Niveau `local`. Relecture, pas de pytest ni ruff.
+Niveau `local`. Édition workflows + docs. Pas de pytest, pas de
+`invariant-reviewer` (aucun invariant du moteur ou de la persistance
+n'est touché ; le sprint ne modifie ni `Glaneur/`, ni le format des
+fichiers persistés). Relecture manuelle des YAML et cohérence avec la
+procédure de reprise documentée.
