@@ -26,16 +26,22 @@ plafonds. Aucun code applicatif ne change.
 
 ## Directly modified
 
-- `.github/workflows/tests.yml` (deux étapes remplacées : suppression de
-  « Run tests », ajout de « Run tests with coverage » puis « Check
-  per-module coverage floors »).
+- `.github/workflows/tests.yml` : « Run tests » remplacé par trois étapes
+  conditionnelles — mesure de couverture sur Linux, exécution simple sur
+  Windows, contrôle des plafonds par module sur Linux uniquement.
+- `tools/check_coverage.py` : `FLOORS` **abaissés à la baseline mesurée**
+  (`sources/*` 98.0 %, `scheduler.py` 95.0 %, `config.py` 97.0 %,
+  `engine/*` 98.5 %) — les valeurs aspirationnelles 100/100/100 n'avaient
+  jamais été gardées en CI. Commentaire ajouté pour expliquer que ce
+  sont les valeurs d'entrée du cliquet, à ne monter qu'à mesure que la
+  couverture progresse.
 
 ## Direct dependencies
 
 - `pyproject.toml` : `[tool.coverage.run] branch = true` et
   `source = ["Glaneur"]` déjà en place — **lu, non modifié**.
-- `tools/check_coverage.py` : `FLOORS` et `main()` déjà en place — **lu,
-  non modifié**.
+- `tools/check_coverage.py` `main()` : logique inchangée, seul le
+  dictionnaire `FLOORS` bouge.
 - `requirements-dev.txt` : `pytest-cov>=7.1.0` déjà présent — **lu, non
   modifié**.
 - `.github/workflows/tests.yml` étapes existantes (checkout, setup-python,
@@ -47,13 +53,17 @@ plafonds. Aucun code applicatif ne change.
   actionlint — traitées par leur propre lot (roadmap 1.4 et 1.5). Ne
   pas les ajouter ici, même si tentant : cela élargirait le périmètre
   au-delà d'US-VERIF-01.
-- **Réhausser les plafonds** : ce n'est pas un cliquet qui monte ici,
-  c'est un cliquet qu'on branche. Les plafonds actuels reflètent la
-  couverture actuelle ; on les monte lors des lots suivants selon la
-  règle « le cliquet ne descend jamais ».
+- **Ajouter des tests pour combler les écarts** (`sources/base.py:83`,
+  `sources/djangoplicity.py:42-43`, `scheduler.py:166-167`,
+  `config.py:305-306`, branches partielles) : reporté à un futur US
+  (« raise ratchet »), après US-VERIF-04. La règle « le cliquet ne
+  descend jamais » démarre à partir des valeurs branchées ici.
 - **Code applicatif** (`Glaneur/`) : aucune modification.
 - **Tests** : aucun ajout ni suppression. La CI se contente de mesurer la
   suite existante.
+- **Couverture sur Windows** : la mesure branchée reste Linux uniquement,
+  parce que `config_dir()` a des embranchements dépendants de l'OS. La
+  suite tourne toujours en entier sur Windows.
 - **`__version__`** : inchangé.
 - **`.github/workflows/build.yml`, `release.yml`, `build-check.yml`** :
   hors périmètre.
@@ -77,11 +87,15 @@ Vérifications avant PR :
 - `__version__` inchangé.
 - Aucun fichier `Glaneur/` modifié.
 - Aucun test ajouté, retiré ou modifié.
-- Les plafonds `FLOORS` de `tools/check_coverage.py` sont **exactement**
-  ceux mesurés sur `main` à ce jour : le cliquet ne descend jamais et
-  ne monte pas non plus dans cette US.
-- La matrice de la CI (`ubuntu-latest`, `windows-latest`, Python 3.11)
-  reste identique.
+- Les plafonds `FLOORS` posés ici sont la baseline mesurée localement le
+  2026-09-28 (`sources/*` 98.11 %, `scheduler.py` 95.12 %, `config.py`
+  97.24 %, `engine/*` 98.69 %), arrondie vers le bas pour laisser un
+  minuscule matelas numérique (98.0 / 95.0 / 97.0 / 98.5). À partir de
+  ce point, le cliquet ne descend jamais : chaque futur PR qui monte la
+  couverture doit monter le plafond dans le même diff.
+- La mesure et le contrôle des plafonds tournent sur `ubuntu-latest`
+  uniquement ; la suite complète tourne sur `windows-latest` sans
+  mesure de couverture. La matrice reste identique par ailleurs.
 - L'étape « Compile translations » reste avant la mesure : sinon le test
   end-to-end de `Glaneur.i18n.installer_traducteur` ne charge pas les
   `.qm` et fausse la couverture.
