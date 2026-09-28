@@ -1,92 +1,93 @@
-# Sprint CI — Valider l'exe avant de tagger
+# CI Sprint — Validate the exe before tagging
 
-Emplacement cible dans le dépôt : `docs/sprints/sprint-ci-validation-avant-tag.md`.
+Target location in the repository: `docs/sprints/sprint-ci-validation-avant-tag.md`.
 
-## Objectif
+## Goal
 
-Sur `main`, construire et contrôler l'installateur Windows **avant** de créer
-le tag, faire valider manuellement l'installateur par le mainteneur, puis
-publier **exactement les octets testés**.
+On `main`, build and control the Windows installer **before** creating
+the tag, have the installer manually validated by the maintainer, then
+publish **exactly the bytes tested**.
 
-Chaîne actuelle :
+Current chain:
 
 ```
 tests → tag → gh workflow run build.yml --ref v<version> → build → publish
 ```
 
-Chaîne cible, dans **une seule exécution** de `release.yml` :
+Target chain, in **a single run** of `release.yml`:
 
 ```
-tests → version → build (+ smoke test) → [approbation manuelle] → tag + publish
+tests → version → build (+ smoke test) → [manual approval] → tag + publish
 ```
 
-## Contraintes du sprint
+## Sprint constraints
 
-- Seuls `.github/workflows/` et la documentation changent. Aucun code
-  applicatif ne change : `--controle-bundle` existe déjà dans `app.py`.
-- **`__version__` ne change pas.** Toute PR de ce sprint ne publie rien.
-- Aucune nouvelle dépendance.
-- Commentaires YAML en **anglais**, en expliquant le *pourquoi*.
-- La fusion sur `main` et le réglage de l'environnement GitHub reviennent au
-  **mainteneur**. Claude Code ouvre la PR en brouillon et s'arrête là.
-- Vérification locale avec `actionlint` sur `.github/workflows/`, si
-  l'outil est disponible sur le poste. Ce n'est pas une dépendance du projet.
+- Only `.github/workflows/` and the documentation change. No
+  application code changes: `--controle-bundle` already exists in
+  `app.py`.
+- **`__version__` does not change.** Every PR of this sprint
+  publishes nothing.
+- No new dependency.
+- YAML comments in **English**, explaining the *why*.
+- The merge on `main` and the GitHub environment setup belong to the
+  **maintainer**. Claude Code opens the PR in draft and stops there.
+- Local verification with `actionlint` on `.github/workflows/`, if the
+  tool is available on the workstation. This is not a project
+  dependency.
 
-## Décisions et leur raison
+## Decisions and their rationale
 
-| Décision | Raison |
+| Decision | Rationale |
 |---|---|
-| `build.yml` devient réutilisable (`workflow_call`) et perd `push: tags` | Le dispatch sur le tag n'existait que parce qu'un tag poussé avec `GITHUB_TOKEN` ne déclenche aucun workflow. Il n'est plus nécessaire. |
-| Le job `publish` est déplacé de `build.yml` vers `release.yml` | La release reçoit les artifacts du build qui a été testé, dans la même exécution. |
-| Le tag est posé explicitement sur `$GITHUB_SHA` | Le tag désigne le commit construit, jamais un commit plus récent. |
-| `publish` porte l'environnement `release`, avec relecteur requis | L'exécution s'arrête après le build : le mainteneur télécharge l'installateur, le teste, puis approuve ou rejette. C'est l'approbation prévue au lot 9, mise en place dès maintenant. |
-| Un rejet ne crée ni tag ni release | Le numéro de version n'est pas consommé : on corrige, on repousse avec la même `__version__`, et l'exécution suivante reconstruit. |
-| Smoke test placé avant la signature | Inutile de signer un bundle cassé. |
+| `build.yml` becomes reusable (`workflow_call`) and loses `push: tags` | The tag dispatch existed only because a tag pushed with `GITHUB_TOKEN` triggers no workflow. It is no longer necessary. |
+| The `publish` job moves from `build.yml` to `release.yml` | The release receives the artifacts of the build that was tested, in the same run. |
+| The tag is placed explicitly on `$GITHUB_SHA` | The tag names the commit that was built, never a more recent commit. |
+| `publish` carries the `release` environment, with required reviewer | The run stops after the build: the maintainer downloads the installer, tests it, then approves or rejects. This is the approval planned in lot 9, put in place from now on. |
+| A rejection creates neither tag nor release | The version number is not consumed: fix, push again with the same `__version__`, and the next run rebuilds. |
+| Smoke test placed before signing | No point in signing a broken bundle. |
 
-**Impasse à ne pas prendre** : valider un exe dans un job, puis laisser
-`build.yml` reconstruire sur le tag. On publierait alors un binaire différent
-de celui qui a été validé, avec une autre signature.
+**Dead end not to take**: validate an exe in one job, then let
+`build.yml` rebuild on the tag. We would then publish a binary
+different from the one that was validated, with a different signature.
 
 ---
 
-## US-CI-07 — Build, validation puis tag dans `release.yml`
+## US-CI-07 — Build, validate, then tag inside `release.yml`
 
-### Modification 1 — `.github/workflows/release.yml` (remplacement complet)
+### Change 1 — `.github/workflows/release.yml` (full replacement)
 
-Voir le fichier livré dans cette PR. Points essentiels :
+See the file shipped in this PR. Key points:
 
-- `permissions: contents: read` au niveau top-level ; plus de
-  `actions: write` puisqu'il n'y a plus de `gh workflow run`.
-- Concurrence `group: release`, `cancel-in-progress: false` : ne
-  jamais couper une exécution en attente d'approbation ou de
-  publication.
-- Job `tests` : appelle `tests.yml` par `workflow_call`.
-- Job `version` : lit et valide `__version__`, décide si un build est
-  nécessaire (`release=true` si le tag n'existe pas encore).
-- Job `build` : appelle `build.yml` par `workflow_call` avec
-  `secrets: inherit` (nécessaire pour `WINDOWS_PFX_*`).
-- Job `publish` : sous `environment: release`, télécharge les
-  artifacts, pose le tag sur `$GITHUB_SHA`, publie la release. Le
-  `--clobber` est sans danger ici : il ne sert qu'à relancer le même
-  build (mêmes octets), ce qui ne réintroduit pas le bug corrigé par
-  US-CI-01. La logique préversion d'US-CI-02 est conservée : elle lit
-  désormais `$TAG` au lieu de `GITHUB_REF_NAME`, qui vaudrait `main`.
+- `permissions: contents: read` at the top level; no more
+  `actions: write` since there is no more `gh workflow run`.
+- Concurrency `group: release`, `cancel-in-progress: false`: never cut
+  a run waiting for approval or publication.
+- `tests` job: calls `tests.yml` via `workflow_call`.
+- `version` job: reads and validates `__version__`, decides whether a
+  build is needed (`release=true` if the tag does not yet exist).
+- `build` job: calls `build.yml` via `workflow_call` with
+  `secrets: inherit` (necessary for `WINDOWS_PFX_*`).
+- `publish` job: under `environment: release`, downloads the
+  artifacts, places the tag on `$GITHUB_SHA`, publishes the release.
+  `--clobber` is safe here: it is only used to rerun the same build
+  (same bytes), which does not reintroduce the bug fixed by US-CI-01.
+  The US-CI-02 pre-release logic is kept: it now reads `$TAG` instead
+  of `GITHUB_REF_NAME`, which would be `main`.
 
-L'étape de tag est idempotente : l'attente d'approbation peut durer
-des jours, donc elle re-vérifie l'existence du tag au moment de la
-publication et n'accepte un tag existant que s'il pointe déjà sur
-`$GITHUB_SHA` (reprise après un `Re-run failed jobs`).
+The tag step is idempotent: the approval wait can last for days, so it
+re-checks the existence of the tag at publication time and only
+accepts an existing tag if it already points to `$GITHUB_SHA` (recovery
+after a `Re-run failed jobs`).
 
-### Modification 2 — `.github/workflows/build.yml`
+### Change 2 — `.github/workflows/build.yml`
 
-**a. Déclencheurs** : `workflow_call` et `workflow_dispatch`
-uniquement. `push: tags` disparaît. Un `workflow_dispatch` seul produit
-un installateur en artifact, sans rien publier, depuis n'importe
-quelle branche.
+**a. Triggers**: `workflow_call` and `workflow_dispatch` only.
+`push: tags` disappears. A standalone `workflow_dispatch` produces an
+installer as an artifact, without publishing anything, from any
+branch.
 
-**b. Smoke test** dans le job `windows`, juste après l'étape
-`pyinstaller` et avant « Sign application when certificate is
-configured » :
+**b. Smoke test** in the `windows` job, right after the `pyinstaller`
+step and before "Sign application when certificate is configured":
 
 ```yaml
       - name: Smoke test the bundle
@@ -99,128 +100,127 @@ configured » :
           if ($p.ExitCode -ne 0) { throw "Bundle check failed: exit code $($p.ExitCode)" }
 ```
 
-**c. Suppression du job `publish`**, déplacé dans `release.yml`.
+**c. Removal of the `publish` job**, moved to `release.yml`.
 
-**d. Commentaires des blocs Linux et macOS** : ils pointent désormais
-vers le job `publish` de `release.yml`. Un rappel est ajouté : à la
-réactivation, lire la version dans `__version__`, car `GITHUB_REF_NAME`
-vaudra `main`. Le code de ces blocs reste commenté et inchangé.
+**d. Comments on the Linux and macOS blocks**: they now point to the
+`publish` job of `release.yml`. A reminder is added: on
+re-activation, read the version from `__version__`, because
+`GITHUB_REF_NAME` will be `main`. The code of these blocks stays
+commented and unchanged.
 
-Le job `windows` reste identique pour le reste, y compris le nom
-d'artifact `Glaneur-setup`.
+The `windows` job stays identical otherwise, including the artifact
+name `Glaneur-setup`.
 
-### Modification 3 — documentation
+### Change 3 — documentation
 
-- `docs/sprints/sprint-ci-workflows.md`, section « Procédure de
-  reprise », mise à jour :
-  - **Installateur rejeté à l'approbation** : corriger, puis repousser
-    sur `main` avec la même `__version__`. Aucun tag n'existe.
-  - **Échec après approbation** (tag ou upload) : lancer *Re-run failed
-    jobs* sur `publish`. L'étape de tag accepte un tag déjà posé sur le
-    même commit.
-  - L'incrément de *patch* ne sert plus qu'en dernier recours, si un
-    tag existe sur un autre commit.
-- `README.md` : les passages qui décrivent la publication par `push` de
-  tag sont corrigés et mentionnent l'étape d'approbation. Les passages
-  sur la signature `WINDOWS_PFX_*` restent tels quels, car ils relèvent
-  du lot 9.
+- `docs/sprints/sprint-ci-workflows.md`, section "Recovery procedure",
+  updated:
+  - **Installer rejected at approval**: fix, then push again on
+    `main` with the same `__version__`. No tag exists.
+  - **Failure after approval** (tag or upload): launch *Re-run failed
+    jobs* on `publish`. The tag step accepts a tag already placed on
+    the same commit.
+  - The *patch* bump is only a last resort now, if a tag exists on
+    another commit.
+- `README.md`: the passages that describe publication by `push` of a
+  tag are corrected and mention the approval step. The passages about
+  the `WINDOWS_PFX_*` signing stay as they are, because they belong
+  to lot 9.
 
-### Réglage du dépôt — à faire par le mainteneur, pas par Claude Code
+### Repository setup — done by the maintainer, not by Claude Code
 
-Dans *Settings → Environments → New environment* :
+Under *Settings → Environments → New environment*:
 
-1. Créer l'environnement `release`.
-2. Cocher *Required reviewers* et ajouter le mainteneur.
-3. **Laisser *Prevent self-review* décoché.** Sinon, un mainteneur seul
-   ne peut jamais approuver.
-4. Optionnel : restreindre *Deployment branches* à `main`.
+1. Create the `release` environment.
+2. Tick *Required reviewers* and add the maintainer.
+3. **Leave *Prevent self-review* unchecked.** Otherwise a lone
+   maintainer can never approve.
+4. Optional: restrict *Deployment branches* to `main`.
 
-Sans ce réglage, `environment: release` est créé automatiquement **sans
-protection**, et la publication part sans pause. La PR ne doit pas être
-fusionnée avant que le réglage soit fait.
+Without this setup, `environment: release` is created automatically
+**with no protection**, and publication proceeds with no pause. The
+PR must not be merged before the setup is done.
 
-### Vérifié ou supposé
+### Verified or assumed
 
-- **Documenté par GitHub** :
-  - les environnements avec relecteurs requis sont disponibles sur les
-    dépôts publics, quel que soit le plan ;
-  - `secrets: inherit` est nécessaire pour que `build.yml` voie
+- **Documented by GitHub**:
+  - environments with required reviewers are available on public
+    repositories, regardless of plan;
+  - `secrets: inherit` is needed for `build.yml` to see
     `WINDOWS_PFX_*`.
-- **Supposé, à confirmer au premier essai** :
-  - les artifacts produits par un workflow appelé sont téléchargeables
-    par un job du workflow appelant ;
-  - ils sont visibles sur la page de l'exécution pendant l'attente
-    d'approbation (comportement annoncé depuis `upload-artifact` v4).
-- **Concurrence** : pendant l'attente, l'exécution occupe le groupe
-  `release`. Un deuxième push attend. Un troisième remplace le deuxième
-  en file, car GitHub n'en garde qu'un en attente. Le dernier commit
-  gagne, ce qui est acceptable.
-- **Limites du smoke test** : il couvre les imports de `app.py` au
-  niveau module, ainsi que `engine`, `sources` et `updater`. Il ne
-  couvre ni l'ouverture de la fenêtre, ni les `.qm`, ni les imports Qt
-  paresseux. L'essai manuel avant approbation couvre ces points.
+- **Assumed, to be confirmed on first try**:
+  - artifacts produced by a called workflow are downloadable by a
+    job of the calling workflow;
+  - they are visible on the run page during the approval wait
+    (behaviour announced since `upload-artifact` v4).
+- **Concurrency**: during the wait, the run occupies the `release`
+  group. A second push waits. A third one replaces the second in the
+  queue, because GitHub only keeps one pending. The last commit wins,
+  which is acceptable.
+- **Smoke test limits**: it covers `app.py`'s module-level imports,
+  plus `engine`, `sources`, and `updater`. It covers neither the
+  window opening, nor the `.qm` files, nor lazy Qt imports. The
+  manual pre-approval trial covers those.
 
-### Critères d'acceptation
+### Acceptance criteria
 
-Ils s'observent après fusion. Chaque critère coché renvoie à l'URL de
-l'exécution qui le prouve.
+Observed after merge. Every ticked criterion points to the URL of the
+run that proves it.
 
-- [ ] `actionlint` ne signale rien sur `.github/workflows/`.
-- [ ] Push sur `main` sans changement de version : `build` et `publish`
-      sont *skipped*, et aucune approbation n'est demandée.
-- [ ] `workflow_dispatch` de `builds` sur une branche : l'artifact
-      `Glaneur-setup` est produit, sans tag ni release.
-- [ ] Sur un fork, ou sur une branche avec la garde temporairement
-      levée, jamais sur `main`, avec une version `0.0.0-ci.1` :
-      - l'exécution s'arrête en *Waiting* et l'installateur est
-        téléchargeable ;
-      - un rejet ne crée ni tag ni release ;
-      - une approbation crée le tag sur le commit construit et une
-        release *Pre-release* ;
-      - le SHA-256 de l'asset publié est identique à celui de
-        l'artifact testé.
-- [ ] *Re-run failed jobs* sur `publish` après un échec simulé de
-      l'upload : l'étape de tag reprend sans erreur.
-- [ ] Contre-épreuve : un module importé par l'application, ajouté à
-      `QT_INUTILES` sur une branche jetable, fait échouer le smoke
-      test, et aucune approbation n'est demandée.
-- [ ] Nettoyage : supprimer les tags et releases de test.
+- [ ] `actionlint` reports nothing on `.github/workflows/`.
+- [ ] Push on `main` without a version change: `build` and `publish`
+      are *skipped*, and no approval is requested.
+- [ ] `workflow_dispatch` of `builds` on a branch: the `Glaneur-setup`
+      artifact is produced, without tag or release.
+- [ ] On a fork, or on a branch with the guard temporarily lifted,
+      never on `main`, with a `0.0.0-ci.1` version:
+      - the run stops in *Waiting* and the installer is downloadable;
+      - a rejection creates neither tag nor release;
+      - an approval creates the tag on the built commit and a
+        *Pre-release* release;
+      - the SHA-256 of the published asset is identical to the tested
+        artifact.
+- [ ] *Re-run failed jobs* on `publish` after a simulated upload
+      failure: the tag step resumes without error.
+- [ ] Counter-check: a module imported by the application, added to
+      `QT_INUTILES` on a throwaway branch, causes the smoke test to
+      fail, and no approval is requested.
+- [ ] Cleanup: delete the test tags and releases.
 
 ---
 
-## US-CI-08 (optionnelle, PR séparée) — `build-check` réutilise `build.yml`
+## US-CI-08 (optional, separate PR) — `build-check` reuses `build.yml`
 
-**Problème.** `build-check.yml` ne compile pas les traductions. Il ne
-contrôle donc pas le même bundle que celui qui est publié.
+**Problem.** `build-check.yml` does not compile the translations. It
+therefore does not check the same bundle as the one that is
+published.
 
-**Modification.**
+**Change.**
 
-- Ajouter à `build.yml` une entrée
-  `workflow_call.inputs.sign` (booléen, défaut `false`).
-- Conditionner les deux étapes de signature à `inputs.sign`. Pour le
-  `workflow_dispatch` direct, une entrée équivalente vaut `false` par
-  défaut.
-- Dans `release.yml`, appeler le build avec `with: { sign: true }`.
-- Réduire `build-check.yml` à un seul job qui appelle `build.yml` avec
-  `sign: false`, en gardant son filtre `paths` et sa concurrence.
+- Add to `build.yml` a `workflow_call.inputs.sign` input (boolean,
+  default `false`).
+- Condition the two signing steps on `inputs.sign`. For the direct
+  `workflow_dispatch`, an equivalent input defaults to `false`.
+- In `release.yml`, call the build with `with: { sign: true }`.
+- Reduce `build-check.yml` to a single job that calls `build.yml`
+  with `sign: false`, keeping its `paths` filter and its concurrency.
 
-**Raison.** On obtient une seule définition du build, et chaque PR
-fournit son installateur en artifact. Un build de PR n'est jamais
-signé.
+**Rationale.** We get a single build definition, and every PR
+provides its installer as an artifact. A PR build is never signed.
 
-**Critères d'acceptation**
+**Acceptance criteria**
 
-- [ ] Une PR qui touche `Glaneur/` produit l'artifact `Glaneur-setup`,
-      non signé, avec des `.qm` présents dans le bundle.
-- [ ] La publication sur `main` reste signée quand le certificat est
-      configuré.
+- [ ] A PR that touches `Glaneur/` produces the `Glaneur-setup`
+      artifact, unsigned, with `.qm` files present in the bundle.
+- [ ] Publication on `main` stays signed when the certificate is
+      configured.
 
 ---
 
 ## Definition of Done
 
-- [ ] PR(s) ouvertes en brouillon, avec les critères d'US-CI-07 listés.
-- [ ] `__version__` inchangé.
-- [ ] Environnement `release` configuré par le mainteneur avant la
-      fusion.
-- [ ] Procédure de reprise et README à jour.
+- [ ] PR(s) opened in draft, with the US-CI-07 criteria listed.
+- [ ] `__version__` unchanged.
+- [ ] `release` environment configured by the maintainer before the
+      merge.
+- [ ] Recovery procedure and README up to date.

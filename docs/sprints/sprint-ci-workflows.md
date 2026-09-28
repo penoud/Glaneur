@@ -1,65 +1,65 @@
-> **Archivé le 2026-09-25.** Sprint déplacé dans `docs/sprints/` par
-> US-05 du sprint « Documentation Sphinx et nettoyage `docs/` ». L'état
-> d'avancement des stories US-CI-01 à US-CI-06 n'a pas été vérifié à
-> ce déplacement ; consulter l'historique `.github/workflows/` pour
-> savoir ce qui a réellement été livré.
+> **Archived on 2026-09-25.** Sprint moved to `docs/sprints/` by
+> US-05 of the sprint "Sphinx documentation and `docs/` cleanup".
+> The progress status of stories US-CI-01 through US-CI-06 was not
+> verified at the move; consult the `.github/workflows/` history to
+> know what was actually delivered.
 
-# Sprint CI — Fiabiliser la chaîne GitHub Actions
+# CI Sprint — Harden the GitHub Actions chain
 
-Emplacement historique dans le dépôt : `docs/sprint-ci-workflows.md`.
+Historical location in the repository: `docs/sprint-ci-workflows.md`.
 
-## Objectif
+## Goal
 
-Rendre la chaîne `tests → tag → build → release` sûre **avant** l'extraction de
-`sources/wordpress.py`. On corrige deux bugs de publication, on supprime les
-exécutions redondantes, et on détecte les problèmes de packaging **avant**
-qu'un tag soit créé.
+Make the `tests → tag → build → release` chain safe **before** the
+extraction of `sources/wordpress.py`. Fix two publication bugs, remove
+redundant runs, and detect packaging problems **before** a tag is
+created.
 
-Ce sprint ne modifie que `.github/workflows/`. La seule exception est une option
-de contrôle ajoutée à l'application (US-CI-06). **`__version__` ne change pas** :
-les PR de ce sprint ne publient rien.
+This sprint only modifies `.github/workflows/`. The only exception is
+a control option added to the application (US-CI-06). **`__version__`
+does not change**: this sprint's PRs publish nothing.
 
-## État de départ (vérifié dans les fichiers)
+## Starting state (verified in the files)
 
-| Workflow | Déclencheurs | Rôle |
+| Workflow | Triggers | Role |
 |---|---|---|
-| `tests.yml` | `push` sur `main`, `pull_request` | pytest sous Ubuntu |
-| `release.yml` | `push` sur `main`, `workflow_dispatch` | pytest (doublon), lecture de `__version__`, tag, `gh workflow run build.yml --ref v<version>` |
-| `build.yml` | `push` de tags `v*`, `workflow_dispatch` | PyInstaller, signature, Inno Setup, `.sha256`, Release (job `publish` limité aux refs `refs/tags/v*`) |
+| `tests.yml` | `push` on `main`, `pull_request` | pytest under Ubuntu |
+| `release.yml` | `push` on `main`, `workflow_dispatch` | pytest (duplicate), reading of `__version__`, tag, `gh workflow run build.yml --ref v<version>` |
+| `build.yml` | `push` of `v*` tags, `workflow_dispatch` | PyInstaller, signing, Inno Setup, `.sha256`, Release (`publish` job limited to `refs/tags/v*` refs) |
 
-Le déclenchement explicite de `build.yml` est volontaire : un tag poussé avec
-`GITHUB_TOKEN` ne déclenche aucun autre workflow. Il faut le conserver.
+The explicit trigger of `build.yml` is deliberate: a tag pushed with
+`GITHUB_TOKEN` triggers no other workflow. It has to be kept.
 
-## Découpage en PR
+## PR split
 
-| PR | Stories | Risque |
+| PR | Stories | Risk |
 |---|---|---|
-| 1 | US-CI-01, US-CI-02 | Faible, corrige la publication |
-| 2 | US-CI-03, US-CI-04 | Faible, restructure `release.yml` |
-| 3 | US-CI-05 | Moyen, peut révéler des tests qui échouent sous Windows |
-| 4 | US-CI-06 | Moyen, touche `app.py` et ajoute un workflow |
+| 1 | US-CI-01, US-CI-02 | Low, fixes publication |
+| 2 | US-CI-03, US-CI-04 | Low, restructures `release.yml` |
+| 3 | US-CI-05 | Medium, may reveal tests failing under Windows |
+| 4 | US-CI-06 | Medium, touches `app.py` and adds a workflow |
 
-Chaque PR est ouverte en brouillon dès le premier commit, pour que les tests
-tournent à chaque push.
+Each PR is opened as a draft on the first commit, so tests run on
+every push.
 
 ---
 
-## US-CI-01 — Ne plus reconstruire la release courante
+## US-CI-01 — Stop rebuilding the current release
 
-**Problème.** Dans `release.yml`, le `exit 0` de « Create and push version tag »
-ne termine que cette étape. « Trigger installer builds » n'a pas de condition :
-chaque push sur `main` sans changement de version relance `build.yml` sur le
-tag existant, et `--clobber` remplace les assets. On obtient de nouveaux
-binaires et une nouvelle signature pour la même version. Entre les deux
-téléversements, l'installateur et son `.sha256` ne correspondent plus, et
-l'updater rejette la mise à jour.
+**Problem.** In `release.yml`, the `exit 0` of "Create and push version
+tag" ends only that step. "Trigger installer builds" has no condition:
+every push on `main` without a version change reruns `build.yml` on
+the existing tag, and `--clobber` replaces the assets. We get new
+binaries and a new signature for the same version. Between the two
+uploads, the installer and its `.sha256` no longer match, and the
+updater rejects the update.
 
-**Modification** (`release.yml`) :
+**Change** (`release.yml`):
 
 ```yaml
       - name: Create and push version tag
         id: tag
-        # … env et shell inchangés
+        # … env and shell unchanged
         run: |
           tag="v$VERSION"
           if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
@@ -67,36 +67,37 @@ l'updater rejette la mise à jour.
             echo "created=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # … configuration git, tag et push inchangés
+          # … git config, tag and push unchanged
           echo "created=true" >> "$GITHUB_OUTPUT"
       - name: Trigger installer builds
         if: steps.tag.outputs.created == 'true'
-        # … inchangé
+        # … unchanged
 ```
 
-**Contrepartie acceptée.** Si le tag est créé mais que le déclenchement échoue,
-relancer `release.yml` ne relancera plus le build. La reprise se fait à la main
-(voir §Procédure de reprise).
+**Accepted trade-off.** If the tag is created but the trigger fails,
+rerunning `release.yml` will no longer rerun the build. Recovery is
+done by hand (see §Recovery procedure).
 
-**Critères d'acceptation**
+**Acceptance criteria**
 
-- [ ] Un push sur `main` sans changement de version : `release.yml` passe au
-      vert et aucune exécution de `builds` n'apparaît.
-- [ ] Les assets de la dernière release gardent leur date et leur SHA-256.
+- [ ] A push on `main` without a version change: `release.yml` goes
+      green and no `builds` execution appears.
+- [ ] The assets of the last release keep their date and SHA-256.
 
-## US-CI-02 — Publier les préversions comme telles
+## US-CI-02 — Publish pre-releases as such
 
-**Problème.** La validation `[0-9]*.[0-9]*.[0-9]*` accepte `1.0.5-rc.1`, mais
-`gh release create` ne reçoit pas `--prerelease`. Or
-`GitHubReleaseProvider._is_stable` se fie au drapeau GitHub, pas au nom du tag.
-Une rc serait donc proposée comme mise à jour stable.
+**Problem.** The `[0-9]*.[0-9]*.[0-9]*` validation accepts `1.0.5-rc.1`,
+but `gh release create` is not given `--prerelease`. Yet
+`GitHubReleaseProvider._is_stable` relies on the GitHub flag, not the
+tag name. An rc would therefore be offered as a stable update.
 
-**Choix.** On marque la release comme préversion plutôt que de refuser le
-suffixe. Ça garde la possibilité de publier des rc de test pendant le
-multi-sources sans toucher les utilisateurs, et l'updater ignore déjà les
-préversions (couvert par `test_github_provider_ignores_prerelease_and_draft`).
+**Choice.** Mark the release as pre-release rather than reject the
+suffix. This keeps the ability to publish test rcs during the
+multi-source work without affecting users, and the updater already
+ignores pre-releases (covered by
+`test_github_provider_ignores_prerelease_and_draft`).
 
-**Modification** (`build.yml`, job `publish`) :
+**Change** (`build.yml`, `publish` job):
 
 ```bash
           prerelease=()
@@ -110,52 +111,54 @@ préversions (couvert par `test_github_provider_ignores_prerelease_and_draft`).
           fi
 ```
 
-**Critères d'acceptation**
+**Acceptance criteria**
 
-- [ ] Vérification hors `main` : pousser à la main un tag `v0.0.0-ci.1` sur un
-      commit de la branche de la PR. `builds` se déclenche par `push: tags`,
-      et la release est créée avec le badge *Pre-release*.
-- [ ] Supprimer ensuite la release et le tag de test.
+- [ ] Verification outside `main`: manually push a `v0.0.0-ci.1` tag
+      on a commit of the PR branch. `builds` is triggered by
+      `push: tags`, and the release is created with the *Pre-release*
+      badge.
+- [ ] Then delete the test release and tag.
 
-> Supposé, à confirmer au premier essai : `"${prerelease[@]}"` vide ne produit
-> aucun argument sous le bash des runners Ubuntu (bash ≥ 4.4).
+> Assumed, to be confirmed on first try: an empty `"${prerelease[@]}"`
+> produces no argument under the Ubuntu runners' bash (bash ≥ 4.4).
 
-## US-CI-03 — Garde de branche et concurrence
+## US-CI-03 — Branch guard and concurrency
 
-**Problèmes.**
+**Problems.**
 
-- `workflow_dispatch` sur `release.yml` lancé depuis une autre branche
-  taguerait et publierait le commit de cette branche.
-- Deux pushes rapprochés sur `main` lancent deux `release.yml` qui peuvent
-  tenter le même tag.
+- `workflow_dispatch` on `release.yml` launched from another branch
+  would tag and publish that branch's commit.
+- Two close pushes on `main` launch two `release.yml` runs that may
+  attempt the same tag.
 
-**Modification** (`release.yml`, en tête et sur le job de tag) :
+**Change** (`release.yml`, at the top and on the tag job):
 
 ```yaml
 concurrency:
   group: release
-  cancel-in-progress: false   # ne jamais couper un tag ou un dispatch en cours
+  cancel-in-progress: false   # never cut a tag or dispatch in progress
 
 jobs:
   tag:
     if: github.ref == 'refs/heads/main'
 ```
 
-**Critères d'acceptation**
+**Acceptance criteria**
 
-- [ ] `workflow_dispatch` de `release.yml` depuis une branche : job *skipped*.
-- [ ] Deux pushes successifs sur `main` : la seconde exécution attend la première.
+- [ ] `workflow_dispatch` of `release.yml` from a branch: job *skipped*.
+- [ ] Two successive pushes on `main`: the second run waits for the
+      first.
 
-## US-CI-04 — Une seule définition des tests
+## US-CI-04 — A single tests definition
 
-**Problème.** Les tests tournent deux fois à chaque push sur `main`, et leur
-définition est dupliquée (paquets apt, dépendances, commande).
+**Problem.** Tests run twice on every push to `main`, and their
+definition is duplicated (apt packages, dependencies, command).
 
-**Choix.** Un workflow réutilisable (`workflow_call`) plutôt qu'une action
-composite. C'est le mécanisme natif pour enchaîner des jobs entre workflows, et
-il ne demande aucun fichier supplémentaire.
+**Choice.** A reusable workflow (`workflow_call`) rather than a
+composite action. It is the native mechanism to chain jobs between
+workflows, and it requires no extra file.
 
-**Modification** (`tests.yml`) :
+**Change** (`tests.yml`):
 
 ```yaml
 on:
@@ -163,15 +166,15 @@ on:
   workflow_call:
 
 concurrency:
-  # Sur une PR, un nouveau push rend l'exécution précédente sans intérêt.
+  # On a PR, a new push makes the previous run pointless.
   group: tests-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 ```
 
-Le `push: main` de `tests.yml` disparaît : sur `main`, c'est `release.yml` qui
-l'appelle.
+`tests.yml`'s `push: main` disappears: on `main`, it is `release.yml`
+that calls it.
 
-**Modification** (`release.yml`) : le job `test-and-tag` est scindé en deux.
+**Change** (`release.yml`): the `test-and-tag` job is split in two.
 
 ```yaml
 jobs:
@@ -184,34 +187,34 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      # checkout, setup-python, lecture de version, tag, dispatch
-      # (les étapes apt, pip pytest et « Run tests before tagging » sont supprimées)
+      # checkout, setup-python, version read, tag, dispatch
+      # (the apt, pip pytest, and "Run tests before tagging" steps are removed)
 ```
 
-`fetch-depth: 0` peut être retiré : l'existence du tag est testée par
-`git ls-remote`, pas dans l'historique local.
+`fetch-depth: 0` can be removed: the existence of the tag is tested by
+`git ls-remote`, not through local history.
 
-> Point d'attention : dans `tests.yml`, `github.head_ref` est vide lors d'un
-> appel par `workflow_call` depuis un push. Le repli sur `run_id` isole alors
-> chaque exécution, pour qu'un test de release ne soit jamais annulé.
+> Point of attention: in `tests.yml`, `github.head_ref` is empty when
+> called by `workflow_call` from a push. Falling back to `run_id` then
+> isolates each run so that a release test is never cancelled.
 
-**Critères d'acceptation**
+**Acceptance criteria**
 
-- [ ] Push sur `main` : une seule exécution de pytest, visible comme job
-      `tests / tests` dans `tag-release`.
-- [ ] Un test volontairement cassé sur une branche de vérification empêche le
-      job `tag` de démarrer (à vérifier sur un fork ou sur une branche en
-      dispatch avec garde temporairement levée, jamais sur `main`).
-- [ ] Deux pushes rapides sur une PR : la première exécution est annulée.
+- [ ] Push on `main`: a single pytest run, visible as job
+      `tests / tests` in `tag-release`.
+- [ ] A deliberately broken test on a verification branch prevents the
+      `tag` job from starting (to be checked on a fork or on a dispatch
+      branch with the guard temporarily lifted, never on `main`).
+- [ ] Two rapid pushes on a PR: the first run is cancelled.
 
-## US-CI-05 — Tests sous Windows
+## US-CI-05 — Tests under Windows
 
-**Pourquoi.** Plusieurs invariants sont plus fragiles sous Windows : le
-`replace` atomique sur un fichier ouvert, le verrouillage des `.part`, et
-`systeme.py`. Aujourd'hui, rien ne les teste sur la plateforme principale. Pour
-un dépôt public, le coût en minutes est nul.
+**Why.** Several invariants are more fragile under Windows: the
+atomic `replace` on an open file, `.part` file locking, and
+`systeme.py`. Today, nothing tests them on the main platform. For a
+public repo, the minute cost is zero.
 
-**Modification** (`tests.yml`) :
+**Change** (`tests.yml`):
 
 ```yaml
 jobs:
@@ -222,53 +225,53 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      # … checkout, setup-python inchangés
+      # … checkout, setup-python unchanged
       - name: Install Qt runtime libs (offscreen)
         if: runner.os == 'Linux'
-        # … inchangé
-      # … installation des dépendances et pytest inchangés
+        # … unchanged
+      # … dependency installation and pytest unchanged
 ```
 
-> Supposé : le plugin `offscreen` est livré dans les wheels
-> `PySide6-Essentials` pour Windows, et `QT_QPA_PLATFORM=offscreen` y
-> fonctionne. À confirmer à la première exécution.
+> Assumed: the `offscreen` plugin is shipped in the
+> `PySide6-Essentials` wheels for Windows, and `QT_QPA_PLATFORM=offscreen`
+> works there. To be confirmed on first run.
 
-**Risque.** Des tests peuvent échouer sous Windows (séparateurs de chemin,
-fichiers restés ouverts dans les fixtures). On limite le temps passé à les
-corriger dans ce sprint. Un test qui révèle un vrai bug du moteur sort du sprint
-et devient une issue ; il est alors marqué `xfail` sous Windows, avec le numéro
-d'issue en raison.
+**Risk.** Some tests may fail under Windows (path separators, files
+left open in fixtures). We limit the time spent fixing them in this
+sprint. A test that reveals a real engine bug leaves the sprint and
+becomes an issue; it is then marked `xfail` under Windows, with the
+issue number as the reason.
 
-**Critères d'acceptation**
+**Acceptance criteria**
 
-- [ ] La matrice passe sur les deux OS, ou chaque `xfail` Windows renvoie à une
-      issue ouverte.
+- [ ] The matrix passes on both OSes, or each Windows `xfail` links to
+      an open issue.
 
-## US-CI-06 — Contrôler le packaging avant le tag
+## US-CI-06 — Control packaging before the tag
 
-**Problème.** PyInstaller n'est exécuté qu'après création du tag. Un exe
-cassé, par exemple un module manquant dans le bundle, laisse un tag sans
-release, et ce tag ne peut plus être recréé. L'extraction de `sources/` est
-exactement ce type de changement.
+**Problem.** PyInstaller only runs after the tag is created. A broken
+exe — for example a module missing from the bundle — leaves a tag
+with no release, and that tag can no longer be recreated. The
+`sources/` extraction is exactly that kind of change.
 
-**Partie 1 — option de contrôle dans l'application** (`app.py`, tout en haut du
-point d'entrée, avant la création de `QApplication`) :
+**Part 1 — control option in the application** (`app.py`, at the very
+top of the entry point, before `QApplication` is created):
 
 ```python
 if "--controle-bundle" in sys.argv:
-    # Importe ce que PyInstaller pourrait avoir oublié, sans ouvrir de fenêtre.
-    # Le résultat passe par le code de sortie : en mode fenêtré,
-    # sys.stdout peut valoir None et un print lèverait une exception.
+    # Imports what PyInstaller might have forgotten, without opening a window.
+    # The result is signalled by the exit code: in windowed mode,
+    # sys.stdout can be None and a print would raise.
     import Glaneur.engine  # noqa: F401
-    # Quand sources/ existera : import Glaneur.sources
+    # Once sources/ exists: import Glaneur.sources
     sys.exit(0)
 ```
 
-> Supposé : le `.spec` construit l'exe en mode fenêtré (`console=False`), d'où
-> le choix du code de sortie plutôt que d'une sortie texte. Si l'exe est en mode
-> console, rien ne change.
+> Assumed: the `.spec` builds the exe in windowed mode
+> (`console=False`), hence the choice of an exit code rather than text
+> output. If the exe is in console mode, nothing changes.
 
-**Partie 2 — nouveau workflow** `.github/workflows/build-check.yml` :
+**Part 2 — new workflow** `.github/workflows/build-check.yml`:
 
 ```yaml
 name: build-check
@@ -297,88 +300,92 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt pyinstaller
       - run: pyinstaller build\Glaneur.spec --noconfirm --clean
-      - name: Smoke test du bundle
+      - name: Bundle smoke test
         shell: pwsh
         run: |
           $p = Start-Process "dist\Glaneur\Glaneur.exe" `
                  -ArgumentList "--controle-bundle" -Wait -PassThru
-          if ($p.ExitCode -ne 0) { throw "Bundle KO : code $($p.ExitCode)" }
+          if ($p.ExitCode -ne 0) { throw "Bundle KO: code $($p.ExitCode)" }
 ```
 
-Il n'y a ni signature ni Inno Setup ici : on contrôle le contenu du bundle, pas
-la chaîne de publication. `Start-Process -Wait` est nécessaire, car un exe
-fenêtré lancé directement rend la main tout de suite et son code de sortie
-serait perdu.
+There is neither signing nor Inno Setup here: we check the bundle's
+content, not the publication chain. `Start-Process -Wait` is
+necessary, because a windowed exe launched directly returns
+immediately and its exit code would be lost.
 
-**À ne pas faire** : déclarer `build-check` comme *required status check* dans
-la protection de branche. À cause du filtre `paths`, une PR qui ne touche pas
-ces chemins ne le lance jamais, et la vérification requise resterait en
-attente indéfiniment.
+**Do not do this**: declare `build-check` as a *required status check*
+in branch protection. Because of the `paths` filter, a PR that does
+not touch these paths never launches it, and the required check would
+stay pending forever.
 
-**Critères d'acceptation**
+**Acceptance criteria**
 
-- [ ] Une PR qui touche `Glaneur/` lance `build-check`, qui passe.
-- [ ] Contre-épreuve sur une branche jetable : ajouter à `QT_INUTILES` un module
-      Qt réellement importé par l'application. Le smoke test doit échouer.
-- [ ] Une PR qui ne touche que `docs/` ne lance pas `build-check`.
+- [ ] A PR that touches `Glaneur/` launches `build-check`, which
+      passes.
+- [ ] Counter-check on a throwaway branch: add to `QT_INUTILES` a Qt
+      module actually imported by the application. The smoke test must
+      fail.
+- [ ] A PR that only touches `docs/` does not launch `build-check`.
 
 ---
 
-## Hors périmètre
+## Out of scope
 
-- **Réactivation Linux / macOS.** Le bloc macOS vise `macos-13`, une image que
-  GitHub a retirée d'après mes informations (non vérifié à ce jour). Il faudra
-  passer à `macos-14` ou plus récent, donc Apple Silicon, ce qui change
-  l'architecture du `.app`. C'est à traiter après le multi-sources.
-- **Factorisation de la signature.** Le bloc `signtool` est dupliqué dans
-  `build.yml`. C'est gênant mais sans risque, donc on ne le touche pas.
-- **Protection de branche sur `main`.** C'est un réglage du dépôt, pas un
-  fichier. À décider à part : l'imposer obligerait à passer par une PR pour
-  tout changement.
+- **Reactivating Linux / macOS.** The macOS block targets `macos-13`,
+  an image that GitHub has removed based on what I know (not verified
+  as of today). We will have to move to `macos-14` or newer, so Apple
+  Silicon, which changes the `.app` architecture. To be handled after
+  the multi-source work.
+- **Factoring the signing.** The `signtool` block is duplicated in
+  `build.yml`. It is annoying but not risky, so we leave it alone.
+- **Branch protection on `main`.** That is a repository setting, not a
+  file. To be decided separately: enforcing it would require every
+  change to go through a PR.
 
-## Procédure de reprise
+## Recovery procedure
 
-> Mise à jour par le sprint « CI — Valider l'exe avant de tagger »
-> (US-CI-07). Depuis ce sprint, le tag n'est plus posé avant le build :
-> l'exécution s'arrête après le build sur l'environnement `release` en
-> attente de l'approbation d'un mainteneur. La grande majorité des
-> reprises se règle donc sans jamais consommer un numéro de version.
+> Updated by the sprint "CI — Validate the exe before tagging"
+> (US-CI-07). Since that sprint, the tag is no longer placed before the
+> build: the run stops after the build on the `release` environment
+> waiting for a maintainer's approval. The vast majority of recoveries
+> is therefore handled without ever consuming a version number.
 
-1. **Installateur rejeté à l'approbation.** Corriger le code ou le
-   packaging, puis repousser sur `main` avec la **même** `__version__`.
-   Aucun tag n'existe et aucune release n'a été publiée : la nouvelle
-   exécution de `release.yml` reconstruit à zéro.
-2. **Échec après approbation** (tag ou upload). Depuis la page de
-   l'exécution, lancer *Re-run failed jobs* sur `publish`. L'étape de
-   tag accepte un tag déjà posé sur le même commit ; l'upload utilise
-   `--clobber` et remet les mêmes octets. Vérifier ensuite qu'aucun
-   asset n'a été mélangé avec ceux d'une autre exécution.
-3. **Cause externe pendant le build** (runner Windows, Chocolatey,
-   horodatage). Lancer *Re-run failed jobs* sur `build`. Si l'incident
-   persiste après plusieurs essais, un `workflow_dispatch` de `builds`
-   sur `main` produit un artifact hors ligne pour investigation.
-4. **Dernier recours : tag existe déjà sur un autre commit.** Incrémenter
-   le *patch* de `__version__` et repousser sur `main`. Ne pas supprimer
-   le tag existant. Aucune release publique n'ayant été produite pour la
-   version rejetée, aucun utilisateur ne l'a reçue.
+1. **Installer rejected at approval.** Fix the code or the packaging,
+   then push again on `main` with the **same** `__version__`. No tag
+   exists and no release has been published: the new `release.yml`
+   run rebuilds from scratch.
+2. **Failure after approval** (tag or upload). From the run page,
+   launch *Re-run failed jobs* on `publish`. The tag step accepts a
+   tag already placed on the same commit; the upload uses `--clobber`
+   and re-uploads the same bytes. Then verify that no asset has been
+   mixed with those from another run.
+3. **External cause during the build** (Windows runner, Chocolatey,
+   timestamping). Launch *Re-run failed jobs* on `build`. If the
+   incident persists after several attempts, a `workflow_dispatch` of
+   `builds` on `main` produces an offline artifact for investigation.
+4. **Last resort: tag already exists on another commit.** Bump the
+   *patch* of `__version__` and push again on `main`. Do not delete
+   the existing tag. Since no public release was produced for the
+   rejected version, no user received it.
 
-## Vérification
+## Verification
 
-Les workflows ne se testent pas contre le faux serveur. On vérifie donc :
+The workflows are not tested against the fake server. So we verify:
 
-- avant chaque push, en local et de façon facultative : `actionlint` sur
-  `.github/workflows/`. C'est un outil du poste de développement, pas une
-  dépendance du projet ;
-- après fusion, par les scénarios observables des critères d'acceptation.
-  Chaque critère coché renvoie à l'URL de l'exécution qui le prouve.
+- before each push, locally and optionally: `actionlint` on
+  `.github/workflows/`. It is a workstation tool, not a project
+  dependency;
+- after merge, through the observable scenarios of the acceptance
+  criteria. Every checked criterion points to the URL of the run that
+  proves it.
 
 ## Definition of Done
 
-- [ ] Les quatre PR sont fusionnées, chacune avec ses critères cochés et les
-      liens des exécutions correspondantes.
-- [ ] Un push sur `main` sans changement de version ne déclenche aucun build.
-- [ ] Sur `main`, pytest tourne une seule fois, sous Ubuntu et Windows.
-- [ ] Toute PR touchant le code ou le packaging produit un bundle Windows
-      contrôlé.
-- [ ] `__version__` est inchangé sur l'ensemble du sprint.
-- [ ] La procédure de reprise est documentée.
+- [ ] The four PRs are merged, each with its criteria checked and
+      links to the corresponding runs.
+- [ ] A push on `main` without a version change triggers no build.
+- [ ] On `main`, pytest runs only once, on Ubuntu and Windows.
+- [ ] Any PR touching the code or the packaging produces a controlled
+      Windows bundle.
+- [ ] `__version__` is unchanged over the whole sprint.
+- [ ] The recovery procedure is documented.
