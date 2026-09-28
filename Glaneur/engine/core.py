@@ -21,6 +21,7 @@ from PySide6.QtCore import QCoreApplication
 
 from ..sources import SOURCES, Element, Interrupted, Transport
 from ..sources.base import ErrorClassification, classify_error
+from ._folder_lock import FolderBusy, folder_lock
 from ._locks import _MANIFEST_LOCK
 from ._merge import _merge_ui_marks
 from .format_bytes import format_bytes
@@ -375,7 +376,29 @@ class Engine:
     # -- orchestration ------------------------------------------------------ #
 
     def run(self) -> RunResult:
-        """Run the whole thing and return the aggregated ``RunResult``.
+        """Run the whole thing under the per-folder OS lock.
+
+        Acquires the lock via
+        :func:`Glaneur.engine._folder_lock.folder_lock` and delegates the
+        real work to :meth:`_run_locked`. If another process already
+        holds the lock — application UI, scheduled task, legacy install
+        still running — the method returns a bare
+        ``RunResult(busy=True)`` immediately: nothing is written to
+        disk, no HTTP session is opened, no source is called.
+
+        Returns:
+            The numeric summary of the run, or ``RunResult(busy=True)``
+            when the folder is already in use.
+        """
+        self.o.target_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with folder_lock(self.o.target_dir):
+                return self._run_locked()
+        except FolderBusy:
+            return RunResult(busy=True)
+
+    def _run_locked(self) -> RunResult:
+        """Execute the run body under the acquired folder lock.
 
         The order is:
 
@@ -397,7 +420,6 @@ class Engine:
             The numeric summary of the run.
         """
         res = RunResult()
-        self.o.target_dir.mkdir(parents=True, exist_ok=True)
         manifeste = self.load_manifest()
         cache = self.load_cache()
         if manifeste:

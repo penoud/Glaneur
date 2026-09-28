@@ -9,118 +9,137 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-**US-VERIF-02 — Politique de reprise de `Transport.get_json`.**
+**US-VERIF-03 — Verrou OS par dossier cible (lot 4).**
 
-Deuxième US du sprint
+Troisième US du sprint
 `docs/sprints/2026-09-verifier-lots-1-4-avant-lot-5.md`.
 
-Aujourd'hui, `Transport.get_json` (`Glaneur/sources/base.py:234-275`)
-attrape toute `requests.RequestException` puis attend
-`2 × (tentative + 1)` secondes — soit 2, 4, 6 s sur trois tentatives —
-avant de réessayer. Donc :
+Aujourd'hui, `Glaneur/engine/_locks.py` = un `threading.Lock` de
+processus, dédié à la fusion UI ↔ moteur du manifeste (voir
+`Engine.save_manifest`). Il ne protège **pas** contre deux processus
+Glaneur qui viseraient le même dossier — cas concret dès l'ouverture du
+lot 5.2 : file de profils + tâche planifiée horaire (lot 8) + ancienne
+installation résiduelle.
 
-- un 401 ou un 404 hors `fin_si` est réessayé trois fois, gaspillage
-  et bruit vers le serveur ;
-- l'entête `Retry-After` est bien extrait par `_retry_after` mais n'est
-  jamais consommé dans la boucle de `get_json` ;
-- la pause après la dernière tentative (6 s) est du gaspillage : on ne
-  va plus réessayer, on va lever `RuntimeError`.
-
-Objectif : brancher `get_json` sur `classify_error` — arrêt immédiat sur
-`definitif`, `Retry-After` respecté (plafonné à 120 s), trois tentatives
-au total avec attentes de 2 s puis 4 s (pas de troisième attente).
+Objectif : ajouter un verrou OS par dossier cible, portable (`fcntl.flock`
+sur POSIX, `msvcrt.locking` sur Windows), acquis à l'entrée de
+`Engine.run()` et libéré à la sortie du context manager. Sur verrou
+déjà tenu, `run()` renvoie un `RunResult(busy=True)` sans effet de bord
+sur le manifeste. La CLI convertit ce cas en exit code 3.
 
 ## Directly modified
 
-- `Glaneur/sources/base.py` : la méthode `Transport.get_json` seule.
-  La classe `Transport`, `ErrorClassification`, `classify_error`,
-  `_retry_after` et les constantes de dispatch ne changent pas.
-- `tests/test_source_base.py` : nouveau bloc `TestTransportGetJson`
-  couvrant les 6 cas listés plus bas. Le docstring de module est
-  élargi pour inclure `Transport` (aujourd'hui « strictement
-  `classify_error` »).
+- `Glaneur/engine/_folder_lock.py` (**nouveau**) : module isolé avec la
+  classe d'exception `FolderBusy` et le context manager
+  `folder_lock(target_dir: Path)`. Fichier `.glaneur.lock` posé dans le
+  dossier cible, contenu = PID/host/UTC pour diagnostic (le verrou OS
+  est le vrai garde-fou, pas le contenu du fichier).
+- `Glaneur/engine/result.py` : ajouter le champ `busy: bool = False` à
+  `RunResult`.
+- `Glaneur/engine/core.py::Engine.run` : encapsuler le corps existant
+  dans un `with folder_lock(self.o.target_dir):`. Sur `FolderBusy`,
+  renvoyer un `RunResult(busy=True)` immédiat, sans toucher au manifeste
+  ni ouvrir la session. Le message du result reste vide dans cette US
+  (US-VERIF-04 branchera un événement structuré).
+- `cli.py` : sortir avec exit code **3** lorsque `res.busy` est vrai, un
+  court message sur `stderr`. Positionner ce test avant le calcul de
+  l'exit code habituel (`0/1/2`).
+- `tests/test_folder_lock.py` (**nouveau**) : voir la section « Tests ».
 
 ## Direct dependencies
 
-- `ErrorClassification`, `classify_error` (`Glaneur/sources/base.py`) :
-  déjà en place — **lues, non modifiées**. Le nouveau `get_json` les
-  utilise.
-- `tests/test_source_wordpress.py::TestTransportGetJson` (5 tests) :
-  lecture pour s'assurer qu'ils passent sans modification sous la
-  nouvelle politique (le `sleep` est déjà mocké, les compteurs de
-  tentatives restent à 3, l'issue reste `RuntimeError` ou succès). **Ne
-  pas modifier**.
-- `Glaneur/sources/wordpress.py` et `Glaneur/sources/djangoplicity.py` :
-  appellent `get_json` avec `fin_si={400}` (WordPress) et sans `fin_si`
-  (Djangoplicity). Le contrat `fin_si` ne change pas. **Non modifiés**.
+- `Glaneur/engine/_locks.py` : **inchangé**. Le `threading.Lock` reste
+  dédié à la fusion du manifeste — c'est une autre couche, intra-processus.
+- `Glaneur/engine/__init__.py` : **inchangé**. `FolderBusy` et
+  `folder_lock` restent des symboles privés du sous-paquet ; l'entrée
+  publique reste `Engine.run` renvoyant un `RunResult`.
+- `Glaneur/engine/options.py::Options.target_dir` (type `Path`,
+  ligne 18) : **lu, non modifié** — le context manager attend un `Path`.
+- `Glaneur/engine/core.py::Engine.load_manifest`, `save_manifest`,
+  `save_cache` : appelés uniquement dans la partie protégée du `with`,
+  jamais avant. **Non modifiés.**
+- `cli.py::main` retourne aujourd'hui `0/1/2/130` (`--restaurer` et
+  déferred inclus) ; ajout du chemin `3` sans en retirer.
 
 ## Explicitly out of scope
 
-- **`Engine.download`** (`Glaneur/engine/core.py:252-339`) : la roadmap
-  3.1 veut à terme la même politique de reprise, mais le circuit-breaker
-  de la boucle `run` (5 échecs consécutifs → `defer`) absorbe déjà
-  l'absence de reprise. Le lot 5.2 n'en dépend pas. **Non touché.**
-- **Docstrings du module `base.py`** : mise à jour de la docstring de
-  `get_json` pour refléter la nouvelle politique ; les autres restent.
-- **Sources WordPress / Djangoplicity** : aucune modification.
-- **Autres tests** existant dans `tests/test_source_wordpress.py`,
-  `tests/test_source_djangoplicity.py`, `tests/test_sources_edges.py` :
-  vérifiés verts, **pas modifiés**.
+- **Toute file d'attente ou logique de scheduler** liée au lot 5.2 : le
+  verrou est un pré-requis, pas la file. Le lot 5.2 s'en servira dans
+  une future US.
+- **Intégration côté UI Qt** (`app.py`, `Engine` lancé depuis un
+  `QThread`) : la CLI seule couvre le pré-requis du lot 5. Si l'UI
+  lance `Engine.run()` sur un dossier occupé, elle recevra un
+  `RunResult(busy=True)` — le rendu utilisateur côté UI est traité dans
+  US-VERIF-04 ou plus tard.
+- **Suppression du fichier `.glaneur.lock`** après release : le fichier
+  peut rester en place, le verrou OS est libéré à la fermeture du
+  descripteur. L'utilisateur peut le supprimer à la main sans casser la
+  prochaine acquisition (nouveau fichier recréé).
+- **Verrou sur partage SMB** : la roadmap ne l'exige pas ; laisser en
+  note dans la docstring du module.
+- **`Glaneur/engine/_locks.py`** : sa raison d'être (fusion manifeste
+  intra-processus) reste valide et distincte du verrou inter-processus
+  ajouté ici.
 - **`__version__`** : inchangé.
 
 ## Tests
 
-Six cas nouveaux dans `tests/test_source_base.py`, classe
-`TestTransportGetJson`. Le `sleep` de `Transport` est mocké dans chaque
-test (comme les tests existants) pour ne pas ajouter de secondes réelles
-à la suite. Le `session.get` est un `MagicMock`.
+Nouveau fichier `tests/test_folder_lock.py`. Aucun test existant
+modifié.
 
-- **401 non réessayé** : `session.get` renvoie une réponse 401 (levant
-  `HTTPError` sur `raise_for_status`). `get_json` lève sans réessayer,
-  `session.get.call_count == 1`, `sleep` jamais appelé.
-- **403 non réessayé** : idem avec 403.
-- **404 non réessayé** : idem avec 404.
-- **429 avec `Retry-After: 3`** : premier appel = 429 (`coupure`),
-  deuxième = 200 succès. `sleep` appelé une fois avec 3.0 s, pas 2 s.
-- **429 avec `Retry-After: 300`** : premier appel = 429, deuxième = 200.
-  `sleep` appelé une fois avec **120.0 s** (plafond), pas 300.
-- **Trois échecs 500 consécutifs** : `session.get` lève trois fois.
-  `sleep` appelé exactement deux fois, avec 2.0 puis 4.0. Aucun
-  troisième `sleep(6)`. `RuntimeError` finale.
-- **Arrêt coopératif** : `Transport.arret.set()` puis `get_json` doit
-  lever `Interrupted` sans nouvel appel réseau. Facultatif si couvert
-  déjà par `test_sources_edges.py::TestTransport::test_sleep_est_annule_par_l_arret`
-  — à confirmer à la lecture.
+Cas :
 
-Les cinq tests existants dans
-`tests/test_source_wordpress.py::TestTransportGetJson` doivent rester
-verts sans modification.
+- **Double acquisition intra-processus** : `with folder_lock(dir):`
+  imbriqué → le second bloc lève `FolderBusy`. Fonctionne sur POSIX
+  parce que deux `open()` donnent deux descripteurs indépendants ; à
+  reproduire tel quel sur Windows.
+- **Acquisition séquentielle** : premier `with folder_lock(dir):` puis
+  release, deuxième `with folder_lock(dir):` sur le même dossier → OK.
+- **Multi-processus** : `multiprocessing.get_context("spawn").Process`
+  (spawn explicite pour ne pas hériter du descripteur ouvert). Parent
+  tient le verrou, le fils tente et voit `FolderBusy` ; le parent
+  vérifie via un `multiprocessing.Queue`.
+- **Suppression manuelle** du fichier `.glaneur.lock` entre deux runs :
+  la prochaine acquisition doit fonctionner (recréation du fichier).
+- **Intégration** : `Engine.run()` sur un dossier déjà verrouillé
+  renvoie `RunResult(busy=True)` ; aucun manifeste n'est écrit, aucun
+  appel à la source. Utilise `tmp_path` et une source no-op montée via
+  `SOURCES` ou par patch — cf. le pattern existant dans
+  `tests/test_core.py`.
+- **CLI busy = exit 3** : appel `main()` en patchant `Engine.run` pour
+  renvoyer un `RunResult(busy=True)` ; capturer `sys.exit`.
+
+Sleep réel évité. Aucun appel réseau.
 
 ## Invariants
 
 - `__version__` inchangé.
-- `ErrorClassification` reste un dataclass gelé, aucune signature ne
-  bouge dans `sources/base.py` hors de `get_json`.
-- Le contrat de `classify_error` (trois catégories, `retry_after`) reste
-  identique.
-- Le contrat de `fin_si` reste identique : un code dans `fin_si` est
-  une fin normale, même après le patch (le `if r.status_code in fin_si`
-  reste avant `raise_for_status`).
-- L'arrêt coopératif reste effectif pendant l'attente : `Transport.sleep`
-  n'est pas modifié.
-- Le plafond `Glaneur/sources/*` du cliquet (98.0 %, US-VERIF-01) tient.
+- Le contrat de `Engine.run` reste : renvoyer un `RunResult`, ne pas
+  lever d'exception autre que `Interrupted` (qui reste convertie en
+  `RunResult.interrupted=True` dans le corps existant).
+- Le champ `RunResult.busy` est `False` sur tout run non conflictuel :
+  les 26 sites qui construisent un `RunResult` (tous dans
+  `engine/core.py` et les tests) n'ont pas besoin de changer.
+- Sur `busy=True` : ni écriture de manifeste, ni écriture de cache, ni
+  appel à `self.source.inventory`, ni acquisition de session HTTP.
+- Le verrou est libéré même si `Engine.run` lève une exception :
+  garantie par le `with` context manager, indépendamment du corps.
+- Frontière 1 (Qt) : `_folder_lock.py` n'importe ni PySide6 ni Qt.
+- Plafond de couverture `Glaneur/engine/*` (98.0 %) tient.
 
 ## Validation
 
-Niveau `module` (roadmap 5.1 tableau : « une source touchée + frontière
-`Transport` »). Étapes :
+Niveau `subsystem`. Un nouveau module dans le moteur, un champ ajouté
+à un dataclass persisté-adjacent, une nouvelle branche dans `Engine.run`,
+un nouvel exit code CLI.
 
-- Rédaction des tests par `test-author` (sous-agent, cf. CLAUDE.md).
+- Rédaction des tests par `test-author` (sous-agent).
 - Rédaction du code de production par la conversation principale.
-- `pytest tests/test_source_base.py tests/test_source_wordpress.py tests/test_source_djangoplicity.py tests/test_sources_edges.py -q`
+- `pytest tests/test_folder_lock.py tests/test_core.py tests/test_cli.py -q`
   vert.
 - `pytest -q --cov=Glaneur --cov-branch && python tools/check_coverage.py`
-  vert (le plafond `sources/*` = 98.0 tient).
-- `ruff check Glaneur/sources/base.py tests/test_source_base.py`.
-- Relecture `invariant-reviewer` (frontière `Transport`, changement de
-  politique de reprise).
+  vert.
+- `ruff check Glaneur/engine/_folder_lock.py Glaneur/engine/result.py Glaneur/engine/core.py cli.py tests/test_folder_lock.py`
+  vert.
+- Relecture `invariant-reviewer` (nouveau module dans le moteur ;
+  frontière moteur ↔ OS ; changement de contrat `Engine.run`).

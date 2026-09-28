@@ -38,6 +38,12 @@ class RunResult:
     #: ``Retry-After`` header when the server provides one. Empty
     #: means "no hint": the scheduler falls back on its own backoff.
     retry_after: str = ""
+    #: True when the run bailed out because another process already
+    #: holds the per-folder OS lock — see
+    #: :func:`Glaneur.engine._folder_lock.folder_lock`. The engine
+    #: writes nothing to disk in that case; the CLI translates it into
+    #: exit code 3.
+    busy: bool = False
     #: Summary ready to display to the user (localized).
     message: str = ""
     #: Free-form bag for extra information.

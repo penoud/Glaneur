@@ -36,7 +36,9 @@ def main() -> int:
         ``0`` if the run finished cleanly, ``1`` if every download
         failed without any new file being fetched, ``2`` if the run was
         deferred by the network circuit-breaker (server unavailable,
-        quota, ...), ``130`` on keyboard interrupt (shell convention).
+        quota, ...), ``3`` if the target folder is already in use by
+        another Glaneur process (per-folder OS lock held), ``130`` on
+        keyboard interrupt (shell convention).
     """
     c = Config.load()
     p = argparse.ArgumentParser(
@@ -107,6 +109,15 @@ def main() -> int:
         moteur.arret.set()
         print("\nInterrompu.")
         return 130
+
+    if res.busy:
+        # Another Glaneur process holds the per-folder OS lock (open UI,
+        # scheduled task, legacy install). Nothing was written; retry later.
+        print(
+            f"Dossier déjà en cours d'utilisation : {options.target_dir}",
+            file=sys.stderr,
+        )
+        return 3
 
     print(f"\n\n{res.message}")
     print(f"  téléchargées : {res.downloaded}   reprises : {res.resumed}")
