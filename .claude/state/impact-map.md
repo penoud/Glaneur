@@ -9,105 +9,118 @@ CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
 
 ## Task
 
-**US-VERIF-01 — Cliquet de couverture branché en CI.**
+**US-VERIF-02 — Politique de reprise de `Transport.get_json`.**
 
-Première US du sprint
+Deuxième US du sprint
 `docs/sprints/2026-09-verifier-lots-1-4-avant-lot-5.md`.
 
-`tools/check_coverage.py` et les plafonds par module (`sources/*` 100 %,
-`scheduler.py` 100 %, `config.py` 100 %, `engine/*` 95 %) existent déjà,
-ainsi que `branch = true` dans `pyproject.toml`. Mais
-`.github/workflows/tests.yml` ne lance que `python -m pytest -q` : ni
-`--cov`, ni `check_coverage.py`. Le cliquet n'est pas gardé et le lot 5
-touchera des formats persistés sans filet.
+Aujourd'hui, `Transport.get_json` (`Glaneur/sources/base.py:234-275`)
+attrape toute `requests.RequestException` puis attend
+`2 × (tentative + 1)` secondes — soit 2, 4, 6 s sur trois tentatives —
+avant de réessayer. Donc :
 
-Objectif : `tests.yml` mesure la couverture branches puis compare aux
-plafonds. Aucun code applicatif ne change.
+- un 401 ou un 404 hors `fin_si` est réessayé trois fois, gaspillage
+  et bruit vers le serveur ;
+- l'entête `Retry-After` est bien extrait par `_retry_after` mais n'est
+  jamais consommé dans la boucle de `get_json` ;
+- la pause après la dernière tentative (6 s) est du gaspillage : on ne
+  va plus réessayer, on va lever `RuntimeError`.
+
+Objectif : brancher `get_json` sur `classify_error` — arrêt immédiat sur
+`definitif`, `Retry-After` respecté (plafonné à 120 s), trois tentatives
+au total avec attentes de 2 s puis 4 s (pas de troisième attente).
 
 ## Directly modified
 
-- `.github/workflows/tests.yml` : « Run tests » remplacé par trois étapes
-  conditionnelles — mesure de couverture sur Linux, exécution simple sur
-  Windows, contrôle des plafonds par module sur Linux uniquement.
-- `tools/check_coverage.py` : `FLOORS` **abaissés à la baseline mesurée**
-  (`sources/*` 98.0 %, `scheduler.py` 95.0 %, `config.py` 97.0 %,
-  `engine/*` 98.5 %) — les valeurs aspirationnelles 100/100/100 n'avaient
-  jamais été gardées en CI. Commentaire ajouté pour expliquer que ce
-  sont les valeurs d'entrée du cliquet, à ne monter qu'à mesure que la
-  couverture progresse.
+- `Glaneur/sources/base.py` : la méthode `Transport.get_json` seule.
+  La classe `Transport`, `ErrorClassification`, `classify_error`,
+  `_retry_after` et les constantes de dispatch ne changent pas.
+- `tests/test_source_base.py` : nouveau bloc `TestTransportGetJson`
+  couvrant les 6 cas listés plus bas. Le docstring de module est
+  élargi pour inclure `Transport` (aujourd'hui « strictement
+  `classify_error` »).
 
 ## Direct dependencies
 
-- `pyproject.toml` : `[tool.coverage.run] branch = true` et
-  `source = ["Glaneur"]` déjà en place — **lu, non modifié**.
-- `tools/check_coverage.py` `main()` : logique inchangée, seul le
-  dictionnaire `FLOORS` bouge.
-- `requirements-dev.txt` : `pytest-cov>=7.1.0` déjà présent — **lu, non
-  modifié**.
-- `.github/workflows/tests.yml` étapes existantes (checkout, setup-python,
-  install Qt libs, install deps, compile translations) : **inchangées**.
+- `ErrorClassification`, `classify_error` (`Glaneur/sources/base.py`) :
+  déjà en place — **lues, non modifiées**. Le nouveau `get_json` les
+  utilise.
+- `tests/test_source_wordpress.py::TestTransportGetJson` (5 tests) :
+  lecture pour s'assurer qu'ils passent sans modification sous la
+  nouvelle politique (le `sleep` est déjà mocké, les compteurs de
+  tentatives restent à 3, l'issue reste `RuntimeError` ou succès). **Ne
+  pas modifier**.
+- `Glaneur/sources/wordpress.py` et `Glaneur/sources/djangoplicity.py` :
+  appellent `get_json` avec `fin_si={400}` (WordPress) et sans `fin_si`
+  (Djangoplicity). Le contrat `fin_si` ne change pas. **Non modifiés**.
 
 ## Explicitly out of scope
 
-- **Toute autre étape CI** : ruff, pip-audit, sphinx-build,
-  actionlint — traitées par leur propre lot (roadmap 1.4 et 1.5). Ne
-  pas les ajouter ici, même si tentant : cela élargirait le périmètre
-  au-delà d'US-VERIF-01.
-- **Ajouter des tests pour combler les écarts** (`sources/base.py:83`,
-  `sources/djangoplicity.py:42-43`, `scheduler.py:166-167`,
-  `config.py:305-306`, branches partielles) : reporté à un futur US
-  (« raise ratchet »), après US-VERIF-04. La règle « le cliquet ne
-  descend jamais » démarre à partir des valeurs branchées ici.
-- **Code applicatif** (`Glaneur/`) : aucune modification.
-- **Tests** : aucun ajout ni suppression. La CI se contente de mesurer la
-  suite existante.
-- **Couverture sur Windows** : la mesure branchée reste Linux uniquement,
-  parce que `config_dir()` a des embranchements dépendants de l'OS. La
-  suite tourne toujours en entier sur Windows.
+- **`Engine.download`** (`Glaneur/engine/core.py:252-339`) : la roadmap
+  3.1 veut à terme la même politique de reprise, mais le circuit-breaker
+  de la boucle `run` (5 échecs consécutifs → `defer`) absorbe déjà
+  l'absence de reprise. Le lot 5.2 n'en dépend pas. **Non touché.**
+- **Docstrings du module `base.py`** : mise à jour de la docstring de
+  `get_json` pour refléter la nouvelle politique ; les autres restent.
+- **Sources WordPress / Djangoplicity** : aucune modification.
+- **Autres tests** existant dans `tests/test_source_wordpress.py`,
+  `tests/test_source_djangoplicity.py`, `tests/test_sources_edges.py` :
+  vérifiés verts, **pas modifiés**.
 - **`__version__`** : inchangé.
-- **`.github/workflows/build.yml`, `release.yml`, `build-check.yml`** :
-  hors périmètre.
 
 ## Tests
 
-Aucun test unitaire à ajouter — la modification est un workflow YAML, pas
-du code Python.
+Six cas nouveaux dans `tests/test_source_base.py`, classe
+`TestTransportGetJson`. Le `sleep` de `Transport` est mocké dans chaque
+test (comme les tests existants) pour ne pas ajouter de secondes réelles
+à la suite. Le `session.get` est un `MagicMock`.
 
-Vérifications avant PR :
+- **401 non réessayé** : `session.get` renvoie une réponse 401 (levant
+  `HTTPError` sur `raise_for_status`). `get_json` lève sans réessayer,
+  `session.get.call_count == 1`, `sleep` jamais appelé.
+- **403 non réessayé** : idem avec 403.
+- **404 non réessayé** : idem avec 404.
+- **429 avec `Retry-After: 3`** : premier appel = 429 (`coupure`),
+  deuxième = 200 succès. `sleep` appelé une fois avec 3.0 s, pas 2 s.
+- **429 avec `Retry-After: 300`** : premier appel = 429, deuxième = 200.
+  `sleep` appelé une fois avec **120.0 s** (plafond), pas 300.
+- **Trois échecs 500 consécutifs** : `session.get` lève trois fois.
+  `sleep` appelé exactement deux fois, avec 2.0 puis 4.0. Aucun
+  troisième `sleep(6)`. `RuntimeError` finale.
+- **Arrêt coopératif** : `Transport.arret.set()` puis `get_json` doit
+  lever `Interrupted` sans nouvel appel réseau. Facultatif si couvert
+  déjà par `test_sources_edges.py::TestTransport::test_sleep_est_annule_par_l_arret`
+  — à confirmer à la lecture.
 
-- Localement, `pytest --cov=Glaneur --cov-branch` puis
-  `python tools/check_coverage.py` doivent sortir en code 0. C'est la
-  garantie que la PR passera au vert du premier coup en CI.
-- Contrôle syntaxique YAML par relecture manuelle, plus `actionlint` si
-  disponible sur le poste (non installé par défaut — la relecture manuelle
-  suffit pour ce diff minuscule).
+Les cinq tests existants dans
+`tests/test_source_wordpress.py::TestTransportGetJson` doivent rester
+verts sans modification.
 
 ## Invariants
 
 - `__version__` inchangé.
-- Aucun fichier `Glaneur/` modifié.
-- Aucun test ajouté, retiré ou modifié.
-- Les plafonds `FLOORS` posés ici sont la baseline mesurée localement le
-  2026-09-28 (`sources/*` 98.11 %, `scheduler.py` 95.12 %, `config.py`
-  97.24 %, `engine/*` 98.69 %), arrondie vers le bas pour laisser un
-  minuscule matelas numérique (98.0 / 95.0 / 97.0 / 98.5). À partir de
-  ce point, le cliquet ne descend jamais : chaque futur PR qui monte la
-  couverture doit monter le plafond dans le même diff.
-- La mesure et le contrôle des plafonds tournent sur `ubuntu-latest`
-  uniquement ; la suite complète tourne sur `windows-latest` sans
-  mesure de couverture. La matrice reste identique par ailleurs.
-- L'étape « Compile translations » reste avant la mesure : sinon le test
-  end-to-end de `Glaneur.i18n.installer_traducteur` ne charge pas les
-  `.qm` et fausse la couverture.
+- `ErrorClassification` reste un dataclass gelé, aucune signature ne
+  bouge dans `sources/base.py` hors de `get_json`.
+- Le contrat de `classify_error` (trois catégories, `retry_after`) reste
+  identique.
+- Le contrat de `fin_si` reste identique : un code dans `fin_si` est
+  une fin normale, même après le patch (le `if r.status_code in fin_si`
+  reste avant `raise_for_status`).
+- L'arrêt coopératif reste effectif pendant l'attente : `Transport.sleep`
+  n'est pas modifié.
+- Le plafond `Glaneur/sources/*` du cliquet (98.0 %, US-VERIF-01) tient.
 
 ## Validation
 
-Niveau `local`. Édition d'un unique fichier de workflow, aucun code
-applicatif, aucune persistance touchée.
+Niveau `module` (roadmap 5.1 tableau : « une source touchée + frontière
+`Transport` »). Étapes :
 
-- Pas de `pytest` en supplément côté rédacteur — la CI est le juge.
-- Pas d'`invariant-reviewer` — aucun invariant du moteur, aucune
-  frontière du package `Glaneur/` n'est concernée.
-- Pas de sous-agent `test-author` — aucun test n'est écrit.
-- Pas de sous-agent `test-runner` — l'exécution de vérification est
-  soit locale (une seule commande), soit la CI de la PR elle-même.
+- Rédaction des tests par `test-author` (sous-agent, cf. CLAUDE.md).
+- Rédaction du code de production par la conversation principale.
+- `pytest tests/test_source_base.py tests/test_source_wordpress.py tests/test_source_djangoplicity.py tests/test_sources_edges.py -q`
+  vert.
+- `pytest -q --cov=Glaneur --cov-branch && python tools/check_coverage.py`
+  vert (le plafond `sources/*` = 98.0 tient).
+- `ruff check Glaneur/sources/base.py tests/test_source_base.py`.
+- Relecture `invariant-reviewer` (frontière `Transport`, changement de
+  politique de reprise).

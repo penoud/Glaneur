@@ -1,20 +1,28 @@
-"""Unit tests for `classify_error` (module `Glaneur.sources.base`).
+"""Unit tests for `classify_error` and `Transport.get_json`
+(module `Glaneur.sources.base`).
 
-Strict scope: only the classification of a `requests` exception
-and/or an HTTP response into three categories
-(`transitoire`, `coupure`, `definitif`) and the extraction of the
-matching `Retry-After`. No network access, no transport mock.
+Strict scope:
+
+- classification of a `requests` exception and/or an HTTP response into
+  the three categories (`transitoire`, `coupure`, `definitif`) and the
+  extraction of the matching `Retry-After`;
+- retry policy of `Transport.get_json`: definitive errors raise
+  immediately, transient/cut errors retry with `Retry-After` honoured
+  (capped at 120s), three attempts with pauses of 2s then 4s only.
+
+No network access — the transport session is mocked.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
 
-from Glaneur.sources.base import ErrorClassification, classify_error
+from Glaneur.sources.base import ErrorClassification, Transport, classify_error
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -164,3 +172,87 @@ class TestClassificationDataclass:
         assert isinstance(c, ErrorClassification)
         assert hasattr(c, "category")
         assert hasattr(c, "retry_after")
+
+
+# --------------------------------------------------------------------------- #
+# Transport.get_json — retry policy branched on classify_error
+# --------------------------------------------------------------------------- #
+
+
+class TestTransportGetJson:
+    """Retry policy of `Transport.get_json`.
+
+    These tests pin the behaviour targeted by US-VERIF-02: definitive
+    client errors must raise immediately, transient/cut errors retry with
+    `Retry-After` honoured up to a 120s cap, and three attempts spend
+    exactly two pauses (2s then 4s) — never a third `sleep(6)`.
+    """
+
+    @pytest.mark.parametrize("status", [401, 403, 404])
+    def test_erreurs_client_hors_fin_si_levent_sans_reessayer(self, status):
+        """A definitive client error (401/403/404) raises at once, no retry, no sleep."""
+        t = Transport(delay=0)
+        t.session = MagicMock()
+        rep = MagicMock(status_code=status, headers={})
+        rep.raise_for_status = MagicMock(
+            side_effect=requests.HTTPError(response=rep)
+        )
+        t.session.get.return_value = rep
+        with patch.object(t, "sleep") as fake_sleep, \
+                pytest.raises(requests.HTTPError):
+            t.get_json("https://x/api")
+        assert t.session.get.call_count == 1
+        fake_sleep.assert_not_called()
+
+    def test_retry_after_court_est_respecte(self):
+        """A short `Retry-After` (below 120s) is used as the pause between retries."""
+        t = Transport(delay=0)
+        t.session = MagicMock()
+        rep_429 = MagicMock(status_code=429, headers={"Retry-After": "3"})
+        rep_429.raise_for_status = MagicMock(
+            side_effect=requests.HTTPError(response=rep_429)
+        )
+        rep_ok = MagicMock(status_code=200, headers={})
+        rep_ok.json.return_value = {"ok": True}
+        rep_ok.raise_for_status = MagicMock()
+        t.session.get.side_effect = [rep_429, rep_ok]
+        with patch.object(t, "sleep") as fake_sleep:
+            payload, _ = t.get_json("https://x/api")
+        assert payload == {"ok": True}
+        assert fake_sleep.call_count == 1
+        assert fake_sleep.call_args.args[0] == 3.0
+
+    def test_retry_after_long_est_plafonne_a_120s(self):
+        """A `Retry-After` above 120s is capped at 120s before sleeping."""
+        t = Transport(delay=0)
+        t.session = MagicMock()
+        rep_429 = MagicMock(status_code=429, headers={"Retry-After": "300"})
+        rep_429.raise_for_status = MagicMock(
+            side_effect=requests.HTTPError(response=rep_429)
+        )
+        rep_ok = MagicMock(status_code=200, headers={})
+        rep_ok.json.return_value = {"ok": True}
+        rep_ok.raise_for_status = MagicMock()
+        t.session.get.side_effect = [rep_429, rep_ok]
+        with patch.object(t, "sleep") as fake_sleep:
+            payload, _ = t.get_json("https://x/api")
+        assert payload == {"ok": True}
+        assert fake_sleep.call_count == 1
+        assert fake_sleep.call_args.args[0] == 120.0
+
+    def test_trois_echecs_500_donnent_deux_pauses_2_puis_4(self):
+        """Three 500 attempts pause 2s then 4s only — no third `sleep(6)`."""
+        t = Transport(delay=0)
+        t.session = MagicMock()
+        rep_500 = MagicMock(status_code=500, headers={})
+        rep_500.raise_for_status = MagicMock(
+            side_effect=requests.HTTPError(response=rep_500)
+        )
+        t.session.get.return_value = rep_500
+        with patch.object(t, "sleep") as fake_sleep, \
+                pytest.raises(RuntimeError):
+            t.get_json("https://x/api")
+        assert t.session.get.call_count == 3
+        assert fake_sleep.call_count == 2
+        assert fake_sleep.call_args_list[0].args[0] == 2.0
+        assert fake_sleep.call_args_list[1].args[0] == 4.0

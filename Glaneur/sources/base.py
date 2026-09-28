@@ -38,6 +38,15 @@ _CUT_STATUSES = frozenset({429, 502, 503, 504})
 #: Definitive client HTTP codes: nothing to retry without intervention.
 _DEFINITIVE_STATUSES = frozenset({400, 401, 403, 404, 405, 410})
 
+#: Maximum honoured value of a ``Retry-After`` header, in seconds. Beyond
+#: this the run gives up and the item will be retried on a later call —
+#: waiting several minutes on a single request blocks the whole queue.
+_MAX_RETRY_AFTER: float = 120.0
+
+#: Default backoff between attempts when the server did not provide a
+#: ``Retry-After``. Two waits, so three attempts in total.
+_RETRY_BACKOFF_S: tuple[float, ...] = (2.0, 4.0)
+
 
 @dataclass(frozen=True)
 class ErrorClassification:
@@ -238,17 +247,31 @@ class Transport:
         essais: int = 3,
         fin_si: frozenset[int] = frozenset(),
     ) -> tuple[object | None, Mapping]:
-        """GET JSON with retries.
+        """GET JSON with a bounded retry policy.
+
+        The policy is driven by :func:`classify_error`:
+
+        - ``definitif`` (401, 403, 404 outside ``fin_si``, malformed URL,
+          ...): the original exception is re-raised on the first attempt
+          — no retry, no wait. Retrying would only add noise for the
+          remote and delay the caller.
+        - ``transitoire`` or ``coupure``: a new attempt is scheduled, up
+          to ``essais`` in total. When the server supplies a
+          ``Retry-After``, it is honoured, capped at
+          :data:`_MAX_RETRY_AFTER`; otherwise the default
+          :data:`_RETRY_BACKOFF_S` table applies (2 s, then 4 s).
 
         A code listed in ``fin_si`` is treated as a normal end: the
-        result is ``(None, headers)`` without raising. WordPress passes
-        ``fin_si={400}`` to say "page beyond the last one".
+        result is ``(None, headers)`` without raising and without
+        classification. WordPress passes ``fin_si={400}`` to say "page
+        beyond the last one".
 
         Args:
             url: Absolute URL to query.
             params: Query parameters passed to ``requests``.
-            essais: Maximum number of attempts (linear backoff:
-                2s, 4s, 6s, ...).
+            essais: Maximum number of attempts. Waits between attempts
+                come from :data:`_RETRY_BACKOFF_S`, so there are
+                ``essais - 1`` waits — never one after the last attempt.
             fin_si: HTTP codes interpreted as a normal end.
 
         Returns:
@@ -256,8 +279,10 @@ class Transport:
             response code belongs to ``fin_si``.
 
         Raises:
-            RuntimeError: After the ``essais`` attempts are exhausted
-                without success.
+            requests.RequestException: On a ``definitif`` classification
+                (client errors, malformed URL); re-raised unchanged.
+            RuntimeError: After ``essais`` transient/cut attempts are
+                exhausted without success.
             Interrupted: If a cooperative stop is requested.
         """
         derniere: Exception | None = None
@@ -271,7 +296,22 @@ class Transport:
                 return r.json(), r.headers
             except requests.RequestException as e:
                 derniere = e
-                self.sleep(2 * (tentative + 1))
+                classification = classify_error(e, getattr(e, "response", None))
+                if classification.category == "definitif":
+                    # 401/403/404 (outside fin_si), malformed URL, etc.:
+                    # surface the exception rather than wasting attempts.
+                    raise
+                if tentative < essais - 1:
+                    # Sleep only between attempts, never after the last:
+                    # ``essais`` attempts means ``essais - 1`` waits.
+                    if classification.retry_after is not None:
+                        pause = min(
+                            classification.retry_after, _MAX_RETRY_AFTER)
+                    else:
+                        pause = _RETRY_BACKOFF_S[
+                            min(tentative, len(_RETRY_BACKOFF_S) - 1)
+                        ]
+                    self.sleep(pause)
         raise RuntimeError(f"L'API ne répond pas ({derniere})")
 
 
