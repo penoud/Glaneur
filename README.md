@@ -334,12 +334,14 @@ application writes an entry into
 The released versions also build a Debian package (`.deb`) and a Flatpak
 bundle (`.flatpak`). They ship the same PyInstaller executable as the
 Windows distribution and are produced automatically by GitHub Actions
-when a version tag is created.
+whenever `Glaneur.__version__` on `main` names a new version.
 
 In short, the build installs Python dependencies, compiles the application
 with PyInstaller, then packages it for the target system: Inno Setup
 installer on Windows, Debian package and Flatpak on Linux, `.zip` archive
-and `.dmg` image on macOS. Tests are run before versions are published.
+and `.dmg` image on macOS. Tests run before the build, and the maintainer
+approves the installer manually before the tag is created and the release
+is published.
 
 The same workflow produces a macOS application (`.app`) distributed as a
 `.zip` archive and a `.dmg` disk image.
@@ -735,12 +737,14 @@ l'argument `--reduit`, qui lance l'application en fenêtre réduite.
 Les versions publiées construisent également un paquet Debian (`.deb`) et un
 bundle Flatpak (`.flatpak`). Ils contiennent le même exécutable PyInstaller que
 la distribution Windows et sont générés automatiquement par GitHub Actions
-lorsqu'un tag de version est créé.
+lorsque `Glaneur.__version__` sur `main` désigne une nouvelle version.
 
 En résumé, la construction installe les dépendances Python, compile l'application
 avec PyInstaller, puis l'empaquette selon le système cible : installateur Inno
 Setup sous Windows, paquet Debian et Flatpak sous Linux, archive `.zip` et image
-`.dmg` sous macOS. Les tests sont exécutés avant la publication des versions.
+`.dmg` sous macOS. Les tests s'exécutent avant le build, et le mainteneur
+approuve manuellement l'installateur avant que le tag soit créé et la release
+publiée.
 
 Le même workflow produit une application macOS (`.app`) distribuée en archive
 `.zip` et en image disque `.dmg`.

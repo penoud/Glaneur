@@ -1,8 +1,11 @@
 name: builds
 on:
+  # Called by release.yml after tests pass and a fresh version is
+  # detected; the caller passes WINDOWS_PFX_* through `secrets: inherit`.
+  workflow_call:
+  # Direct dispatch produces an installer artifact from any branch,
+  # without tagging or publishing anything.
   workflow_dispatch:
-  push:
-    tags: ["v*"]
 
 permissions:
   contents: read
@@ -22,6 +25,16 @@ jobs:
         # même quand Config.langue vaut "en".
         run: python translations\build_translations.py release
       - run: pyinstaller build\Glaneur.spec --noconfirm --clean
+      - name: Smoke test the bundle
+        # Catch import failures (a module dropped by QT_INUTILES, a missing
+        # hidden import) before spending time on signing and installer
+        # packaging. Windowed exe: launched directly it returns at once and
+        # its exit code is lost; Start-Process -Wait -PassThru exposes it.
+        shell: pwsh
+        run: |
+          $p = Start-Process "dist\Glaneur\Glaneur.exe" `
+                 -ArgumentList "--controle-bundle" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Bundle check failed: exit code $($p.ExitCode)" }
       - name: Sign application when certificate is configured
         env:
           WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
@@ -73,8 +86,11 @@ jobs:
           name: Glaneur-setup
           path: build/Output/*
 
-  # Build Linux désactivé temporairement. Décommenter le bloc ci-dessous
-  # ET rajouter `linux` dans `needs:` du job `publish` pour le réactiver.
+  # Build Linux désactivé temporairement. Pour le réactiver : décommenter
+  # le bloc ci-dessous ET rajouter `linux` dans `needs:` du job `publish`
+  # de `release.yml`. Attention : à la réactivation, lire la version dans
+  # `Glaneur.__version__`, car `GITHUB_REF_NAME` vaudra `main` (le tag
+  # n'existe pas encore à l'étape build ; il est posé par `publish`).
   # linux:
   #   runs-on: ubuntu-22.04
   #   steps:
@@ -129,8 +145,11 @@ jobs:
   #           dist/*.flatpak
   #           dist/SHA256SUMS-linux
 
-  # Build macOS désactivé temporairement. Décommenter le bloc ci-dessous
-  # ET rajouter `macos` dans `needs:` du job `publish` pour le réactiver.
+  # Build macOS désactivé temporairement. Pour le réactiver : décommenter
+  # le bloc ci-dessous ET rajouter `macos` dans `needs:` du job `publish`
+  # de `release.yml`. Attention : à la réactivation, lire la version dans
+  # `Glaneur.__version__`, car `GITHUB_REF_NAME` vaudra `main` (le tag
+  # n'existe pas encore à l'étape build ; il est posé par `publish`).
   # macos:
   #   runs-on: macos-13
   #   steps:
@@ -163,31 +182,6 @@ jobs:
   #           dist/*.dmg
   #           dist/SHA256SUMS-macos
 
-  publish:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [windows]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: "*"
-          path: release-assets
-          merge-multiple: true
-      - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          prerelease=()
-          [[ "$GITHUB_REF_NAME" == *-* ]] && prerelease=(--prerelease)
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              "${prerelease[@]}" \
-              --title "Glaneur $GITHUB_REF_NAME" \
-              --notes "Automated release $GITHUB_REF_NAME"
-          fi
-          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
-            release-assets/* --clobber
+  # The `publish` job that tagged and uploaded to a GitHub Release has moved
+  # to `release.yml`. It downloads the artifacts produced by this workflow
+  # after a required-reviewer approval on the `release` environment.

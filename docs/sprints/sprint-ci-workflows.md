@@ -336,17 +336,31 @@ attente indéfiniment.
   fichier. À décider à part : l'imposer obligerait à passer par une PR pour
   tout changement.
 
-## Procédure de reprise : tag créé, release absente
+## Procédure de reprise
 
-À documenter dans le README de contribution une fois US-CI-01 fusionnée.
+> Mise à jour par le sprint « CI — Valider l'exe avant de tagger »
+> (US-CI-07). Depuis ce sprint, le tag n'est plus posé avant le build :
+> l'exécution s'arrête après le build sur l'environnement `release` en
+> attente de l'approbation d'un mainteneur. La grande majorité des
+> reprises se règle donc sans jamais consommer un numéro de version.
 
-1. **Le build a échoué pour une cause externe** (runner, Chocolatey,
-   horodatage) : relancer les jobs échoués de l'exécution `builds`, ou lancer
-   `builds` en `workflow_dispatch` avec la ref `v<version>`.
-2. **Le build a échoué à cause du code** : corriger, puis incrémenter le
-   *patch* de `__version__`. Ne pas supprimer le tag, pour que l'historique
-   reste lisible. Comme aucune release n'a été publiée, aucun utilisateur n'a
-   reçu cette version.
+1. **Installateur rejeté à l'approbation.** Corriger le code ou le
+   packaging, puis repousser sur `main` avec la **même** `__version__`.
+   Aucun tag n'existe et aucune release n'a été publiée : la nouvelle
+   exécution de `release.yml` reconstruit à zéro.
+2. **Échec après approbation** (tag ou upload). Depuis la page de
+   l'exécution, lancer *Re-run failed jobs* sur `publish`. L'étape de
+   tag accepte un tag déjà posé sur le même commit ; l'upload utilise
+   `--clobber` et remet les mêmes octets. Vérifier ensuite qu'aucun
+   asset n'a été mélangé avec ceux d'une autre exécution.
+3. **Cause externe pendant le build** (runner Windows, Chocolatey,
+   horodatage). Lancer *Re-run failed jobs* sur `build`. Si l'incident
+   persiste après plusieurs essais, un `workflow_dispatch` de `builds`
+   sur `main` produit un artifact hors ligne pour investigation.
+4. **Dernier recours : tag existe déjà sur un autre commit.** Incrémenter
+   le *patch* de `__version__` et repousser sur `main`. Ne pas supprimer
+   le tag existant. Aucune release publique n'ayant été produite pour la
+   version rejetée, aucun utilisateur ne l'a reçue.
 
 ## Vérification
 
