@@ -1007,3 +1007,45 @@ class TestProfileDataclass:
         p = Profile()
         assert p.min_width is None
         assert p.verify_integrity is None
+
+
+class TestProfileInheritance:
+    """None-inheritance rule (evolution-multi-sources.md §3.2,
+    roadmap §5.1): a profile field set to ``None`` inherits the
+    default; a default is never copied into a profile. Formalised on
+    Profile as ``effective_min_width`` and
+    ``effective_verify_integrity``, both used once E3 part B moves
+    per-profile state off Config.
+    """
+
+    _DEFAULTS: dict = {"min_width": 800, "verify_integrity": False}  # noqa: RUF012 — read-only test fixture
+
+    def test_override_wins_over_defaults(self):
+        p = Profile(min_width=1500, verify_integrity=True)
+        assert p.effective_min_width(self._DEFAULTS) == 1500
+        assert p.effective_verify_integrity(self._DEFAULTS) is True
+
+    def test_defaults_used_when_override_is_none(self):
+        p = Profile(min_width=None, verify_integrity=None)
+        assert p.effective_min_width(self._DEFAULTS) == 800
+        assert p.effective_verify_integrity(self._DEFAULTS) is False
+
+    def test_fallback_used_when_both_missing(self):
+        """Empty defaults block (config file omitted it, or the key
+        isn't there yet): the resolver falls back to Config's
+        class-level defaults."""
+        p = Profile(min_width=None, verify_integrity=None)
+        assert p.effective_min_width({}) == 800
+        assert p.effective_verify_integrity({}) is False
+
+    def test_verify_integrity_semantics_mirror_min_width(self):
+        """The rule is uniform — the two methods do not diverge."""
+        p_override_false = Profile(verify_integrity=False)
+        # False is a valid explicit override, NOT missing — must win over
+        # a True default, otherwise "turning off integrity check for this
+        # profile" is unrepresentable.
+        assert p_override_false.effective_verify_integrity(
+            {"verify_integrity": True}) is False
+        # Same edge for min_width: 0 is a legal explicit override.
+        p_zero = Profile(min_width=0)
+        assert p_zero.effective_min_width({"min_width": 800}) == 0

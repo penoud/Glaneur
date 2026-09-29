@@ -54,6 +54,27 @@ _PROFILE_STATE_FIELDS: tuple[str, ...] = (
 )
 
 
+def _resolve(override, defaults: dict, key: str, fallback):
+    """Return the effective value of ``key`` under the None-inheritance rule.
+
+    Semantic (roadmap §5.1, evolution-multi-sources.md §3.2): a profile
+    field set to ``None`` inherits the default; a default is never
+    copied into a profile. Applied to a single lookup:
+
+    1. If ``override`` is not ``None``, return it — the profile's own
+       explicit value wins.
+    2. Otherwise return ``defaults[key]`` when present.
+    3. Otherwise return ``fallback`` — the class-level default from
+       :class:`Config`, used when the config file is missing the
+       ``defaults`` block or the specific key inside it.
+    """
+    if override is not None:
+        return override
+    if key in defaults:
+        return defaults[key]
+    return fallback
+
+
 def _current_schema_version(chemin: Path) -> int | None:
     """Return the schema version currently on disk at ``chemin``.
 
@@ -157,6 +178,31 @@ class Profile:
     last_run: str = ""
     retry_after: str = ""
     backoff_level: int = 0
+
+    # -- None-inheritance resolvers ---------------------------------------
+
+    def effective_min_width(self, defaults: dict) -> int:
+        """Return the effective ``min_width`` for this profile.
+
+        Applies the None-inheritance rule (:func:`_resolve`): the
+        profile's own ``min_width`` wins when non-null, otherwise the
+        value from ``defaults``, otherwise the :class:`Config`
+        class-level default (``800``).
+
+        Args:
+            defaults: The ``defaults`` block of the v2 config, or any
+                dict-like exposing ``"min_width"``.
+        """
+        return _resolve(self.min_width, defaults, "min_width", 800)
+
+    def effective_verify_integrity(self, defaults: dict) -> bool:
+        """Return the effective ``verify_integrity`` for this profile.
+
+        Same rule as :meth:`effective_min_width`; class-level default
+        is ``False``.
+        """
+        return _resolve(self.verify_integrity, defaults,
+                        "verify_integrity", False)
 
 
 def config_dir() -> Path:
