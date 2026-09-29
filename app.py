@@ -506,6 +506,128 @@ class DialogueSupprimees(QDialog):
 # Preferences dialog
 # --------------------------------------------------------------------------- #
 
+class DialogueProfilEdition(QDialog):
+    """Edit a single :class:`Glaneur.config.Profile` in isolation.
+
+    Kept intentionally small: only the fields that meaningfully differ
+    between profiles (name, source type, site, target dir, image
+    format, sort mode). The inheritable settings (``min_width``,
+    ``verify_integrity``) stay on the "Site" tab of
+    :class:`DialoguePreferences` — they are shared defaults, not
+    per-profile overrides in the current UX.
+
+    The dialog does not touch the caller's :class:`Profile` instance;
+    call :meth:`profile` after :meth:`exec` to get the edited copy.
+    """
+
+    def __init__(self, parent, profile) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Edit profile"))
+        self.setMinimumWidth(420)
+        self._source_profile = profile
+
+        col = QVBoxLayout(self)
+        col.setContentsMargins(14, 14, 14, 14)
+        col.setSpacing(10)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft)
+
+        self.champ_nom = QLineEdit(profile.name)
+        form.addRow(self.tr("Name:"), self.champ_nom)
+
+        self.combo_type = QComboBox()
+        self.combo_type.addItems(list(SOURCE_TYPES))
+        libelle_type = next(
+            (label for label, val in SOURCE_TYPES.items()
+             if val == profile.source_type),
+            next(iter(SOURCE_TYPES)),
+        )
+        self.combo_type.setCurrentText(libelle_type)
+        form.addRow(self.tr("Type:"), self.combo_type)
+
+        self.champ_site = QLineEdit(profile.site)
+        self.champ_site.setPlaceholderText(self.tr("https://example.com"))
+        form.addRow(self.tr("URL:"), self.champ_site)
+
+        self.combo_format = QComboBox()
+        self.combo_format.addItems(list(DJANGOPLICITY_FORMATS))
+        libelle_format = next(
+            (label for label, val in DJANGOPLICITY_FORMATS.items()
+             if val == profile.image_format),
+            next(iter(DJANGOPLICITY_FORMATS)),
+        )
+        self.combo_format.setCurrentText(libelle_format)
+        self.label_format = QLabel(self.tr("Format:"))
+        form.addRow(self.label_format, self.combo_format)
+
+        ligne_dest = QHBoxLayout()
+        self.champ_dossier = QLineEdit(profile.target_dir)
+        ligne_dest.addWidget(self.champ_dossier, 1)
+        bouton = QPushButton(self.tr("Browse…"))
+        bouton.clicked.connect(self._choisir_dossier)
+        ligne_dest.addWidget(bouton)
+        form.addRow(self.tr("Destination:"), ligne_dest)
+
+        self.combo_classement = QComboBox()
+        self.combo_classement.addItems(list(SORT_MODES))
+        libelle_classement = next(
+            (label for label, val in SORT_MODES.items()
+             if val == profile.sort_mode),
+            next(iter(SORT_MODES)),
+        )
+        self.combo_classement.setCurrentText(libelle_classement)
+        form.addRow(self.tr("Sort:"), self.combo_classement)
+
+        col.addLayout(form)
+
+        # Format visibility mirrors the "Site" tab: only for Djangoplicity.
+        self.combo_type.currentTextChanged.connect(self._sur_changement_type)
+        self._sur_changement_type(self.combo_type.currentText())
+
+        boutons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        col.addWidget(boutons)
+
+    def _choisir_dossier(self) -> None:
+        choix = QFileDialog.getExistingDirectory(
+            self, self.tr("Where to save the images?"),
+            self.champ_dossier.text() or str(Path.home()))
+        if choix:
+            self.champ_dossier.setText(choix)
+
+    def _sur_changement_type(self, libelle: str) -> None:
+        est_djangoplicity = (SOURCE_TYPES.get(libelle) == "djangoplicity")
+        for widget in (self.label_format, self.combo_format):
+            widget.setVisible(est_djangoplicity)
+
+    def profile(self):
+        """Return a fresh :class:`Profile` reflecting the edited values.
+
+        The source profile (passed in the constructor) is not mutated.
+        Non-editable fields (id, per-profile scheduler state, override
+        placeholders) are copied verbatim.
+        """
+        from dataclasses import replace as dc_replace
+        return dc_replace(
+            self._source_profile,
+            name=self.champ_nom.text().strip() or self._source_profile.name,
+            source_type=SOURCE_TYPES.get(
+                self.combo_type.currentText(),
+                self._source_profile.source_type),
+            site=self.champ_site.text().strip(),
+            target_dir=self.champ_dossier.text(),
+            image_format=DJANGOPLICITY_FORMATS.get(
+                self.combo_format.currentText(),
+                self._source_profile.image_format),
+            sort_mode=SORT_MODES.get(
+                self.combo_classement.currentText(),
+                self._source_profile.sort_mode),
+        )
+
+
 class DialoguePreferences(QDialog):
     """Edit the configuration. Values are only written to ``cfg`` when the
     user validates, through ``appliquer()``. Cancel = everything is discarded."""
@@ -537,6 +659,8 @@ class DialoguePreferences(QDialog):
         # the user accepts the dialog. Cancel discards them.
         self._pending_add_profiles: list = []
         self._pending_remove_ids: set = set()
+        #: id → edited Profile replacement. Applied in :meth:`appliquer`.
+        self._pending_edits: dict = {}
 
         self.onglets = QTabWidget(self)
         self.onglets.addTab(self._build_general_tab(), self.tr("General"))
@@ -735,11 +859,19 @@ class DialoguePreferences(QDialog):
         self.bouton_ajouter_profil.clicked.connect(self._ajouter_profil)
         boutons.addWidget(self.bouton_ajouter_profil)
 
+        self.bouton_editer_profil = QPushButton(self.tr("Edit…"))
+        self.bouton_editer_profil.clicked.connect(self._editer_profil)
+        boutons.addWidget(self.bouton_editer_profil)
+
         self.bouton_supprimer_profil = QPushButton(self.tr("Remove"))
         self.bouton_supprimer_profil.clicked.connect(self._supprimer_profil)
         boutons.addWidget(self.bouton_supprimer_profil)
         boutons.addStretch(1)
         col.addLayout(boutons)
+
+        # Double-clicking a row opens the edit dialog for that profile.
+        self.liste_profils.itemDoubleClicked.connect(
+            lambda _item: self._editer_profil())
 
         self._rafraichir_liste_profils()
         return page
@@ -749,11 +881,14 @@ class DialoguePreferences(QDialog):
 
         Display order: still-persisted extras first (in cfg order,
         minus anything in ``_pending_remove_ids``), pending additions
-        after. Each item stores its :class:`Profile` on
-        ``Qt.UserRole`` so the remove handler can key off it directly.
+        after. A profile with a pending edit is displayed with the
+        edited values. Each item stores the profile as it will be
+        after apply on ``Qt.UserRole`` so the remove/edit handlers
+        can key off it directly.
         """
         self.liste_profils.clear()
-        existants = [p for p in self.cfg._extra_profiles
+        existants = [self._pending_edits.get(p.id, p)
+                     for p in self.cfg._extra_profiles
                      if p.id not in self._pending_remove_ids]
         for profil in [*existants, *self._pending_add_profiles]:
             libelle = profil.name
@@ -762,6 +897,29 @@ class DialoguePreferences(QDialog):
             item = QListWidgetItem(libelle)
             item.setData(Qt.UserRole, profil)
             self.liste_profils.addItem(item)
+
+    def _editer_profil(self) -> None:
+        """Open :class:`DialogueProfilEdition` for the selected row.
+
+        A pending addition is mutated in place (it isn't persisted
+        yet, so direct edit is fine); an existing profile has its
+        edited replacement queued in :attr:`_pending_edits`. Nothing
+        touches the live :class:`Config` until :meth:`appliquer` runs.
+        """
+        item = self.liste_profils.currentItem()
+        if item is None:
+            return
+        profil = item.data(Qt.UserRole)
+        dlg = DialogueProfilEdition(self, profil)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        edited = dlg.profile()
+        if profil in self._pending_add_profiles:
+            i = self._pending_add_profiles.index(profil)
+            self._pending_add_profiles[i] = edited
+        else:
+            self._pending_edits[profil.id] = edited
+        self._rafraichir_liste_profils()
 
     def _ajouter_profil(self) -> None:
         """Prompt for a name and queue an add.
@@ -877,14 +1035,22 @@ class DialoguePreferences(QDialog):
         and propagate to system integrations. Returns a non-blocking
         error message or None."""
         c = self.cfg
-        # Extras: apply pending add/remove queued on the Profiles tab.
-        # remove first so a pending id in both sets is a genuine no-op.
+        # Extras: apply pending remove / edit / add queued on the
+        # Profiles tab. Remove first so an id in both remove and edit
+        # ends up removed (no phantom edit for a deleted profile);
+        # edit before add so a fresh addition isn't accidentally
+        # replaced by a stale edit under the same id (id collisions
+        # cannot happen today, but the ordering is the safe one).
         for ident in self._pending_remove_ids:
             c.remove_profile(ident)
+        for i, profil in enumerate(c._extra_profiles):
+            if profil.id in self._pending_edits:
+                c._extra_profiles[i] = self._pending_edits[profil.id]
         for profil in self._pending_add_profiles:
             c._extra_profiles.append(profil)
         self._pending_add_profiles = []
         self._pending_remove_ids = set()
+        self._pending_edits = {}
         c.site = self.champ_site.text().strip()
         c.target_dir = self.champ_dossier.text()
         c.interval_hours = INTERVALS.get(self.combo_intervalle.currentText(), 24)

@@ -264,3 +264,163 @@ class TestProfilesTab:
         dlg._supprimer_profil()
         assert dlg._pending_remove_ids == set()
         assert dlg.liste_profils.count() == 1
+
+
+# --------------------------------------------------------------------------- #
+# Per-profile edit dialog (lot 5.1 E3 part B step 9)
+# --------------------------------------------------------------------------- #
+
+class TestDialogueProfilEdition:
+    """DialogueProfilEdition returns a fresh Profile — the source
+    profile passed in the constructor is never mutated."""
+
+    def _profil(self, **overrides):
+        from Glaneur.config import Profile
+        base = {
+            "id": "abc123",
+            "name": "eso",
+            "source_type": "djangoplicity",
+            "site": "https://eso.example",
+            "target_dir": "/tmp/eso",
+            "image_format": "Small",
+            "sort_mode": "date",
+            "last_run": "2026-09-30T10:00:00",
+            "min_width": 1500,   # override preserved through the dialog
+        }
+        base.update(overrides)
+        return Profile(**base)
+
+    def test_seed_values_appear_in_widgets(self, qtbot):
+        dlg = app_module.DialogueProfilEdition(None, self._profil())
+        qtbot.addWidget(dlg)
+        assert dlg.champ_nom.text() == "eso"
+        assert dlg.champ_site.text() == "https://eso.example"
+        assert dlg.champ_dossier.text() == "/tmp/eso"
+
+    def test_profile_reflects_edited_widgets(self, qtbot):
+        dlg = app_module.DialogueProfilEdition(None, self._profil())
+        qtbot.addWidget(dlg)
+        dlg.champ_nom.setText("eso-hd")
+        dlg.champ_site.setText("https://eso.example/hd")
+        dlg.champ_dossier.setText("/tmp/eso-hd")
+        edited = dlg.profile()
+        assert edited.name == "eso-hd"
+        assert edited.site == "https://eso.example/hd"
+        assert edited.target_dir == "/tmp/eso-hd"
+
+    def test_immutable_fields_preserved(self, qtbot):
+        """id, per-profile scheduler state and the min_width override
+        stay on the returned Profile — the dialog only edits the six
+        user-facing fields."""
+        dlg = app_module.DialogueProfilEdition(None, self._profil())
+        qtbot.addWidget(dlg)
+        dlg.champ_nom.setText("renamed")
+        edited = dlg.profile()
+        assert edited.id == "abc123"
+        assert edited.last_run == "2026-09-30T10:00:00"
+        assert edited.min_width == 1500
+
+    def test_source_profile_is_not_mutated(self, qtbot):
+        original = self._profil()
+        dlg = app_module.DialogueProfilEdition(None, original)
+        qtbot.addWidget(dlg)
+        dlg.champ_nom.setText("mutated")
+        dlg.profile()
+        assert original.name == "eso"   # unchanged
+
+    def test_empty_name_falls_back_to_original(self, qtbot):
+        dlg = app_module.DialogueProfilEdition(None, self._profil())
+        qtbot.addWidget(dlg)
+        dlg.champ_nom.setText("   ")
+        edited = dlg.profile()
+        # Empty / whitespace-only names would break the CLI --profile
+        # picker; the dialog silently keeps the previous name.
+        assert edited.name == "eso"
+
+    def test_format_hidden_for_wordpress(self, qtbot):
+        dlg = app_module.DialogueProfilEdition(
+            None, self._profil(source_type="wordpress"))
+        qtbot.addWidget(dlg)
+        assert not dlg.combo_format.isVisible()
+
+    def test_format_shown_for_djangoplicity(self, qtbot):
+        # Show the dialog so visibility flags reflect the real widget tree.
+        dlg = app_module.DialogueProfilEdition(
+            None, self._profil(source_type="djangoplicity"))
+        qtbot.addWidget(dlg)
+        dlg.show()
+        assert dlg.combo_format.isVisible()
+        dlg.hide()
+
+
+class TestProfilesTabEditing:
+    """Editing plumbing on the Profiles tab: pending queue, apply on
+    OK, discard on Cancel, in-place mutation for a pending add."""
+
+    def test_edit_pending_add_mutates_in_place(self, qtbot, seeded_config):
+        from Glaneur.config import Profile
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        pending = Profile(id="pid", name="original",
+                          source_type="wordpress",
+                          site="https://x.example",
+                          target_dir="/tmp/x",
+                          image_format="Large",
+                          sort_mode="gallery")
+        dlg._pending_add_profiles.append(pending)
+        dlg._rafraichir_liste_profils()
+        dlg.liste_profils.setCurrentRow(0)
+        # Skip the modal edit dialog and apply an edited replacement
+        # through the same code path _editer_profil takes.
+        edited = Profile(**{**pending.__dict__, "name": "renamed"})
+        i = dlg._pending_add_profiles.index(pending)
+        dlg._pending_add_profiles[i] = edited
+        dlg._rafraichir_liste_profils()
+        assert dlg._pending_add_profiles[0].name == "renamed"
+        # Existing profile edits queue separately — no bleed.
+        assert dlg._pending_edits == {}
+
+    def test_edit_existing_profile_queues_in_pending_edits(
+            self, qtbot, seeded_config):
+        from Glaneur.config import Profile
+        added = seeded_config.add_profile("eso", site="https://eso.example")
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        edited = Profile(**{**added.__dict__, "name": "eso-hd"})
+        dlg._pending_edits[added.id] = edited
+        dlg._rafraichir_liste_profils()
+        assert dlg.liste_profils.item(0).text().startswith("eso-hd")
+        # Config unchanged so far.
+        assert seeded_config._extra_profiles[0].name == "eso"
+
+    @pytest.mark.skipif(sys.platform == "win32",
+                        reason="autostart/slideshow hit real registry")
+    def test_appliquer_commits_pending_edits(self, qtbot, seeded_config):
+        from Glaneur.config import Profile
+        added = seeded_config.add_profile("eso", site="https://eso.example")
+        seeded_config.save()
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        dlg._pending_edits[added.id] = Profile(
+            **{**added.__dict__, "name": "eso-hd", "min_width": 2000})
+        probleme = dlg.appliquer()
+        assert probleme is None
+        assert seeded_config._extra_profiles[0].name == "eso-hd"
+        assert seeded_config._extra_profiles[0].min_width == 2000
+        assert dlg._pending_edits == {}
+
+    def test_edit_then_remove_drops_the_edit(self, qtbot, seeded_config):
+        """If a queued edit's target profile is then removed in the
+        same session, the edit becomes moot — apply order in
+        appliquer() must remove BEFORE editing so the phantom edit
+        cannot re-insert anything."""
+        from Glaneur.config import Profile
+        added = seeded_config.add_profile("eso", site="https://eso.example")
+        seeded_config.save()
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        dlg._pending_edits[added.id] = Profile(
+            **{**added.__dict__, "name": "ignored"})
+        dlg._pending_remove_ids.add(added.id)
+        dlg.appliquer()
+        assert seeded_config._extra_profiles == []
