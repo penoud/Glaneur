@@ -54,6 +54,44 @@ _PROFILE_STATE_FIELDS: tuple[str, ...] = (
 )
 
 
+#: Fields kept on a serialised profile dict. Order matches
+#: :meth:`Config._to_v2_dict`'s emission so extra profiles round-trip
+#: byte-for-byte.
+_PROFILE_DICT_KEYS: tuple[str, ...] = (
+    "id", "name",
+    "source_type", "site", "image_format", "target_dir", "sort_mode",
+    *_PROFILE_STATE_FIELDS,
+    *_DEFAULT_FIELDS,
+)
+
+
+def _profile_from_dict(entry: dict) -> Profile:
+    """Build a :class:`Profile` from a v2 ``profiles[i]`` dict.
+
+    Applies the same legacy sort_mode alias as the default profile
+    (US-EN-04 one-way migration). Missing keys stay at the dataclass
+    defaults, so a partial entry — a hand-edited config or a future
+    Glaneur that has extra fields we do not yet know about — loads
+    without crashing. Unknown keys are ignored.
+    """
+    fields_par_nom = {f.name for f in fields(Profile)}
+    kw = {k: v for k, v in entry.items() if k in fields_par_nom}
+    profile = Profile(**kw)
+    if profile.sort_mode in _LEGACY_SORT_MODE_ALIASES:
+        profile.sort_mode = _LEGACY_SORT_MODE_ALIASES[profile.sort_mode]
+    return profile
+
+
+def _profile_to_dict(profile: Profile) -> dict:
+    """Serialise a :class:`Profile` in the on-disk key order.
+
+    Complements :func:`_profile_from_dict` — the order matches
+    :meth:`Config._to_v2_dict`'s emission of the default profile so a
+    v2 file with N profiles is byte-stable across a load-save cycle.
+    """
+    return {cle: getattr(profile, cle) for cle in _PROFILE_DICT_KEYS}
+
+
 def _resolve(override, defaults: dict, key: str, fallback):
     """Return the effective value of ``key`` under the None-inheritance rule.
 
@@ -390,6 +428,14 @@ class Config:
     #: never serialised at the top level (it appears as
     #: ``profiles[0].id`` in v2).
     _profile_id: str = field(default="", repr=False, compare=False)
+    #: Additional profiles beyond the single implicit default. Empty
+    #: today; populated once the UI or CLI adds a second profile.
+    #: Persisted after :meth:`default_profile` in the v2 ``profiles``
+    #: list (roadmap §5.1). Excluded from :func:`dataclasses.asdict`
+    #: via the ``_`` prefix, same as :attr:`_path` and
+    #: :attr:`_profile_id`.
+    _extra_profiles: list[Profile] = field(default_factory=list,
+                                           repr=False, compare=False)
 
     # -- load / save ------------------------------------------------------- #
 
@@ -524,6 +570,14 @@ class Config:
                     setattr(self, cle, valeur)
             if self.sort_mode in _LEGACY_SORT_MODE_ALIASES:
                 self.sort_mode = _LEGACY_SORT_MODE_ALIASES[self.sort_mode]
+            # -- profiles[1..] --------------------------------------------
+            # Additional profiles round-trip through _extra_profiles.
+            # Nothing consumes them at runtime yet (E3 part B step 4+).
+            self._extra_profiles = [
+                _profile_from_dict(entry)
+                for entry in profiles[1:]
+                if isinstance(entry, dict)
+            ]
 
     def save(self) -> None:
         """Write the config to disk atomically, in the v2 shape.
@@ -564,10 +618,12 @@ class Config:
     def _to_v2_dict(self) -> dict:
         """Serialise the current state as the v2 on-disk layout.
 
-        Since :class:`Config` still stores a single implicit profile
-        flat on itself, the inheritable values live in ``defaults`` and
-        the per-profile overrides are set to ``None`` — the effective
-        value on the next load is unchanged.
+        The single implicit profile is emitted first with its
+        overrides set to ``None`` (the effective value flows through
+        ``defaults``); any extra profiles in :attr:`_extra_profiles`
+        are emitted in order after it, verbatim. Every entry keeps
+        the ``id`` / ``name`` / per-profile keys the loader expects
+        so a round-trip is byte-stable.
         """
         flat = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
         # Split into three buckets: profile, defaults, top-level.
@@ -579,11 +635,13 @@ class Config:
         # Overrides null: the effective value lives in `defaults`.
         for cle in _DEFAULT_FIELDS:
             profile[cle] = None
+        profile_dicts = [profile]
+        profile_dicts.extend(_profile_to_dict(p) for p in self._extra_profiles)
         return {
             "schema_version": SCHEMA_VERSION,
             **flat,
             "defaults": defaults,
-            "profiles": [profile],
+            "profiles": profile_dicts,
         }
 
     # -- Forward-compat helpers: profile builders --------------------------
@@ -625,6 +683,21 @@ class Config:
         :meth:`Profile.effective_verify_integrity`).
         """
         return {cle: getattr(self, cle) for cle in _DEFAULT_FIELDS}
+
+    def profiles(self) -> list[Profile]:
+        """Return the complete list of profiles: default first, then extras.
+
+        A fresh :class:`Profile` is built for the default entry (see
+        :meth:`default_profile`); the extra profiles are the actual
+        objects stored on :attr:`_extra_profiles`. The list order is
+        the on-disk order — index ``0`` is the default profile, ``1..``
+        are the extras.
+
+        This is the shape a future multi-profile UI or CLI walks over;
+        today no runtime caller iterates it (the engine still runs the
+        default profile only).
+        """
+        return [self.default_profile(), *self._extra_profiles]
 
     def _snapshot_older(self, chemin: Path, current_version: int | None) -> None:
         """Copy an older on-disk config to ``config.v<n>.json`` before overwriting.

@@ -1051,6 +1051,146 @@ class TestProfileInheritance:
         assert p_zero.effective_min_width({"min_width": 800}) == 0
 
 
+class TestMultipleProfiles:
+    """Persistence round-trip for extra profiles beyond the single
+    implicit default. The v2 ``profiles`` list has always allowed
+    multiple entries; this class locks the loader + saver walking
+    all of them, so a future multi-profile UI or CLI (roadmap
+    §5.3 / lot 5.2) can round-trip without a schema bump.
+    """
+
+    def _extra(self, ident="extra-1", name="extra") -> Profile:
+        return Profile(
+            id=ident, name=name,
+            source_type="djangoplicity", site="https://eso.example",
+            target_dir="/tmp/eso", image_format="Small", sort_mode="date",
+            min_width=1500, verify_integrity=True,
+            last_run="2026-09-30T10:00:00", retry_after="", backoff_level=0,
+        )
+
+    def test_fresh_config_has_no_extras(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        assert cfg._extra_profiles == []
+        # profiles() still returns exactly one entry — the default.
+        assert len(cfg.profiles()) == 1
+
+    def test_extra_profile_survives_round_trip(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        cfg = Config.load(chemin)
+        cfg._extra_profiles.append(self._extra())
+        cfg.save()
+
+        loaded = Config.load(chemin)
+        assert len(loaded._extra_profiles) == 1
+        extra = loaded._extra_profiles[0]
+        assert extra.id == "extra-1"
+        assert extra.name == "extra"
+        assert extra.source_type == "djangoplicity"
+        assert extra.site == "https://eso.example"
+        assert extra.target_dir == "/tmp/eso"
+        assert extra.image_format == "Small"
+        assert extra.sort_mode == "date"
+        assert extra.min_width == 1500
+        assert extra.verify_integrity is True
+        assert extra.last_run == "2026-09-30T10:00:00"
+
+    def test_profiles_returns_default_first_then_extras(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg._extra_profiles.append(self._extra("a", "A"))
+        cfg._extra_profiles.append(self._extra("b", "B"))
+        profs = cfg.profiles()
+        assert len(profs) == 3
+        assert profs[0].name == "default"
+        assert profs[1].name == "A"
+        assert profs[2].name == "B"
+
+    def test_extra_profile_inherits_defaults_via_null_override(self, tmp_path):
+        """An extra profile with ``None`` overrides resolves to the
+        ``defaults`` value, same rule as the default profile."""
+        chemin = tmp_path / "c.json"
+        cfg = Config.load(chemin)
+        cfg.min_width = 800
+        cfg.verify_integrity = False
+        cfg._extra_profiles.append(Profile(
+            id="a", name="inheriting",
+            source_type="wordpress", site="https://x.example",
+            target_dir="/tmp/x", image_format="Large", sort_mode="gallery",
+            min_width=None, verify_integrity=None,
+        ))
+        cfg.save()
+
+        loaded = Config.load(chemin)
+        extra = loaded._extra_profiles[0]
+        assert extra.effective_min_width(loaded.defaults()) == 800
+        assert extra.effective_verify_integrity(loaded.defaults()) is False
+
+    def test_extra_profile_override_wins_over_defaults(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        cfg = Config.load(chemin)
+        cfg.min_width = 500
+        cfg._extra_profiles.append(self._extra())   # min_width=1500 override
+        cfg.save()
+
+        loaded = Config.load(chemin)
+        extra = loaded._extra_profiles[0]
+        assert extra.effective_min_width(loaded.defaults()) == 1500
+
+    def test_multi_profile_v2_is_byte_stable_across_round_trip(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        cfg = Config.load(chemin)
+        cfg._extra_profiles.append(self._extra("a", "A"))
+        cfg._extra_profiles.append(self._extra("b", "B"))
+        cfg.save()
+        before = chemin.read_bytes()
+        Config.load(chemin).save()
+        assert chemin.read_bytes() == before
+
+    def test_legacy_sort_mode_alias_fires_on_extra_profile(self, tmp_path):
+        """A hand-edited config with a legacy FR sort_mode value in
+        an extra profile still upgrades on load."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": {"min_width": 800, "verify_integrity": False},
+            "profiles": [
+                {"id": "a", "name": "d",
+                 "source_type": "wordpress", "site": "https://x",
+                 "target_dir": "/tmp", "image_format": "Large",
+                 "sort_mode": "gallery"},
+                {"id": "b", "name": "legacy",
+                 "source_type": "wordpress", "site": "https://y",
+                 "target_dir": "/tmp/y", "image_format": "Large",
+                 "sort_mode": "galerie"},   # legacy FR value
+            ],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg._extra_profiles[0].sort_mode == "gallery"
+
+    def test_non_dict_entries_in_profiles_list_are_skipped(self, tmp_path):
+        """A malformed profiles[1] (string instead of dict) is silently
+        skipped rather than crashing the load — same tolerance as
+        the guard on profiles[0]."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": {"min_width": 800, "verify_integrity": False},
+            "profiles": [
+                {"id": "a", "name": "d",
+                 "source_type": "wordpress", "site": "https://x",
+                 "target_dir": "/tmp", "image_format": "Large",
+                 "sort_mode": "gallery"},
+                "garbage",
+                {"id": "c", "name": "good",
+                 "source_type": "wordpress", "site": "https://z",
+                 "target_dir": "/tmp/z", "image_format": "Large",
+                 "sort_mode": "gallery"},
+            ],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert len(cfg._extra_profiles) == 1
+        assert cfg._extra_profiles[0].id == "c"
+
+
 class TestConfigDefaultProfile:
     """Forward-compat builders on :class:`Config` — the shape callers
     will start migrating to before E3 part B step 2 flips storage to
