@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Glaneur
-Comment=Synchronise les images d'un site WordPress
+Comment=Sync images from a WordPress or Djangoplicity site
 Exec=Glaneur
 Icon=org.glaneur.Glaneur
 Terminal=false
 Categories=Network;Utility;
-Keywords=WordPress;images;download;
+Keywords=WordPress;Djangoplicity;images;download;

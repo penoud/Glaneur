@@ -268,7 +268,7 @@ class TestReturnCodes:
         assert rc == 130
         # The stub engine's `stop_event` was signalled cooperatively.
         assert _FauxEngine.dernier.stop_event.set_called is True
-        assert "Interrompu" in capsys.readouterr().out
+        assert "Interrupted" in capsys.readouterr().out
 
 
 # --------------------------------------------------------------------------- #
@@ -284,19 +284,19 @@ class TestStdoutOutput:
             resultat=RunResult(
                 downloaded=4, resumed=1, already_present=10, unchanged=2,
                 deleted=1, skipped=3, failures=0, bytes=2048,
-                message="Terminé",
+                message="Done",
             ),
         )
         out = capsys.readouterr().out
-        assert "Terminé" in out
+        assert "Done" in out
         # All the labelled counters appear with their value.
-        assert "téléchargées : 4" in out
-        assert "reprises : 1" in out
-        assert "déjà à jour  : 10" in out
-        assert "inchangées : 2" in out
-        assert "supprimées   : 1" in out
-        assert "ignorées : 3" in out
-        assert "échecs       : 0" in out
+        assert "downloaded    : 4" in out
+        assert "resumed : 1" in out
+        assert "up-to-date    : 10" in out
+        assert "unchanged : 2" in out
+        assert "deleted       : 1" in out
+        assert "skipped : 3" in out
+        assert "failures      : 0" in out
         # `format_bytes` turned 2048 into a human-readable string.
         assert "2" in out and "o" in out.lower()
 
@@ -329,7 +329,7 @@ class TestRestore:
         assert rc == 0
         assert appels["target_dir"] == tmp_path.expanduser()
         assert appels["ids"] == ["12", "34", "56"]
-        assert "3 image(s) remise(s)" in capsys.readouterr().out
+        assert "3 image(s) re-queued" in capsys.readouterr().out
 
     def test_restore_without_ids_takes_all_deleted(
         self, monkeypatch, tmp_path, capsys,
@@ -350,7 +350,7 @@ class TestRestore:
         rc = _run(monkeypatch, ["--folder", str(tmp_path), "--restore"])
         assert rc == 0
         assert appels["ids"] == ["a", "b"]
-        assert "2 image(s) remise(s)" in capsys.readouterr().out
+        assert "2 image(s) re-queued" in capsys.readouterr().out
 
 
 # --------------------------------------------------------------------------- #

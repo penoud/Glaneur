@@ -12,13 +12,8 @@ unless it gets worse.
 
 - The README still describes the `WINDOWS_PFX_BASE64` signing flow,
   which is obsolete (story 9).
-- The AppStream metadata in `packaging/linux/` still describes a
-  WordPress-only application: on hold with Linux.
-- Everything else that used to live here (dispatch values, manifest
-  keys, CLI flags, Qt contexts, `.ts` source language, remaining
-  French docstrings) is being closed by the sprint
-  `docs/sprints/2026-09-french-to-english-complete.md`. Update this
-  section as each of that sprint's US lands.
+- The README stays deliberately dual French/English by sprint decision;
+  this is the only intentional French text left in the project.
 
 Update this list whenever a story resolves a gap or you discover a new
 one.

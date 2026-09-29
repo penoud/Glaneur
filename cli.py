@@ -120,7 +120,7 @@ def main() -> int:
     if args.restore is not None:
         dossier = Path(args.target_dir).expanduser()
         ids = args.restore or [e["id"] for e in list_deleted(dossier)]
-        print(f"{restore(dossier, ids)} image(s) remise(s) en file.")
+        print(f"{restore(dossier, ids)} image(s) re-queued.")
 
     options = Options(
         target_dir=Path(args.target_dir).expanduser(),
@@ -163,23 +163,23 @@ def main() -> int:
         res = moteur.run()
     except KeyboardInterrupt:
         moteur.stop_event.set()
-        print("\nInterrompu.")
+        print("\nInterrupted.")
         return 130
 
     if res.busy:
         # Another Glaneur process holds the per-folder OS lock (open UI,
         # scheduled task, legacy install). Nothing was written; retry later.
         print(
-            f"Dossier déjà en cours d'utilisation : {options.target_dir}",
+            f"Folder already in use: {options.target_dir}",
             file=sys.stderr,
         )
         return 3
 
     print(f"\n\n{res.message}")
-    print(f"  téléchargées : {res.downloaded}   reprises : {res.resumed}")
-    print(f"  déjà à jour  : {res.already_present}   inchangées : {res.unchanged}")
-    print(f"  supprimées   : {res.deleted}   ignorées : {res.skipped}")
-    print(f"  échecs       : {res.failures}   volume : {format_bytes(res.bytes)}")
+    print(f"  downloaded    : {res.downloaded}   resumed : {res.resumed}")
+    print(f"  up-to-date    : {res.already_present}   unchanged : {res.unchanged}")
+    print(f"  deleted       : {res.deleted}   skipped : {res.skipped}")
+    print(f"  failures      : {res.failures}   volume : {format_bytes(res.bytes)}")
 
     if res.deferred:
         # Persist the defer so the next invocation (UI or CLI) honours
