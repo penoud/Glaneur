@@ -11,9 +11,11 @@ from Glaneur.config import (
     DJANGOPLICITY_FORMATS,
     INTERVALS,
     PROFILE_FIELDS,
+    SCHEMA_VERSION,
     SORT_MODES,
     SOURCE_TYPES,
     Config,
+    Profile,
     config_dir,
     default_images_dir,
     migrate_from_legacy_name,
@@ -460,17 +462,28 @@ class TestLegacyFieldAliases:
         assert c.language == "en"
 
     def test_save_after_load_rewrites_with_english_keys(self, tmp_path):
-        """A load → save cycle migrates a legacy file to EN keys silently."""
+        """A load → save cycle migrates a legacy file to EN keys and to
+        the v2 layered shape (schema_version + profiles + defaults)."""
         chemin = tmp_path / "config.json"
         chemin.write_text(json.dumps(self._LEGACY_JSON), encoding="utf-8")
         Config.load(chemin).save()
         reecrit = json.loads(chemin.read_text(encoding="utf-8"))
+        # Legacy FR keys never survive the migration at any level.
+        flat_reecrit = {**reecrit, **(reecrit.get("defaults") or {}),
+                        **(reecrit.get("profiles") or [{}])[0]}
         for cle in self._LEGACY_JSON:
             if cle in ("site", "notifications"):
                 continue   # always EN
-            assert cle not in reecrit, f"legacy key {cle!r} still on disk"
-        for cle in ("target_dir", "interval_hours", "sort_mode", "source_type"):
-            assert cle in reecrit
+            assert cle not in flat_reecrit, (
+                f"legacy key {cle!r} still on disk")
+        # Application keys land at the top level.
+        assert reecrit["schema_version"] == 2
+        assert reecrit["interval_hours"] == 12
+        # Per-profile keys land in profiles[0].
+        profile = reecrit["profiles"][0]
+        assert profile["source_type"] == "djangoplicity"
+        assert profile["sort_mode"] == "date"
+        assert profile["target_dir"] == "/tmp/glaneur-old"
 
     def test_hybrid_json_prefers_english_over_french(self, tmp_path):
         """When both an EN and FR key are present, the EN wins.
@@ -517,7 +530,9 @@ class TestLegacySortModeAliases:
         chemin.write_text(json.dumps({"sort_mode": "galerie"}),
                           encoding="utf-8")
         Config.load(chemin).save()
-        assert json.loads(chemin.read_text())["sort_mode"] == "gallery"
+        # v2 layout: sort_mode is a per-profile key.
+        reecrit = json.loads(chemin.read_text())
+        assert reecrit["profiles"][0]["sort_mode"] == "gallery"
 
 
 # --------------------------------------------------------------------------- #
@@ -562,3 +577,433 @@ class TestProfileFields:
         for name in PROFILE_FIELDS:
             assert not name.startswith("_"), (
                 f"{name!r} is private and cannot be a profile field")
+
+
+# --------------------------------------------------------------------------- #
+# Lot 5.1 E3 part A: v2 schema on disk
+# --------------------------------------------------------------------------- #
+
+class TestSchemaVersion:
+    """v2 layout: schema_version at the top, application keys at the
+    top, `defaults` block for inheritable settings, `profiles` list with
+    one entry today. Runtime API of Config unchanged.
+    """
+
+    def _minimal_v1(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "site": "https://example.test",
+            "target_dir": str(tmp_path / "photos"),
+            "interval_hours": 12,
+            "min_width": 1200,
+            "sort_mode": "date",
+            "source_type": "djangoplicity",
+            "image_format": "Small",
+            "verify_integrity": True,
+            "last_run": "2026-09-29T15:00:00",
+        }), encoding="utf-8")
+        return chemin
+
+    # -- save shape ---------------------------------------------------------
+
+    def test_fresh_save_writes_v2_layout(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg.site = "https://example.test"
+        cfg.save()
+        data = json.loads((tmp_path / "c.json").read_text(encoding="utf-8"))
+        assert data["schema_version"] == SCHEMA_VERSION
+        # Application keys land at the top level.
+        for cle in ("language", "interval_hours", "schedule_anchor",
+                    "request_delay", "run_at_startup", "close_to_tray",
+                    "notifications", "check_updates_on_start",
+                    "slideshow_dir"):
+            assert cle in data, f"top-level key {cle!r} missing"
+        assert "defaults" in data and "profiles" in data
+        assert isinstance(data["profiles"], list) and len(data["profiles"]) == 1
+
+    def test_defaults_holds_inheritable_settings(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg.min_width = 1500
+        cfg.verify_integrity = True
+        cfg.save()
+        data = json.loads((tmp_path / "c.json").read_text(encoding="utf-8"))
+        assert data["defaults"] == {"min_width": 1500, "verify_integrity": True}
+
+    def test_profile_overrides_null_by_default(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg.save()
+        data = json.loads((tmp_path / "c.json").read_text(encoding="utf-8"))
+        profile = data["profiles"][0]
+        # The single implicit profile inherits every default via null
+        # overrides; the effective value lives in `defaults`.
+        assert profile["min_width"] is None
+        assert profile["verify_integrity"] is None
+
+    def test_profile_carries_id_name_and_per_profile_keys(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg.site = "https://x.example"
+        cfg.target_dir = "/tmp/x"
+        cfg.save()
+        profile = json.loads((tmp_path / "c.json").read_text(
+            encoding="utf-8"))["profiles"][0]
+        assert profile["id"] == cfg._profile_id
+        assert len(profile["id"]) == 32   # uuid4().hex
+        assert profile["name"] == "default"
+        assert profile["site"] == "https://x.example"
+        assert profile["target_dir"] == "/tmp/x"
+        # Run state travels with the profile.
+        assert profile["last_run"] == ""
+        assert profile["retry_after"] == ""
+        assert profile["backoff_level"] == 0
+
+    # -- v2 read ------------------------------------------------------------
+
+    def test_load_v2_populates_flat_config(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        cfg = Config.load(chemin)
+        cfg.site = "https://y.example"
+        cfg.target_dir = "/tmp/y"
+        cfg.min_width = 999
+        cfg.save()
+        # Read back through Config.load — flat access still works.
+        loaded = Config.load(chemin)
+        assert loaded.site == "https://y.example"
+        assert loaded.target_dir == "/tmp/y"
+        assert loaded.min_width == 999
+
+    def test_profile_override_wins_over_defaults(self, tmp_path):
+        """A non-null override at the profile level replaces the
+        `defaults` value for that field."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": {"min_width": 500, "verify_integrity": False},
+            "profiles": [{
+                "id": "abc",
+                "name": "default",
+                "source_type": "wordpress",
+                "site": "https://x",
+                "target_dir": "/tmp",
+                "image_format": "Large",
+                "sort_mode": "gallery",
+                "min_width": 1500,          # override
+                "verify_integrity": True,   # override
+                "last_run": "",
+                "retry_after": "",
+                "backoff_level": 0,
+            }],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.min_width == 1500        # override, not defaults' 500
+        assert cfg.verify_integrity is True
+        assert cfg._profile_id == "abc"
+
+    def test_unknown_v2_keys_are_ignored(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "surprise": "future feature",
+            "defaults": {"unexpected": 1},
+            "profiles": [{"id": "z", "name": "d",
+                           "source_type": "wordpress", "site": "https://x",
+                           "target_dir": "/tmp", "image_format": "Large",
+                           "sort_mode": "gallery"}],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.site == "https://x"
+
+    def test_profile_id_stable_across_round_trip(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        cfg = Config.load(chemin)
+        first_id = cfg._profile_id
+        assert first_id and len(first_id) == 32
+        cfg.save()
+        cfg2 = Config.load(chemin)
+        assert cfg2._profile_id == first_id
+
+    def test_v2_round_trip_is_byte_stable(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        Config.load(chemin).save()   # canonicalise to v2 bytes
+        before = chemin.read_bytes()
+        Config.load(chemin).save()   # v2 → v2, no change
+        assert chemin.read_bytes() == before
+
+    # -- v1 → v2 migration --------------------------------------------------
+
+    def test_v1_save_creates_v1_backup(self, tmp_path):
+        chemin = self._minimal_v1(tmp_path)
+        Config.load(chemin).save()
+        backup = chemin.with_name(f"{chemin.stem}.v1.json")
+        assert backup.exists()
+        # Backup keeps the pre-migration bytes verbatim.
+        assert "schema_version" not in json.loads(backup.read_text(
+            encoding="utf-8"))
+
+    def test_v1_backup_not_overwritten_on_second_save(self, tmp_path):
+        chemin = self._minimal_v1(tmp_path)
+        cfg = Config.load(chemin)
+        cfg.save()
+        backup = chemin.with_name(f"{chemin.stem}.v1.json")
+        original = backup.read_bytes()
+        # Second save: file is now v2 on disk, no backup step; the
+        # original v1 snapshot survives.
+        cfg.site = "https://mutated.example"
+        cfg.save()
+        assert backup.read_bytes() == original
+
+    def test_v1_content_preserved_after_migration(self, tmp_path):
+        chemin = self._minimal_v1(tmp_path)
+        cfg = Config.load(chemin)
+        cfg.save()
+        loaded = Config.load(chemin)
+        assert loaded.site == "https://example.test"
+        assert loaded.min_width == 1200
+        assert loaded.sort_mode == "date"
+        assert loaded.source_type == "djangoplicity"
+        assert loaded.image_format == "Small"
+        assert loaded.verify_integrity is True
+        assert loaded.last_run == "2026-09-29T15:00:00"
+
+
+    def test_v2_sort_mode_legacy_value_is_migrated(self, tmp_path):
+        """A v2 file with a legacy FR sort_mode value inside profiles[0]
+        still upgrades on load — same one-way alias as US-EN-04."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": {"min_width": 800, "verify_integrity": False},
+            "profiles": [{
+                "id": "a", "name": "d",
+                "source_type": "wordpress", "site": "https://x",
+                "target_dir": "/tmp", "image_format": "Large",
+                "sort_mode": "galerie",   # legacy FR value
+                "min_width": None, "verify_integrity": None,
+                "last_run": "", "retry_after": "", "backoff_level": 0,
+            }],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.sort_mode == "gallery"
+
+    def test_backup_left_alone_when_backup_already_exists(self, tmp_path):
+        """Re-running the migration on a corrupted or reverted v1 file
+        must not overwrite an existing config.v1.json snapshot."""
+        chemin = tmp_path / "c.json"
+        backup = chemin.with_name(f"{chemin.stem}.v1.json")
+        # Pre-existing backup that must survive.
+        backup.write_text("{}", encoding="utf-8")
+        chemin.write_text('{"site": "https://x"}', encoding="utf-8")
+        Config.load(chemin).save()
+        # The snapshot stays untouched even though the file was v1.
+        assert backup.read_text(encoding="utf-8") == "{}"
+
+    def test_backup_skipped_for_non_dict_toplevel(self, tmp_path):
+        """A stray list at the top level is treated as absent; the
+        backup step does not fire."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text("[]", encoding="utf-8")
+        Config.load(chemin).save()
+        backup = chemin.with_name(f"{chemin.stem}.v1.json")
+        assert not backup.exists()
+
+    def test_save_without_prior_load_gets_a_profile_id(self, tmp_path):
+        """A Config instantiated directly (no load()) still gains a
+        stable profile id on first save — the id is written into
+        profiles[0].id."""
+        cfg = Config()
+        cfg._path = tmp_path / "c.json"
+        cfg.save()
+        data = json.loads((tmp_path / "c.json").read_text(encoding="utf-8"))
+        assert len(data["profiles"][0]["id"]) == 32
+        assert cfg._profile_id == data["profiles"][0]["id"]
+
+    def test_v2_with_empty_profiles_list_falls_back_to_defaults(self, tmp_path):
+        """A v2 file with `profiles: []` (edge case, e.g. user manually
+        cleared the list) yields a Config on default values — load must
+        not crash."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": {"min_width": 800, "verify_integrity": False},
+            "profiles": [],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.site == "https://example.com"   # default
+        assert cfg._profile_id != ""               # seeded by load()
+
+    def test_v2_profile_omitting_optional_keys_uses_defaults(self, tmp_path):
+        """A v2 profile that omits per-profile state fields
+        (last_run, retry_after, backoff_level) keeps the Config
+        defaults for them."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": {"min_width": 800, "verify_integrity": False},
+            "profiles": [{
+                "id": "a", "name": "d",
+                "source_type": "wordpress", "site": "https://x",
+                "target_dir": "/tmp", "image_format": "Large",
+                "sort_mode": "gallery",
+                "min_width": None, "verify_integrity": None,
+                # last_run / retry_after / backoff_level intentionally absent
+            }],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.last_run == ""
+        assert cfg.retry_after == ""
+        assert cfg.backoff_level == 0
+
+    def test_backup_skipped_when_toplevel_json_is_corrupt(self, tmp_path):
+        """A corrupt config.json is treated as absent for backup
+        purposes — the migration itself carries on with defaults."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text("{not valid json", encoding="utf-8")
+        Config.load(chemin).save()
+        backup = chemin.with_name(f"{chemin.stem}.v1.json")
+        assert not backup.exists()
+
+
+    # -- Downgrade + malformed safety (post invariant-reviewer) ------------
+
+    def test_future_schema_is_not_read_as_v1(self, tmp_path):
+        """A file with ``schema_version`` higher than SCHEMA_VERSION must
+        not be misread as a v1 flat dict — that would silently drop
+        every future-only field. Load falls back to defaults instead."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": SCHEMA_VERSION + 1,
+            "site": "https://future.example",
+            "future_only_field": "x",
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        # Site defaults (not read from the future file).
+        assert cfg.site == "https://example.com"
+
+    def test_save_refuses_to_overwrite_future_schema(self, tmp_path):
+        """A downgrade run must not clobber a future-format config —
+        the future version needs to be preserved for a re-upgrade."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": SCHEMA_VERSION + 1,
+            "keep_me": "please",
+        }), encoding="utf-8")
+        before = chemin.read_bytes()
+        cfg = Config.load(chemin)
+        cfg.site = "https://mutated.example"
+        cfg.save()
+        # File on disk untouched.
+        assert chemin.read_bytes() == before
+        # No spurious backup either.
+        assert not chemin.with_name(f"{chemin.stem}.v{SCHEMA_VERSION + 1}.json").exists()
+
+    def test_snapshot_is_atomic_via_tmp(self, tmp_path):
+        """A crash mid-backup would leave a truncated snapshot if the
+        write went directly to the target path. The snapshot must go
+        through a ``.tmp`` sidecar renamed atomically. Verify by
+        monkey-patching ``Path.replace`` on the snapshot side to fail
+        and checking the target file never exists."""
+        chemin = self._minimal_v1(tmp_path)
+        backup = chemin.with_name(f"{chemin.stem}.v1.json")
+        cfg = Config.load(chemin)
+        # Fail the backup rename; the live config write must still
+        # succeed and no half-written backup must survive.
+        original_replace = Path.replace
+        target_backup_tmp = backup.with_suffix(".json.tmp")
+
+        def faux_replace(self, dest):
+            if Path(self) == target_backup_tmp:
+                raise OSError("simulated crash")
+            return original_replace(self, dest)
+
+        from unittest import mock
+        with mock.patch.object(Path, "replace", faux_replace):
+            cfg.save()
+        # Backup absent (rename failed) but no truncated file left behind.
+        assert not backup.exists()
+        assert not target_backup_tmp.exists()
+        # The live migration itself completed.
+        assert Config.load(chemin).site == "https://example.test"
+
+    def test_load_survives_defaults_being_a_list(self, tmp_path):
+        """A malformed ``defaults`` (list instead of dict) is skipped
+        rather than crashing the load."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": ["nope"],
+            "profiles": [{"id": "a", "name": "d",
+                           "source_type": "wordpress", "site": "https://x",
+                           "target_dir": "/tmp", "image_format": "Large",
+                           "sort_mode": "gallery"}],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.site == "https://x"
+
+    def test_load_survives_profiles_zero_being_a_string(self, tmp_path):
+        """A malformed ``profiles[0]`` (string instead of dict) is
+        skipped rather than crashing the load."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "defaults": {"min_width": 800, "verify_integrity": False},
+            "profiles": ["not a dict"],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        # Defaults applied, profile ignored.
+        assert cfg.min_width == 800
+        assert cfg.site == "https://example.com"   # untouched default
+
+    # -- schedule_anchor seeding on v1 → v2 migration ---------------------
+
+    def test_schedule_anchor_seeded_from_last_run_on_migration(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "site": "https://x", "last_run": "2026-09-29T15:30:00",
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.schedule_anchor == "15:30"
+
+    def test_schedule_anchor_empty_when_last_run_empty(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "site": "https://x", "last_run": "",
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.schedule_anchor == ""
+
+    def test_schedule_anchor_kept_when_already_set(self, tmp_path):
+        """A v2 file whose top-level schedule_anchor is set is not
+        overwritten by v1 seeding — v1 seeding only fires in _load_v1."""
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({
+            "schema_version": 2,
+            "schedule_anchor": "09:00",
+            "defaults": {"min_width": 800, "verify_integrity": False},
+            "profiles": [{"id": "a", "name": "d",
+                           "source_type": "wordpress", "site": "https://x",
+                           "target_dir": "/tmp", "image_format": "Large",
+                           "sort_mode": "gallery", "last_run": "2026-01-01T18:45:00"}],
+        }), encoding="utf-8")
+        cfg = Config.load(chemin)
+        assert cfg.schedule_anchor == "09:00"
+
+
+class TestProfileDataclass:
+    """The Profile dataclass is defined now; runtime use lands in
+    E3 part B. This test locks the field list against the design
+    document so a rename or reorder is deliberate.
+    """
+
+    def test_field_list(self):
+        from dataclasses import fields
+        names = tuple(f.name for f in fields(Profile))
+        assert names == (
+            "id", "name", "source_type", "site", "target_dir",
+            "image_format", "sort_mode",
+            "min_width", "verify_integrity",
+            "last_run", "retry_after", "backoff_level",
+        )
+
+    def test_override_fields_default_to_none(self):
+        p = Profile()
+        assert p.min_width is None
+        assert p.verify_integrity is None

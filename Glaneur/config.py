@@ -3,6 +3,21 @@
 The file lives in ``%APPDATA%\\Glaneur\\config.json`` on Windows and in
 ``~/.config/glaneur/`` elsewhere. It is written atomically so that it
 never gets truncated if the application is killed.
+
+Schema versioning
+-----------------
+
+`Glaneur.config` writes JSON in the **v2 schema** described in
+``docs/design/evolution-multi-sources.md`` §3.1: a top-level
+application block, a ``defaults`` block, and a ``profiles`` list
+containing one entry today. Older files (no ``schema_version`` key,
+or ``schema_version < 2``) are read as v1 and, on the next call to
+:meth:`Config.save`, migrated in place — the pre-migration bytes are
+copied to ``config.v1.json`` for rollback.
+
+At runtime :class:`Config` stays flat: every attribute callers rely on
+(``cfg.site``, ``cfg.min_width``, ``cfg.last_run``, ...) is preserved.
+The v2 shape only affects the load/save I/O boundary.
 """
 
 from __future__ import annotations
@@ -10,12 +25,57 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 APP_NAME = "Glaneur"
 GITHUB_OWNER = "penoud"
 GITHUB_REPOSITORY = "Glaneur"
+
+#: Version of the on-disk configuration schema. Incremented on
+#: incompatible format changes; on load, an older or missing value
+#: triggers a one-way migration.
+SCHEMA_VERSION = 2
+
+#: Config fields that live under the ``defaults`` block in v2 and can
+#: be overridden per-profile with ``None`` meaning "inherit".
+_DEFAULT_FIELDS: tuple[str, ...] = (
+    "min_width",
+    "verify_integrity",
+)
+
+#: Config fields that live inside a profile in v2 as its run state
+#: (per-profile scheduler bookkeeping). Not overridable by defaults.
+_PROFILE_STATE_FIELDS: tuple[str, ...] = (
+    "last_run",
+    "retry_after",
+    "backoff_level",
+)
+
+
+def _current_schema_version(chemin: Path) -> int | None:
+    """Return the schema version currently on disk at ``chemin``.
+
+    Reads the file, extracts its ``schema_version`` field, and returns
+    the integer value. A file without that field is treated as v1. The
+    return value is ``None`` when the file is missing, unreadable, or
+    holds JSON whose top level is not a mapping — the caller then
+    treats it as "no on-disk state to consider".
+    """
+    if not chemin.exists():
+        return None
+    try:
+        with open(chemin, encoding="utf-8") as f:
+            brut = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(brut, dict):
+        return None
+    version = brut.get("schema_version")
+    if isinstance(version, int):
+        return version
+    return 1   # v1 shape: no schema_version key
 
 # intervals offered in the UI: label -> hours (0 = manual)
 INTERVALS: dict[str, int] = {
@@ -64,6 +124,39 @@ PROFILE_FIELDS: tuple[str, ...] = (
     "min_width",
     "verify_integrity",
 )
+
+
+@dataclass
+class Profile:
+    """One sync job: a site, a source type, a target directory.
+
+    Represents a single entry of the v2 ``profiles`` list. Today
+    :class:`Config` still holds a single implicit profile flat on
+    itself and this class is not instantiated at runtime; it will be
+    used when E3 part B promotes each profile field into a real
+    per-profile object.
+
+    Fields documented inline with ``#:`` to avoid the Sphinx
+    autodoc/Napoleon duplication (same pattern as :class:`Config`).
+    """
+
+    #: Stable ``uuid4().hex`` — the scheduler state and the log key
+    #: point here, never at the display name.
+    id: str = ""
+    #: Human-readable display name shown in the profile table.
+    name: str = ""
+    source_type: str = "wordpress"
+    site: str = ""
+    target_dir: str = ""
+    image_format: str = "Large"
+    sort_mode: str = "gallery"
+    #: Overrides — ``None`` means "inherit from ``Config.defaults``".
+    min_width: int | None = None
+    verify_integrity: bool | None = None
+    #: Scheduler state, per profile (roadmap §5.1).
+    last_run: str = ""
+    retry_after: str = ""
+    backoff_level: int = 0
 
 
 def config_dir() -> Path:
@@ -239,14 +332,31 @@ class Config:
     check_updates_on_start: bool = True
     #: Language code (``fr``, ``en``, ...). Empty = system locale.
     language: str = ""
+    #: Anchor of the scheduler grid, ``HH:MM`` (local naive time).
+    #: Introduced with v2 (roadmap §5.1). Seeded from ``last_run`` on
+    #: migration to keep today's rhythm; empty means "start at
+    #: midnight".
+    schedule_anchor: str = ""
 
     _path: Path | None = field(default=None, repr=False, compare=False)
+    #: Stable ``uuid4().hex`` of the single implicit profile. Seeded
+    #: on v1 → v2 migration or on the first save without a prior load;
+    #: never serialised at the top level (it appears as
+    #: ``profiles[0].id`` in v2).
+    _profile_id: str = field(default="", repr=False, compare=False)
 
     # -- load / save ------------------------------------------------------- #
 
     @classmethod
     def load(cls, chemin: Path | None = None) -> Config:
         """Load the config from ``chemin`` or fall back to default values.
+
+        Accepts both the v1 flat layout and the v2 layered layout
+        (``schema_version`` + ``defaults`` + ``profiles``). A v1 file
+        is read into the flat :class:`Config` as before; the on-disk
+        migration to v2 happens on the next call to :meth:`save`,
+        where the pre-migration bytes are copied to
+        ``config.v1.json`` for rollback.
 
         Missing or unknown keys are ignored, and an unreadable file
         (invalid JSON, OS error) is treated as an absent config: we
@@ -268,39 +378,203 @@ class Config:
             try:
                 with open(chemin, encoding="utf-8") as f:
                     brut = json.load(f)
-                connus = {f.name for f in fields(cls) if not f.name.startswith("_")}
-                for cle, valeur in brut.items():
-                    # Translate legacy FR keys to their EN name so a
-                    # config.json written before batch 4b keeps loading.
-                    cle = _LEGACY_FIELD_ALIASES.get(cle, cle)
-                    if cle in connus:
-                        setattr(cfg, cle, valeur)
-                # Translate legacy sort_mode values ("galerie"/"plat")
-                # so US-EN-04 does not silently reset the user's choice.
-                if cfg.sort_mode in _LEGACY_SORT_MODE_ALIASES:
-                    cfg.sort_mode = _LEGACY_SORT_MODE_ALIASES[cfg.sort_mode]
-            except (json.JSONDecodeError, OSError, TypeError):
+                if isinstance(brut, dict):
+                    version = brut.get("schema_version")
+                    if version == SCHEMA_VERSION:
+                        cfg._load_v2(brut)
+                    elif not isinstance(version, int) or version < SCHEMA_VERSION:
+                        # No `schema_version` field, or a version we
+                        # know about — read as v1.
+                        cfg._load_v1(brut)
+                    # else: version > SCHEMA_VERSION (a file from a
+                    # future Glaneur). Do not misread it as v1 — that
+                    # would silently drop every future-only field. Fall
+                    # back to defaults; ``save()`` refuses to overwrite
+                    # the file so the future version is preserved.
+            except (AttributeError, json.JSONDecodeError, OSError,
+                    TypeError, ValueError):
                 pass  # unreadable config: fall back to default values
         if not cfg.target_dir:
             cfg.target_dir = str(default_images_dir())
         cfg.validate()
+        # Every Config that reaches the runtime has a stable profile id;
+        # first-time save carries it into ``profiles[0].id`` on disk.
+        if not cfg._profile_id:
+            cfg._profile_id = uuid.uuid4().hex
         return cfg
 
+    def _load_v1(self, brut: dict) -> None:
+        """Populate this instance from a v1 flat dict.
+
+        Applies :data:`_LEGACY_FIELD_ALIASES` on keys and
+        :data:`_LEGACY_SORT_MODE_ALIASES` on the sort_mode value so
+        pre-US-EN-04/US-EN-05 files still load without loss.
+
+        Seeds ``schedule_anchor`` from the current ``last_run``'s
+        time-of-day so the scheduler grid (roadmap §5.1) keeps today's
+        rhythm: the first slot after migration lands at the same hour
+        of the day as the user has been used to. When ``last_run`` is
+        empty, the anchor stays empty (the caller then treats it as
+        midnight).
+        """
+        connus = {f.name for f in fields(type(self)) if not f.name.startswith("_")}
+        for cle, valeur in brut.items():
+            cle = _LEGACY_FIELD_ALIASES.get(cle, cle)
+            if cle in connus:
+                setattr(self, cle, valeur)
+        if self.sort_mode in _LEGACY_SORT_MODE_ALIASES:
+            self.sort_mode = _LEGACY_SORT_MODE_ALIASES[self.sort_mode]
+        if not self.schedule_anchor and self.last_run:
+            # last_run is an ISO 8601 timestamp — extract HH:MM.
+            candidate = self.last_run[:16].split("T")[-1]
+            if len(candidate) == 5 and candidate[2] == ":":
+                self.schedule_anchor = candidate
+
+    def _load_v2(self, brut: dict) -> None:
+        """Populate this instance from a v2 layered dict.
+
+        Layout: application keys at the top level, inheritable settings
+        under ``defaults``, per-profile state under ``profiles[0]``.
+        A profile-level override of ``None`` inherits from ``defaults``.
+        Only the first profile is read today; multi-profile support
+        arrives with E3 part B.
+
+        Tolerant to malformed nesting: a ``defaults`` value that is not
+        a dict, or a ``profiles[0]`` entry that is not a dict, is
+        skipped rather than crashing the load — the outer
+        :meth:`load` treats a corrupt config as absent and falls back
+        to default values.
+        """
+        connus = {f.name for f in fields(type(self)) if not f.name.startswith("_")}
+        # -- Top-level (application) keys ---------------------------------
+        for cle in ("language", "interval_hours", "schedule_anchor",
+                    "request_delay", "run_at_startup", "close_to_tray",
+                    "notifications", "check_updates_on_start",
+                    "slideshow_dir"):
+            if cle in brut and cle in connus:
+                setattr(self, cle, brut[cle])
+        # -- Defaults block (inheritable settings) ------------------------
+        defaults = brut.get("defaults")
+        if isinstance(defaults, dict):
+            for cle in _DEFAULT_FIELDS:
+                if cle in defaults and cle in connus:
+                    setattr(self, cle, defaults[cle])
+        # -- profiles[0] --------------------------------------------------
+        profiles = brut.get("profiles")
+        if isinstance(profiles, list) and profiles:
+            first = profiles[0]
+            if not isinstance(first, dict):
+                return
+            self._profile_id = str(first.get("id") or "")
+            for cle in ("source_type", "site", "target_dir", "image_format",
+                        "sort_mode", *_PROFILE_STATE_FIELDS):
+                if cle in first and cle in connus:
+                    setattr(self, cle, first[cle])
+            # Overrides: profile-level `null` means "inherit"; a real
+            # value wins over the defaults value.
+            for cle in _DEFAULT_FIELDS:
+                valeur = first.get(cle)
+                if valeur is not None and cle in connus:
+                    setattr(self, cle, valeur)
+            if self.sort_mode in _LEGACY_SORT_MODE_ALIASES:
+                self.sort_mode = _LEGACY_SORT_MODE_ALIASES[self.sort_mode]
+
     def save(self) -> None:
-        """Write the config to disk atomically.
+        """Write the config to disk atomically, in the v2 shape.
 
         Uses the path stored by :meth:`load` if any, otherwise
-        ``<config_dir()>/config.json``. Private fields (prefixed
-        with ``_``) are not serialised.
+        ``<config_dir()>/config.json``. If the current on-disk file is
+        in an older shape (v1, or a future schema we know about), its
+        bytes are copied to ``config.v<n>.json`` (n = the current
+        file's version, ``1`` if none) before the v2 file replaces it.
+        The backup is never overwritten if it already exists.
+
+        Refuses to touch a file whose ``schema_version`` is greater
+        than :data:`SCHEMA_VERSION` — that would silently drop every
+        field the future version added. A downgrade run must delete
+        the file by hand before the older Glaneur can rewrite it.
+
+        Private fields (prefixed with ``_``) are not serialised at the
+        top level; ``_profile_id`` appears inside ``profiles[0]`` as
+        its ``id`` field.
         """
         chemin = self._path or (config_dir() / "config.json")
         chemin.parent.mkdir(parents=True, exist_ok=True)
-        donnees = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
+        current_version = _current_schema_version(chemin)
+        if current_version is not None and current_version > SCHEMA_VERSION:
+            # Future format on disk — do not overwrite.
+            self._path = chemin
+            return
+        self._snapshot_older(chemin, current_version)
+        if not self._profile_id:
+            self._profile_id = uuid.uuid4().hex
+        donnees = self._to_v2_dict()
         tmp = chemin.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(donnees, f, ensure_ascii=False, indent=2)
         tmp.replace(chemin)
         self._path = chemin
+
+    def _to_v2_dict(self) -> dict:
+        """Serialise the current state as the v2 on-disk layout.
+
+        Since :class:`Config` still stores a single implicit profile
+        flat on itself, the inheritable values live in ``defaults`` and
+        the per-profile overrides are set to ``None`` — the effective
+        value on the next load is unchanged.
+        """
+        flat = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
+        # Split into three buckets: profile, defaults, top-level.
+        defaults = {cle: flat.pop(cle) for cle in _DEFAULT_FIELDS}
+        profile: dict = {"id": self._profile_id, "name": "default"}
+        for cle in ("source_type", "site", "image_format", "target_dir",
+                    "sort_mode", *_PROFILE_STATE_FIELDS):
+            profile[cle] = flat.pop(cle)
+        # Overrides null: the effective value lives in `defaults`.
+        for cle in _DEFAULT_FIELDS:
+            profile[cle] = None
+        return {
+            "schema_version": SCHEMA_VERSION,
+            **flat,
+            "defaults": defaults,
+            "profiles": [profile],
+        }
+
+    def _snapshot_older(self, chemin: Path, current_version: int | None) -> None:
+        """Copy an older on-disk config to ``config.v<n>.json`` before overwriting.
+
+        Called only when the current file exists and its schema version
+        is strictly older than :data:`SCHEMA_VERSION`. The snapshot goes
+        through a ``.tmp`` sidecar and an atomic rename so a crash mid-
+        backup cannot leave a truncated snapshot in place. Idempotent:
+        if the target snapshot already exists, no snapshot is written —
+        the older backup is the source of truth.
+
+        Args:
+            chemin: Path of the live config file.
+            current_version: The schema version currently on disk, as
+                returned by :func:`_current_schema_version`. ``None``
+                means the file is missing or unreadable (nothing to
+                snapshot).
+        """
+        if current_version is None or current_version >= SCHEMA_VERSION:
+            return
+        backup = chemin.with_name(f"{chemin.stem}.v{current_version}.json")
+        if backup.exists():
+            return
+        # Atomic backup: bytes → tmp → rename. A partial write cannot
+        # leave a truncated backup because the rename is atomic and the
+        # tmp file is removed on failure.
+        tmp = backup.with_suffix(".json.tmp")
+        try:
+            tmp.write_bytes(chemin.read_bytes())
+            tmp.replace(backup)
+        except OSError:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            # Snapshot failed — best-effort; the migration continues.
 
     # -- guardrails --------------------------------------------------------- #
 

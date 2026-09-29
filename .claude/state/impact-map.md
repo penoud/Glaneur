@@ -9,113 +9,159 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 5.0 E2 — One-row profile list.**
+**Lot 5.1 (E3) part A — v2 config schema on disk.**
 
-Replaces the "Site / Folder" banner of the main window with a
-`QTableView` fed by a small `QAbstractTableModel`. Columns: name,
-type, site, folder, last run, status. With a single implicit
-profile there is one row; the user sees no functional difference,
-but the table is the shape lot 5.1 (profiles) will slot into.
+First half of E3 (roadmap §5.1). Introduces the v2 on-disk shape of
+`config.json` — `schema_version: 2`, a top-level application block,
+a `defaults` block for the inheritable settings, and a `profiles`
+list containing one entry today.
 
-The status column is built from the engine's structured events
-(landed in US-VERIF-04) — "Idle" when the engine is quiet,
-"Running…" while a `Travailleur` runs, then a summary derived from
-`RunResult` when it finishes (`Done — N downloaded`,
-`Deferred until <date>`, `Interrupted`, `Failed`).
+Runtime behaviour is unchanged: `Config` stays a flat dataclass, and
+every existing caller keeps reading `cfg.site`, `cfg.min_width`,
+`cfg.last_run` etc. verbatim. The change happens at the load/save
+boundary:
 
-### Model
+- `save()` writes v2 shape;
+- `load()` accepts either v1 (no `schema_version` key) or v2, and on
+  a v1 read it also **migrates the file in place**, copying the
+  pre-migration bytes to `config.v1.json` for rollback.
 
-Kept in `app.py` for now (no new module). Later, when `Profile`
-lands (E3 / lot 5.1), the same model gains a real list of profiles
-and the migration replaces the "row-from-config" helper with a
-"row-per-profile" iterator.
+The v1 → v2 promotion of per-profile state into a real `Profile` list
+at the runtime level is deferred to E3 part B (next commit), where
+None-inheritance and unique/non-nested folder rules land.
 
-- `ProfileRow` — plain dataclass, six string fields matching the
-  columns.
-- `ProfileTableModel(QAbstractTableModel)` — read-only, exposes a
-  `set_row(row: ProfileRow)` mutator that emits `dataChanged` and
-  replaces the sole row today. Kept intentionally minimal — future
-  edits (multiple rows, editable cells, sort) come with lot 5.1/5.3.
+### v2 shape
 
-### Columns
+```json
+{
+  "schema_version": 2,
+  "language": "",
+  "interval_hours": 24,
+  "schedule_anchor": "14:30",
+  "request_delay": 0.5,
+  "run_at_startup": false,
+  "close_to_tray": true,
+  "notifications": true,
+  "check_updates_on_start": true,
+  "slideshow_dir": false,
+  "defaults": {
+    "min_width": 800,
+    "verify_integrity": false
+  },
+  "profiles": [
+    {
+      "id": "<uuid4().hex>",
+      "name": "default",
+      "source_type": "wordpress",
+      "site": "https://example.com",
+      "target_dir": "/…",
+      "image_format": "Large",
+      "sort_mode": "gallery",
+      "min_width": null,
+      "verify_integrity": null,
+      "last_run": "",
+      "retry_after": "",
+      "backoff_level": 0
+    }
+  ]
+}
+```
 
-| # | Header (en) | Source |
-|---|---|---|
-| 0 | Name | derived from `cfg.site` netloc, or `Config.default` |
-| 1 | Type | `cfg.source_type` via `SOURCE_TYPES` reverse lookup |
-| 2 | Site | `cfg.site` |
-| 3 | Folder | `cfg.target_dir` |
-| 4 | Last run | `cfg.last_run` truncated to `YYYY-MM-DD HH:MM` |
-| 5 | Status | in-memory, updated by `Fenetre` |
+- `min_width` / `verify_integrity` at profile level = `null` means
+  "inherit the `defaults` value". Since today there is one implicit
+  profile, migration puts the current Config values into `defaults`
+  and sets the profile overrides to `null`.
+- `schedule_anchor` is `HH:MM` local time. Migration seeds it from
+  the current `last_run`'s time-of-day, or from midnight when
+  `last_run` is empty. That matches the roadmap's "keeps today's
+  rhythm" requirement.
+- `slideshow_profile` (a real profile id) is **not yet** written —
+  today's flat `slideshow_dir` bool stays, and E3 part B swaps them
+  when the runtime moves to per-profile state.
 
 ## Directly modified
 
-- `app.py`:
-  - New `ProfileRow` dataclass and `ProfileTableModel` at module top,
-    just after `_render_ui`.
-  - `Fenetre._construire` builds a `QTableView` in place of
-    `label_site` / `label_dossier`.
-  - `Fenetre._rafraichir_bandeau` becomes
-    `_rafraichir_table_profils` — pushes a fresh `ProfileRow` into
-    the model. Preserves the old name as an alias (single-line
-    forwarder) so no callers break.
-  - `_lancer` sets status to "Running…" before starting the worker.
-  - `_terminer(res)` sets the terminal status from the `RunResult`.
-- `tests/test_app_profile_table.py` — new pytest-qt module covering
-  the model contract and the status pipeline.
+- `Glaneur/config.py`:
+  - New `SCHEMA_VERSION = 2` module constant.
+  - New `Profile` dataclass (definitions only, no runtime use yet —
+    it will hold per-profile state once part B lands).
+  - New `_DEFAULT_FIELDS = ("min_width", "verify_integrity")` — the
+    inheritable settings.
+  - New `_PROFILE_STATE_FIELDS = ("last_run", "retry_after", "backoff_level")` —
+    per-profile run state.
+  - `Config` gains `schedule_anchor: str = ""` and
+    a private `_profile_id: str = ""` attribute (uuid4 seeded on
+    migration or on first save; hidden from serialisation, like `_path`).
+  - `Config.save()` writes v2 shape.
+  - `Config.load()` reads either v1 or v2; on a v1 read, copies the
+    file to `config.v1.json` before returning.
+- `tests/test_config.py`:
+  - `TestSchemaVersion` — new class:
+    - fresh save emits `schema_version: 2` and the expected top-level
+      keys;
+    - profile inherits `min_width` / `verify_integrity` from
+      `defaults` via `None` overrides;
+    - v1 → v2 migration copies to `config.v1.json` and rewrites the
+      current file in v2 shape;
+    - unknown v2 keys are ignored;
+    - `_profile_id` is stable across save/load.
 
 ## Direct dependencies
 
-- `Glaneur.config.PROFILE_FIELDS` — not used yet at runtime, but the
-  column list mirrors the app-level / profile-level split so lot
-  5.1's migration slots in cleanly.
-- `Glaneur.engine.RunResult` — read only, for status construction.
+- `PROFILE_FIELDS` — used as the source of truth for what moves to
+  the profile block.
 
 ## Explicitly out of scope
 
-- Multiple rows / real `Profile` list — E3 / lot 5.1.
-- Editable cells or in-place profile editing — E3.
-- Sort / filter / context menu on the table — lot 5.3.
-- `label_site` / `label_dossier` removal — they stay on the class
-  (as `None`) to keep `_rafraichir_bandeau` a legal single-line
-  forwarder. A follow-up commit will delete them once no caller
-  references them.
+- `None`-inheritance resolver (`Config.effective_min_width()` etc.)
+  — E3 part B.
+- Multiple profiles at runtime — E3 part B / E4.
+- Unique/non-nested folder validation — E3 part B.
+- `slideshow_profile` (id) — E3 part B or lot 5.3.
 - `__version__` — unchanged.
 
 ## Tests
 
-New pytest-qt module `tests/test_app_profile_table.py`:
-
-- `TestProfileRowFromConfig`: `_profile_row(cfg)` populates every
-  column from the seeded config; unknown source_type falls back to
-  the raw value; empty site/target_dir/last_run display an em dash.
-- `TestModelContract`: `rowCount == 1`, `columnCount == 6`, header
-  labels match the design, `data(role=DisplayRole)` returns the row
-  fields, editing/other roles return `None`.
-- `TestStatusPipeline`: `Fenetre._status_from_result(res)` maps
-  `RunResult` to the expected short status string across success,
-  defer, interrupted, failure branches.
+- Existing tests unaffected: v1 fixtures still load through the
+  compatibility path, and `Config.save()` output is exercised
+  through the round-trip tests (`TestLegacySortModeAliases`,
+  the byte-for-byte guard in `TestConfigJsonIsUnchangedAfterEmptyOk`).
+- `TestConfigJsonIsUnchangedAfterEmptyOk` will fail if the seed uses
+  v1 shape — it will now be a v1 → v2 migration. The fixture
+  gets adjusted to save() once (canonicalising to v2) before the
+  dialog opens, so the invariant still checks a **stable** round-trip.
 
 Verification:
 
 - `pytest -q` → still passing; +new tests.
-- `python tools/check_coverage.py` → floors held.
-- `ruff check app.py tests/test_app_profile_table.py` clean on
+- `python tools/check_coverage.py` → floors held (persisted-format
+  touch means `full` validation).
+- `ruff check Glaneur/config.py tests/test_config.py` clean on
   baseline.
 
 ## Invariants
 
 - `__version__` unchanged.
-- No engine, source, cache, manifest, or config format change.
-- Widget attribute names of every existing widget survive.
-- The old `_rafraichir_bandeau` name still exists (as a
-  single-line forwarder), so `_ouvrir_preferences` and any other
-  caller keeps working.
-- Coverage floors held.
+- No runtime API of `Config` changed: every attribute the codebase
+  reads (`cfg.site`, `cfg.min_width`, `cfg.last_run`, `cfg.sort_mode`,
+  `cfg.language`, ...) works identically.
+- v1 → v2 migration is one-way (no reverse shim), matches the
+  US-EN-05 manifest pattern.
+- `config.v1.json` is written **before** the new file replaces the
+  old one, and never overwritten if it already exists.
+- v2 → v2 load is idempotent: load → save reproduces the same file
+  byte for byte.
+- `_profile_id` is stable across load/save cycles; a new one is only
+  generated on the initial migration or on a first save without a
+  prior load.
 
 ## Validation
 
-Level `module` — UI-only refactor, self-contained test module.
+Level `full` per the roadmap's E3 note (persisted format touched)
+plus `invariant-reviewer` afterwards.
 
 - `pytest -q --cov=Glaneur --cov-branch` green.
+- `python tools/check_coverage.py` green.
 - `ruff check` clean on touched files.
+- `invariant-reviewer` — v1 → v2 boundary, one-way migration
+  guarantee, `config.v1.json` semantics.
