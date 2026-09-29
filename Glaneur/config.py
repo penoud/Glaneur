@@ -46,6 +46,25 @@ DJANGOPLICITY_FORMATS: dict[str, str] = {
     "Écran (1280 px)": "Small",
 }
 
+#: `Config` fields that belong to a sync **profile** rather than to the
+#: application. Drives the "Site" tab of :class:`DialoguePreferences`
+#: today, and the v1 → v2 migration described in
+#: ``docs/design/evolution-multi-sources.md`` §3.1: on migration, these
+#: fields move from the top-level `Config` into a `Profile` entry, while
+#: every other field stays at the application level.
+#:
+#: Order matters — the migration writes profile keys in this order, and
+#: the "Site" tab lays them out top-to-bottom.
+PROFILE_FIELDS: tuple[str, ...] = (
+    "source_type",
+    "site",
+    "image_format",
+    "target_dir",
+    "sort_mode",
+    "min_width",
+    "verify_integrity",
+)
+
 
 def config_dir() -> Path:
     """Return the folder where the config lives, per platform.

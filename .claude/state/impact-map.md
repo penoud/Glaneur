@@ -9,101 +9,80 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 0.2 + 0.3 — Djangoplicity: `Next` origin check and format
-fallback logging.**
+**Lot 5.0 E1 (part 1) — `PROFILE_FIELDS` in `config.py`.**
 
-Two small fixes from `docs/design/roadmap.md`'s lot 0, both in
-`Glaneur/sources/djangoplicity.py`. Bundled because they share the
-same file and test module and each is a few lines.
+Preparatory step for the tabbed Preferences dialog and the v1 → v2
+config migration described in `docs/design/roadmap.md` §5.0/§5.1 and
+`docs/design/evolution-multi-sources.md` §3.1.
 
-### Lot 0.2 — Stop if `Next` changes host or scheme
+`PROFILE_FIELDS` is the single source of truth for the split
+between "application" preferences and "per-profile" preferences.
+Today, one profile is baked into the flat `Config` dataclass. Later,
+E3/lot 5.1 promotes each per-profile field into a `Profile` entry;
+this constant drives both the "Site" tab (the fields it holds) and
+the migration (the fields it moves from `Config` into a profile).
 
-`Djangoplicity.inventory` today follows the `Next` URL as-is. If a
-misbehaving or compromised feed returns a `Next` pointing to a
-different host or scheme, we would happily crawl it. Per
-`evolution-multi-sources.md` §8, we now stop with a
-`RuntimeError` when scheme or netloc of `Next` disagree with `base`.
+### Fields
 
-### Lot 0.3 — Log every format fallback, still never `Original`
+Per `evolution-multi-sources.md` §3.1 and roadmap §5.0:
 
-`_select_resource` already excludes `Original` from the automatic
-fallback list (that half of 0.3 is done). The other half is missing:
-when the requested format is missing and we fall back to `Large` or
-`Small`, we return the fallback silently. Now we emit a
-``source-message`` journal entry so the user sees the fallback.
-
-Also flips two French free-text strings still in `inventory`
-(``Catalogue : …``, ``Inventaire… …``) to English, US-EN-08 residue
-missed because they were f-strings, not `tr()` sources.
+```python
+PROFILE_FIELDS: tuple[str, ...] = (
+    "source_type", "site", "image_format", "target_dir",
+    "sort_mode", "min_width", "verify_integrity",
+)
+```
 
 ## Directly modified
 
-- `Glaneur/sources/djangoplicity.py`:
-  - New helper `_same_origin(base, other) -> bool` at module level.
-  - `inventory()` verifies `_same_origin(self.base, suivante)` before
-    following; raises `RuntimeError` on mismatch.
-  - `_select_resource` becomes an instance method (already is) and
-    journals a fallback message when the returned format differs
-    from the requested one. Both element and journal go through the
-    existing `self._journal` sink.
-  - Two FR free-text strings translated to English.
-- `tests/test_source_djangoplicity.py`:
-  - New `TestNextOriginCheck` covering: `Next` on the same host is
-    followed; `Next` on a different host raises;
-    `Next` with a different scheme raises;
-    a scheme-relative or path-relative `Next` (empty netloc) is
-    treated as same-origin.
-  - New `TestFormatFallback` covering: requested==effective emits no
-    fallback journal; requested missing → effective is a fallback →
-    the source-message journal fires with both the requested and the
-    effective format; `Original` never picked as an automatic
-    fallback (existing behaviour re-asserted).
+- `Glaneur/config.py` — add `PROFILE_FIELDS` next to the existing
+  registries (`SORT_MODES`, `SOURCE_TYPES`, `DJANGOPLICITY_FORMATS`).
+- `tests/test_config.py` — new focused test class
+  `TestProfileFields` locking:
+  - every value listed in `PROFILE_FIELDS` is a real
+    :class:`Config` dataclass field;
+  - the split has no overlap with private/underscore fields;
+  - the tuple contents match the design doc's list, so a rename or
+    reorder is a deliberate change.
 
 ## Direct dependencies
 
-- `Glaneur/sources/base.py::Source` — unchanged; `_journal` and
-  `_progression` sinks used the same way.
-- Cache/manifest formats — unchanged.
+- No caller yet; `PROFILE_FIELDS` is a public constant for the next
+  commit (DialoguePreferences tabs) and the future v2 migration to
+  key off.
 
 ## Explicitly out of scope
 
-- The `Checksum` level (roadmap lot 0.1) still needs the real-server
-  test of lot 1.3 to settle; not touched here.
-- WordPress `Link: rel="https://api.w.org/"` detection (roadmap
-  lot 7) — separate lot.
+- The tabbed Preferences dialog itself — part 2 of this US, next
+  commit.
+- `Glaneur/system.py` — the extraction called for in the roadmap is
+  already done in an earlier lot; nothing to move here.
+- The v2 migration (roadmap §5.1) — bigger, later commit.
 - `__version__` — unchanged.
 
 ## Tests
 
-- Existing `tests/test_source_djangoplicity.py::TestInventory` and
-  `::TestToElement` still cover the happy paths.
-- Two new focused test classes cover the new branches with a
-  fake session and `_source()` helper already present in the module.
+- `TestProfileFields` — new, three focused assertions above.
 
 Verification:
 
-- `pytest -q` → still passes; 509 + new tests.
+- `pytest -q` → 516 + new tests.
 - `python tools/check_coverage.py` → floors held.
-- `ruff check` on `Glaneur/sources/djangoplicity.py` and
-  `tests/test_source_djangoplicity.py`: no new warnings.
+- `ruff check Glaneur/config.py tests/test_config.py` clean on
+  baseline.
 
 ## Invariants
 
 - `__version__` unchanged.
-- No persisted-format touched.
-- No dispatch-value literal touched.
-- The `Original` variant is still never picked as an automatic
-  fallback (this lot only *makes visible* the existing behaviour).
-- Same-origin follows the (scheme, netloc) pair; a relative
-  `Next` (empty netloc) is treated as same-origin — this matches
-  `urljoin` semantics used implicitly today when `requests` resolves
-  a relative URL.
+- `Config` dataclass fields, defaults, load/save, and
+  `_LEGACY_FIELD_ALIASES` unchanged.
+- `PROFILE_FIELDS` is a `tuple[str, ...]` — order matters for later
+  migration.
+- Every name in `PROFILE_FIELDS` is a real field on `Config`.
 
 ## Validation
 
-Level `local` — same-file changes, targeted tests, no boundary or
-persisted format touched. `invariant-reviewer` not required per the
-roadmap's lot 0 footprint.
+Level `local` per E1's roadmap footprint.
 
 - `pytest -q` green.
 - `ruff check` clean on touched files.

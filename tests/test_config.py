@@ -10,6 +10,7 @@ import pytest
 from Glaneur.config import (
     DJANGOPLICITY_FORMATS,
     INTERVALS,
+    PROFILE_FIELDS,
     SORT_MODES,
     SOURCE_TYPES,
     Config,
@@ -517,3 +518,47 @@ class TestLegacySortModeAliases:
                           encoding="utf-8")
         Config.load(chemin).save()
         assert json.loads(chemin.read_text())["sort_mode"] == "gallery"
+
+
+# --------------------------------------------------------------------------- #
+# Lot 5.0 E1 preparation: `PROFILE_FIELDS`
+# --------------------------------------------------------------------------- #
+
+class TestProfileFields:
+    """`PROFILE_FIELDS` is the single source of truth for the split
+    between application preferences and per-profile preferences. It
+    will drive the tabbed Preferences dialog (E1) and the v1 → v2
+    migration (E3, roadmap §5.1) that promotes each profile field into
+    a `Profile` entry.
+    """
+
+    def test_matches_design_document(self):
+        """The tuple's exact contents and order come from
+        docs/design/evolution-multi-sources.md §3.1 and
+        docs/design/roadmap.md §5.0. Adding or reordering is a
+        deliberate design change."""
+        assert PROFILE_FIELDS == (
+            "source_type",
+            "site",
+            "image_format",
+            "target_dir",
+            "sort_mode",
+            "min_width",
+            "verify_integrity",
+        )
+
+    def test_every_entry_is_a_real_config_field(self):
+        """Guard against a typo splitting the two levels: every name in
+        PROFILE_FIELDS must be an existing dataclass field of Config."""
+        from dataclasses import fields
+        config_field_names = {f.name for f in fields(Config)}
+        for name in PROFILE_FIELDS:
+            assert name in config_field_names, (
+                f"{name!r} in PROFILE_FIELDS is not a Config dataclass field")
+
+    def test_no_private_field_leaks_in(self):
+        """A field starting with `_` is an internal attribute (path
+        stash, etc.) and must never appear in PROFILE_FIELDS."""
+        for name in PROFILE_FIELDS:
+            assert not name.startswith("_"), (
+                f"{name!r} is private and cannot be a profile field")
