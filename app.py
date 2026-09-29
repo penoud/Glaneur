@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -532,9 +533,15 @@ class DialoguePreferences(QDialog):
         # "Images" are created hidden — they get their widgets in E5
         # (lot 11.2) and E6 (lot 11.5). See design docs
         # `evolution-multi-sources.md` §3.2 and `roadmap.md` §5.0.
+        # Pending mutations to `cfg._extra_profiles`, applied only if
+        # the user accepts the dialog. Cancel discards them.
+        self._pending_add_profiles: list = []
+        self._pending_remove_ids: set = set()
+
         self.onglets = QTabWidget(self)
         self.onglets.addTab(self._build_general_tab(), self.tr("General"))
         self.onglets.addTab(self._build_site_tab(), self.tr("Site"))
+        self.onglets.addTab(self._build_profiles_tab(), self.tr("Profiles"))
         self._idx_filters = self.onglets.addTab(
             self._build_filters_tab(), self.tr("Filters"))
         self._idx_images = self.onglets.addTab(
@@ -700,6 +707,114 @@ class DialoguePreferences(QDialog):
 
         return page
 
+    def _build_profiles_tab(self) -> QWidget:
+        """Profile management: add / remove extra profiles.
+
+        The default profile lives in the "Site" tab and cannot be
+        removed. Extra profiles show up here as a plain list; the user
+        can add one by name (fields are seeded to Config defaults; the
+        per-profile edit dialog for extras arrives later) or remove one
+        by selecting the row.
+
+        Mutations are deferred: they only touch ``self.cfg`` when
+        :meth:`appliquer` runs. Cancelling the dialog throws them away.
+        """
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setSpacing(8)
+        col.addWidget(QLabel(self.tr(
+            "Additional profiles run alongside the one configured in the "
+            "“Site” tab. Add, remove and (later) reorder them here.")))
+
+        self.liste_profils = QListWidget()
+        self.liste_profils.setSelectionMode(QListWidget.SingleSelection)
+        col.addWidget(self.liste_profils, 1)
+
+        boutons = QHBoxLayout()
+        self.bouton_ajouter_profil = QPushButton(self.tr("Add…"))
+        self.bouton_ajouter_profil.clicked.connect(self._ajouter_profil)
+        boutons.addWidget(self.bouton_ajouter_profil)
+
+        self.bouton_supprimer_profil = QPushButton(self.tr("Remove"))
+        self.bouton_supprimer_profil.clicked.connect(self._supprimer_profil)
+        boutons.addWidget(self.bouton_supprimer_profil)
+        boutons.addStretch(1)
+        col.addLayout(boutons)
+
+        self._rafraichir_liste_profils()
+        return page
+
+    def _rafraichir_liste_profils(self) -> None:
+        """Repopulate the extras list from cfg + pending mutations.
+
+        Display order: still-persisted extras first (in cfg order,
+        minus anything in ``_pending_remove_ids``), pending additions
+        after. Each item stores its :class:`Profile` on
+        ``Qt.UserRole`` so the remove handler can key off it directly.
+        """
+        self.liste_profils.clear()
+        existants = [p for p in self.cfg._extra_profiles
+                     if p.id not in self._pending_remove_ids]
+        for profil in [*existants, *self._pending_add_profiles]:
+            libelle = profil.name
+            if profil.site:
+                libelle = f"{profil.name} — {profil.site}"
+            item = QListWidgetItem(libelle)
+            item.setData(Qt.UserRole, profil)
+            self.liste_profils.addItem(item)
+
+    def _ajouter_profil(self) -> None:
+        """Prompt for a name and queue an add.
+
+        The full per-profile edit dialog arrives later; for now the new
+        profile is seeded to Config defaults (source type / site /
+        target_dir all copied from the default profile) and gets a
+        fresh uuid — enough that the user can already run it from the
+        CLI or the main-window table.
+        """
+        nom, ok = QInputDialog.getText(
+            self, self.tr("Add a profile"),
+            self.tr("Profile name:"))
+        if not ok:
+            return
+        nom = nom.strip()
+        if not nom:
+            return
+        # Build the Profile without touching self.cfg — it lives in
+        # _pending_add_profiles until appliquer() commits.
+        from Glaneur.config import Profile
+        default = self.cfg.default_profile()
+        import uuid
+        nouveau = Profile(
+            id=uuid.uuid4().hex,
+            name=nom,
+            source_type=default.source_type,
+            site=default.site,
+            target_dir=default.target_dir,
+            image_format=default.image_format,
+            sort_mode=default.sort_mode,
+        )
+        self._pending_add_profiles.append(nouveau)
+        self._rafraichir_liste_profils()
+
+    def _supprimer_profil(self) -> None:
+        """Queue a removal for the selected row.
+
+        Selecting nothing is a no-op. If the selected row is a pending
+        addition (never persisted), it is dropped from
+        ``_pending_add_profiles``; if it is a still-persisted profile,
+        its id joins ``_pending_remove_ids``.
+        """
+        item = self.liste_profils.currentItem()
+        if item is None:
+            return
+        profil = item.data(Qt.UserRole)
+        if profil in self._pending_add_profiles:
+            self._pending_add_profiles.remove(profil)
+        else:
+            self._pending_remove_ids.add(profil.id)
+        self._rafraichir_liste_profils()
+
     def _build_filters_tab(self) -> QWidget:
         """Placeholder for the filter fields introduced by E5 / lot 11.2.
 
@@ -762,6 +877,14 @@ class DialoguePreferences(QDialog):
         and propagate to system integrations. Returns a non-blocking
         error message or None."""
         c = self.cfg
+        # Extras: apply pending add/remove queued on the Profiles tab.
+        # remove first so a pending id in both sets is a genuine no-op.
+        for ident in self._pending_remove_ids:
+            c.remove_profile(ident)
+        for profil in self._pending_add_profiles:
+            c._extra_profiles.append(profil)
+        self._pending_add_profiles = []
+        self._pending_remove_ids = set()
         c.site = self.champ_site.text().strip()
         c.target_dir = self.champ_dossier.text()
         c.interval_hours = INTERVALS.get(self.combo_intervalle.currentText(), 24)

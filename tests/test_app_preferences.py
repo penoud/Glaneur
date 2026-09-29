@@ -68,21 +68,22 @@ def seeded_config(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Layout: four tabs, first two visible, last two hidden
+# Layout: five tabs — General, Site, Profiles visible; Filters, Images hidden
 # --------------------------------------------------------------------------- #
 
 class TestTabbedLayout:
-    def test_four_tabs_created(self, qtbot, seeded_config):
+    def test_five_tabs_created(self, qtbot, seeded_config):
         dlg = app_module.DialoguePreferences(None, seeded_config)
         qtbot.addWidget(dlg)
-        assert dlg.onglets.count() == 4
+        assert dlg.onglets.count() == 5
 
-    def test_general_and_site_are_visible(self, qtbot, seeded_config):
+    def test_first_three_tabs_are_visible(self, qtbot, seeded_config):
         dlg = app_module.DialoguePreferences(None, seeded_config)
         qtbot.addWidget(dlg)
-        # General is index 0, Site is index 1.
+        # General is index 0, Site is index 1, Profiles is index 2.
         assert dlg.onglets.isTabVisible(0)
         assert dlg.onglets.isTabVisible(1)
+        assert dlg.onglets.isTabVisible(2)
 
     def test_filters_and_images_are_hidden(self, qtbot, seeded_config):
         dlg = app_module.DialoguePreferences(None, seeded_config)
@@ -151,3 +152,115 @@ class TestConfigJsonIsUnchangedAfterEmptyOk:
         assert probleme is None
         after = chemin.read_bytes()
         assert after == before
+
+
+# --------------------------------------------------------------------------- #
+# Profiles tab: add / remove pending mutations, applied on OK
+# --------------------------------------------------------------------------- #
+
+class TestProfilesTab:
+    """The 'Profiles' tab queues add/remove pending changes; they only
+    hit ``cfg._extra_profiles`` on :meth:`DialoguePreferences.appliquer`
+    (i.e. the user clicks OK). Cancel discards them.
+    """
+
+    def test_initial_list_matches_cfg_extras(self, qtbot, seeded_config):
+        seeded_config.add_profile("eso", site="https://eso.example")
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        assert dlg.liste_profils.count() == 1
+        libelle = dlg.liste_profils.item(0).text()
+        assert "eso" in libelle
+        assert "https://eso.example" in libelle
+
+    def test_add_queues_a_pending_profile(self, qtbot, seeded_config):
+        """A pending add shows in the list but does NOT touch
+        ``cfg._extra_profiles`` yet — the caller may still cancel."""
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        # Skip the QInputDialog by calling the queueing logic directly.
+        from Glaneur.config import Profile
+        dlg._pending_add_profiles.append(Profile(
+            id="pending-id", name="new-profile",
+            source_type="wordpress", site="https://n.example",
+            target_dir="/tmp/n"))
+        dlg._rafraichir_liste_profils()
+        assert dlg.liste_profils.count() == 1
+        assert dlg.liste_profils.item(0).text().startswith("new-profile")
+        # Config unchanged so far.
+        assert seeded_config._extra_profiles == []
+
+    def test_cancel_discards_pending_adds(self, qtbot, seeded_config):
+        """Not calling appliquer() (i.e. dialog cancelled) leaves the
+        seeded config untouched."""
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        from Glaneur.config import Profile
+        dlg._pending_add_profiles.append(Profile(
+            id="pending-id", name="drop-me",
+            source_type="wordpress", site="", target_dir=""))
+        # No appliquer() call — the outer window would have rejected.
+        assert seeded_config._extra_profiles == []
+
+    @pytest.mark.skipif(sys.platform == "win32",
+                        reason="autostart/slideshow hit real registry")
+    def test_appliquer_commits_pending_adds(self, qtbot, seeded_config):
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        from Glaneur.config import Profile
+        dlg._pending_add_profiles.append(Profile(
+            id="new-id", name="new-profile",
+            source_type="djangoplicity", site="https://n.example",
+            target_dir="/tmp/n"))
+        probleme = dlg.appliquer()
+        assert probleme is None
+        assert len(seeded_config._extra_profiles) == 1
+        assert seeded_config._extra_profiles[0].id == "new-id"
+        # Persisted to disk too.
+        from Glaneur.config import Config
+        reloaded = Config.load(seeded_config._path)
+        assert len(reloaded._extra_profiles) == 1
+        assert reloaded._extra_profiles[0].name == "new-profile"
+        # Pending list drained after commit.
+        assert dlg._pending_add_profiles == []
+
+    @pytest.mark.skipif(sys.platform == "win32",
+                        reason="autostart/slideshow hit real registry")
+    def test_appliquer_commits_pending_removes(self, qtbot, seeded_config):
+        added = seeded_config.add_profile("condemned", site="https://c.example")
+        seeded_config.save()
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        # Simulate user selecting the row and clicking Remove.
+        dlg._pending_remove_ids.add(added.id)
+        probleme = dlg.appliquer()
+        assert probleme is None
+        assert seeded_config._extra_profiles == []
+        # Pending set drained after commit.
+        assert dlg._pending_remove_ids == set()
+
+    def test_pending_remove_of_pending_add_is_a_noop(self, qtbot, seeded_config):
+        """Removing a row that was just added (still pending) drops it
+        from _pending_add_profiles rather than queuing a remove for a
+        non-existent id."""
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        from Glaneur.config import Profile
+        pending = Profile(id="pending-id", name="quickly",
+                          source_type="wordpress", site="", target_dir="")
+        dlg._pending_add_profiles.append(pending)
+        dlg._rafraichir_liste_profils()
+        dlg.liste_profils.setCurrentRow(0)
+        dlg._supprimer_profil()
+        assert dlg._pending_add_profiles == []
+        assert dlg._pending_remove_ids == set()
+        assert dlg.liste_profils.count() == 0
+
+    def test_remove_without_selection_is_a_noop(self, qtbot, seeded_config):
+        seeded_config.add_profile("eso", site="https://eso.example")
+        dlg = app_module.DialoguePreferences(None, seeded_config)
+        qtbot.addWidget(dlg)
+        # Nothing selected — clicking Remove does nothing.
+        dlg._supprimer_profil()
+        assert dlg._pending_remove_ids == set()
+        assert dlg.liste_profils.count() == 1
