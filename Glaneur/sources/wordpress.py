@@ -205,5 +205,5 @@ class WordPress(Source):
 
         if restants:
             self._journal(
-                f"{len(restants)} galerie(s) non identifiée(s), classées par date.")
+                f"{len(restants)} gallery/galleries not identified, sorted by date.")
         return titres

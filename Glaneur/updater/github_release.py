@@ -71,7 +71,7 @@ class GitHubReleaseProvider:
         payload = response.json()
         if not isinstance(payload, list):
             raise ValueError(
-                QCoreApplication.translate("Updater", "Réponse GitHub Releases invalide"))
+                QCoreApplication.translate("Updater", "Invalid GitHub Releases response"))
         releases = [self._parse(item) for item in payload if self._is_stable(item)]
         releases = [release for release in releases if release is not None]
         latest = max((release for release in releases), default=None,

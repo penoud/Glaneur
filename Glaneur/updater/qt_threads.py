@@ -55,7 +55,7 @@ class UpdateCheck(QThread):
         except Exception as error:
             logger.exception("Update check failed")
             self.error.emit(QCoreApplication.translate(
-                "Updater", "Vérification de mise à jour impossible : {erreur}").format(erreur=error))
+                "Updater", "Update check failed: {error}").format(error=error))
 
 
 class UpdateDownload(QThread):
@@ -90,16 +90,16 @@ class UpdateDownload(QThread):
             checksum = self.release.checksum_for(installer) if installer else None
             if installer is None or checksum is None:
                 raise RuntimeError(QCoreApplication.translate(
-                    "Updater", "Installateur Windows ou checksum absent de la release"))
+                    "Updater", "Windows installer or checksum missing from the release"))
             dossier = temporary_directory()
             fichier = download(installer, dossier)
             checksum_path = download(checksum, dossier)
             if not verify_sha256(fichier, checksum_path.read_text(encoding="utf-8")):
                 fichier.unlink(missing_ok=True)
                 raise RuntimeError(QCoreApplication.translate(
-                    "Updater", "Vérification SHA-256 échouée"))
+                    "Updater", "SHA-256 verification failed"))
             self.completed.emit(fichier, str(dossier))
         except Exception as error:
             logger.exception("Update download failed")
             self.error.emit(QCoreApplication.translate(
-                "Updater", "Téléchargement de la mise à jour impossible : {erreur}").format(erreur=error))
+                "Updater", "Update download failed: {error}").format(error=error))

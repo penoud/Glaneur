@@ -77,14 +77,14 @@ class TestIsUrlTooLong:
 class TestCollectContext:
     def test_includes_version_platform_python(self):
         ctx = collect_context("1.2.3")
-        assert "**Version** : 1.2.3" in ctx
-        assert "**Plateforme**" in ctx
+        assert "**Version**: 1.2.3" in ctx
+        assert "**Platform**" in ctx
         assert "**Python**" in ctx
 
     def test_without_log_omits_log_section(self):
         ctx = collect_context("1.2.3", chemin_log=None)
-        assert "log" not in ctx.lower() or "Dernières lignes" not in ctx
-        assert "Dernières lignes de log" not in ctx
+        assert "log" not in ctx.lower() or "Last log lines" not in ctx
+        assert "Last log lines" not in ctx
 
     def test_with_log_includes_the_last_lines(self, tmp_path):
         chemin = tmp_path / "app.log"
@@ -97,7 +97,7 @@ class TestCollectContext:
     def test_inaccessible_log_omits_section(self, tmp_path):
         # missing file -> section omitted without raising
         ctx = collect_context("1.2.3", chemin_log=tmp_path / "absent.log")
-        assert "Dernières lignes de log" not in ctx
+        assert "Last log lines" not in ctx
 
     def test_log_is_compacted(self, tmp_path):
         # The real user log (logger prefix + Windows paths + ms-precision
@@ -128,7 +128,7 @@ class TestCollectContext:
             "2026-09-21 15:03:05,000 INFO Glaneur.foo: b\n"
         )
         ctx = collect_context("1.2.3", chemin_log=chemin, nb_lignes=10)
-        assert "date : 2026-09-21" in ctx
+        assert "date: 2026-09-21" in ctx
         assert "09-21 15:03:04" not in ctx   # date also stripped from the lines
         assert "15:03:04 INFO foo: a" in ctx
 

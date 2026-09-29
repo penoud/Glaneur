@@ -87,13 +87,13 @@ class TestMarkRun:
 class TestDisplayText:
     def test_manual_mode(self, tmp_path):
         p = Scheduler(_cfg(tmp_path, interval_hours=0))
-        assert "désactivée" in next_run_text(p)
+        assert "disabled" in next_run_text(p)
 
     def test_imminent(self, tmp_path):
         t0 = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
         p = Scheduler(_cfg(tmp_path, interval_hours=24,
                                last_run=t0))
-        assert "imminente" in next_run_text(p)
+        assert "imminent" in next_run_text(p)
 
     def test_remaining_in_minutes(self, tmp_path):
         # due time in ~30 min: derniere = now - 23h30
@@ -119,7 +119,7 @@ class TestDisplayText:
         t0 = (datetime.now() - timedelta(days=2)).isoformat(timespec="seconds")
         p = Scheduler(_cfg(tmp_path, interval_hours=168,
                                last_run=t0))
-        assert " j " in next_run_text(p)
+        assert " d " in next_run_text(p)
 
 
 # --------------------------------------------------------------------------- #
@@ -251,7 +251,7 @@ class TestDisplayTextWithDefer:
             retry_after=report,
         )
         p = Scheduler(cfg)
-        assert "report" in next_run_text(p).lower()
+        assert "deferred" in next_run_text(p).lower()
 
     def test_defer_label_before_nominal_ignored(self, tmp_path):
         """Defer earlier than the nominal time → no misleading "report" label.
@@ -269,7 +269,7 @@ class TestDisplayTextWithDefer:
             retry_after=report,
         )
         p = Scheduler(cfg)
-        assert "report" not in next_run_text(p).lower()
+        assert "deferred" not in next_run_text(p).lower()
 
     def test_defer_label_past_ignored(self, tmp_path):
         """`retenter_apres` in the past → nominal label (no "report" mention)."""
@@ -283,4 +283,4 @@ class TestDisplayTextWithDefer:
             retry_after=past,
         )
         p = Scheduler(cfg)
-        assert "report" not in next_run_text(p).lower()
+        assert "deferred" not in next_run_text(p).lower()

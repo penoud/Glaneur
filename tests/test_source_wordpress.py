@@ -267,7 +267,7 @@ class TestResolveGroups:
             titres = s.resolve_groups({"99"})
         assert titres == {}
         # a message reports unidentified galleries
-        assert any("non identifi" in m for m in journal)
+        assert any("not identified" in m for m in journal)
 
     def test_empty_set(self):
         s = _wp()

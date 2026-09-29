@@ -111,7 +111,7 @@ DEPOT_URL = "https://github.com/penoud/Glaneur"
 # --------------------------------------------------------------------------- #
 
 def _render_ui(event: EngineEvent) -> str:
-    """Render a structured engine event in French for the UI.
+    """Render a structured engine event for the UI (English source strings).
 
     The context ``UiJournal`` is intentionally new: it isolates these
     translations from the historical ``Moteur`` context (removed by
@@ -133,68 +133,68 @@ def _render_ui(event: EngineEvent) -> str:
             return str(p.get("text", ""))
         case "manifest-unreadable":
             return QCoreApplication.translate(
-                "UiJournal", "Manifeste illisible, reconstruction complète.")
+                "UiJournal", "Manifest unreadable, full rebuild.")
         case "already-known":
             return QCoreApplication.translate(
-                "UiJournal", "{count} image(s) déjà connues.").format(**p)
+                "UiJournal", "{count} image(s) already known.").format(**p)
         case "cache-since-date":
             return QCoreApplication.translate(
                 "UiJournal",
-                "Cache : ne redemande à l'API que les médias postérieurs à {date}.",
+                "Cache: only asking the API for media newer than {date}.",
             ).format(**p)
         case "discarded-below-min-width":
             return QCoreApplication.translate(
                 "UiJournal",
-                "{count} vignette(s) ou logo(s) écarté(s) (moins de {min_width} px).",
+                "{count} thumbnail(s)/logo(s) discarded (below {min_width} px).",
             ).format(**p)
         case "nothing-matches":
             return QCoreApplication.translate(
-                "UiJournal", "Aucune image ne correspond aux critères.")
+                "UiJournal", "No image matches the criteria.")
         case "known-and-todo":
             return QCoreApplication.translate(
                 "UiJournal",
-                "{known} déjà à jour, {todo} à traiter.",
+                "{known} already up-to-date, {todo} to process.",
             ).format(**p)
         case "n-files-erased-locally":
             return QCoreApplication.translate(
                 "UiJournal",
-                "{count} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées.",
+                "{count} image(s) erased from disk, will not be re-downloaded.",
             ).format(**p)
         case "all-up-to-date":
             return QCoreApplication.translate(
-                "UiJournal", "Tout est déjà à jour.")
+                "UiJournal", "Everything is already up to date.")
         case "identifying-galleries":
             return QCoreApplication.translate(
-                "UiJournal", "Identification des galeries…")
+                "UiJournal", "Identifying galleries…")
         case "file-not-found":
             return QCoreApplication.translate(
-                "UiJournal", "{filename} : introuvable").format(**p)
+                "UiJournal", "{filename}: not found").format(**p)
         case "file-failed":
             return QCoreApplication.translate(
-                "UiJournal", "{filename} : erreur {error}").format(**p)
+                "UiJournal", "{filename}: {error}").format(**p)
         case "n-new-images":
             return QCoreApplication.translate(
                 "UiJournal",
-                "{count} nouvelle(s) image(s), {size} téléchargés.",
+                "{count} new image(s), {size} downloaded.",
             ).format(**p)
         case "interrupted":
             return QCoreApplication.translate(
-                "UiJournal", "Interrompu — la reprise repartira d'ici.")
+                "UiJournal", "Interrupted — the resume will start here.")
         case "runtime-error":
             return QCoreApplication.translate(
-                "UiJournal", "Erreur : {error}").format(**p)
+                "UiJournal", "Error: {error}").format(**p)
         case "write-problem":
             return QCoreApplication.translate(
-                "UiJournal", "Problème d'écriture : {error}").format(**p)
+                "UiJournal", "Write problem: {error}").format(**p)
         case "defer-with-time":
             return QCoreApplication.translate(
                 "UiJournal",
-                "Serveur indisponible ou quota atteint — reprise après {until}.",
+                "Server unavailable or quota reached — resume after {until}.",
             ).format(**p)
         case "defer-no-time":
             return QCoreApplication.translate(
                 "UiJournal",
-                "Serveur indisponible ou quota atteint — reprise différée.",
+                "Server unavailable or quota reached — resume deferred.",
             )
         case _:
             return f"{event.code} {dict(p)}"
@@ -283,19 +283,19 @@ class DialogueSupprimees(QDialog):
                 :func:`Glaneur.engine.list_deleted`.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Images supprimées"))
+        self.setWindowTitle(self.tr("Deleted images"))
         self.resize(540, 380)
         self.entrees = entrees
 
         colonne = QVBoxLayout(self)
         colonne.addWidget(QLabel(self.tr(
-            "Ces images ont été téléchargées puis effacées du dossier.\n"
-            "Cochez celles à retélécharger à la prochaine mise à jour.")))
+            "These images were downloaded then erased from the folder.\n"
+            "Tick the ones to re-download at the next update.")))
 
         self.liste = QListWidget()
         for e in entrees:
-            item = QListWidgetItem(self.tr("{fichier}    (effacée le {date})").format(
-                fichier=e.get("filename", "?"),
+            item = QListWidgetItem(self.tr("{filename}    (deleted on {date})").format(
+                filename=e.get("filename", "?"),
                 date=e.get("deleted", "")[:10]))
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
@@ -303,7 +303,7 @@ class DialogueSupprimees(QDialog):
         colonne.addWidget(self.liste, 1)
 
         boutons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
-        boutons.addButton(self.tr("Tout cocher"), QDialogButtonBox.ActionRole).clicked.connect(
+        boutons.addButton(self.tr("Tick all"), QDialogButtonBox.ActionRole).clicked.connect(
             self._tout_cocher)
         boutons.accepted.connect(self.accept)
         boutons.rejected.connect(self.reject)
@@ -340,7 +340,7 @@ class DialoguePreferences(QDialog):
                 only be modified on the call to :meth:`appliquer`.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Préférences"))
+        self.setWindowTitle(self.tr("Preferences"))
         self.setMinimumSize(560, 420)
         self.cfg = cfg
 
@@ -362,15 +362,15 @@ class DialoguePreferences(QDialog):
         )
         self.combo_type.setCurrentText(libelle_type_courant)
         self.combo_type.setToolTip(self.tr(
-            "Type de site à interroger. WordPress lit l'API REST /wp-json,\n"
-            "Djangoplicity lit le flux JSON /images/d2d/ (ESO, ESA/Hubble…)."))
-        forme_site.addRow(self.tr("Type :"), self.combo_type)
+            "Site type to query. WordPress reads the /wp-json REST API,\n"
+            "Djangoplicity reads the /images/d2d/ JSON feed (ESO, ESA/Hubble…)."))
+        forme_site.addRow(self.tr("Type:"), self.combo_type)
 
         self.champ_site = QLineEdit(cfg.site)
-        self.champ_site.setPlaceholderText(self.tr("https://exemple.com"))
+        self.champ_site.setPlaceholderText(self.tr("https://example.com"))
         self.champ_site.setToolTip(self.tr(
-            "URL de base du site (sans /wp-json ni /images/d2d selon le type)."))
-        forme_site.addRow(self.tr("URL :"), self.champ_site)
+            "Base URL of the site (without /wp-json or /images/d2d depending on the type)."))
+        forme_site.addRow(self.tr("URL:"), self.champ_site)
 
         # Format visible only for Djangoplicity: `Original` files are
         # TIFFs of several hundred MB, the warning lives in the option
@@ -384,8 +384,8 @@ class DialoguePreferences(QDialog):
         )
         self.combo_format.setCurrentText(libelle_format_courant)
         self.combo_format.setToolTip(self.tr(
-            "Résolution téléchargée pour Djangoplicity. Original = TIFF (souvent >100 Mo)."))
-        self.label_format = QLabel(self.tr("Format :"))
+            "Resolution downloaded from Djangoplicity. Original = TIFF (often >100 MB)."))
+        self.label_format = QLabel(self.tr("Format:"))
         forme_site.addRow(self.label_format, self.combo_format)
 
         self.combo_type.currentTextChanged.connect(self._sur_changement_type)
@@ -396,7 +396,7 @@ class DialoguePreferences(QDialog):
         ligne = QHBoxLayout(boite)
         self.champ_dossier = QLineEdit(cfg.target_dir)
         ligne.addWidget(self.champ_dossier, 1)
-        bouton = QPushButton(self.tr("Parcourir…"))
+        bouton = QPushButton(self.tr("Browse…"))
         bouton.clicked.connect(self._choisir_dossier)
         ligne.addWidget(bouton)
         colonne.addWidget(boite)
@@ -409,15 +409,15 @@ class DialoguePreferences(QDialog):
         self.combo_intervalle = QComboBox()
         self.combo_intervalle.addItems(list(INTERVALS))
         self.combo_intervalle.setCurrentText(cfg.interval_label)
-        form.addRow(self.tr("Mise à jour :"), self.combo_intervalle)
+        form.addRow(self.tr("Update:"), self.combo_intervalle)
 
         self.combo_classement = QComboBox()
         self.combo_classement.addItems(list(SORT_MODES))
         self.combo_classement.setCurrentText(cfg.sort_mode_label)
         self.combo_classement.setToolTip(self.tr(
-            "Change la destination des nouvelles images. Les images déjà\n"
-            "téléchargées restent là où elles sont."))
-        form.addRow(self.tr("Classement :"), self.combo_classement)
+            "Changes the destination of new images. Images already\n"
+            "downloaded stay where they are."))
+        form.addRow(self.tr("Sort:"), self.combo_classement)
 
         # Adjusts the format's visibility and the sort mode's greying
         # according to the initial type.
@@ -429,46 +429,46 @@ class DialoguePreferences(QDialog):
         self.spin_largeur.setSuffix(self.tr(" px"))
         self.spin_largeur.setValue(cfg.min_width)
         self.spin_largeur.setToolTip(self.tr(
-            "Écarte les logos et vignettes sous cette largeur. 0 pour tout garder."))
-        form.addRow(self.tr("Largeur minimale :"), self.spin_largeur)
+            "Discard logos and thumbnails below this width. 0 to keep everything."))
+        form.addRow(self.tr("Minimum width:"), self.spin_largeur)
 
-        self.case_verifier = QCheckBox(self.tr("Vérifier l'intégrité des fichiers existants"))
+        self.case_verifier = QCheckBox(self.tr("Verify integrity of existing files"))
         self.case_verifier.setChecked(cfg.verify_integrity)
         self.case_verifier.setToolTip(self.tr(
-            "Interroge le serveur sur chaque fichier connu (réponse 304 si identique).\n"
-            "Plus lent, à réserver à un contrôle ponctuel."))
+            "Queries the server for each known file (304 response if identical).\n"
+            "Slower, reserve for a one-off check."))
         form.addRow("", self.case_verifier)
 
         self.case_diaporama = QCheckBox(self.tr(
-            "Utiliser ce dossier pour le diaporama Windows"))
+            "Use this folder for the Windows slideshow"))
         self.case_diaporama.setChecked(cfg.slideshow_dir)
         self.case_diaporama.setEnabled(sys.platform == "win32")
         self.case_diaporama.setToolTip(self.tr(
-            "Configure le diaporama de fond d'écran Windows pour piocher\n"
-            "dans le dossier de téléchargement."))
+            "Configures the Windows wallpaper slideshow to pick from\n"
+            "the download folder."))
         form.addRow("", self.case_diaporama)
 
-        self.case_barre = QCheckBox(self.tr("Réduire dans la zone de notification à la fermeture"))
+        self.case_barre = QCheckBox(self.tr("Minimise to the notification area when closed"))
         self.case_barre.setChecked(cfg.close_to_tray)
         form.addRow("", self.case_barre)
 
-        self.case_demarrage = QCheckBox(self.tr("Lancer au démarrage de Windows"))
+        self.case_demarrage = QCheckBox(self.tr("Run at Windows startup"))
         self.case_demarrage.setChecked(autostart_active())
         self.case_demarrage.setEnabled(sys.platform == "win32")
         form.addRow("", self.case_demarrage)
 
-        self.case_maj_demarrage = QCheckBox(self.tr("Vérifier les mises à jour au démarrage"))
+        self.case_maj_demarrage = QCheckBox(self.tr("Check for updates at startup"))
         self.case_maj_demarrage.setChecked(cfg.check_updates_on_start)
         self.case_maj_demarrage.setEnabled(sys.platform == "win32")
         self.case_maj_demarrage.setToolTip(self.tr(
-            "Interroge GitHub en arrière-plan au lancement de l'application\n"
-            "pour proposer la dernière version stable si elle est plus récente."))
+            "Queries GitHub in the background at application launch\n"
+            "to offer the latest stable version if it is newer."))
         form.addRow("", self.case_maj_demarrage)
 
         # --- language -----------------------------------------------------
         from Glaneur.i18n import AVAILABLE_LANGUAGES
         self.combo_langue = QComboBox()
-        self.combo_langue.addItem(self.tr("Langue du système"), "")
+        self.combo_langue.addItem(self.tr("System language"), "")
         for code, libelle in AVAILABLE_LANGUAGES.items():
             self.combo_langue.addItem(libelle, code)
         for i in range(self.combo_langue.count()):
@@ -476,8 +476,8 @@ class DialoguePreferences(QDialog):
                 self.combo_langue.setCurrentIndex(i)
                 break
         self.combo_langue.setToolTip(self.tr(
-            "Le changement de langue prend effet au prochain lancement."))
-        form.addRow(self.tr("Langue :"), self.combo_langue)
+            "Language change takes effect at the next launch."))
+        form.addRow(self.tr("Language:"), self.combo_langue)
 
         colonne.addWidget(boite)
         colonne.addStretch(1)
@@ -491,7 +491,7 @@ class DialoguePreferences(QDialog):
 
     def _choisir_dossier(self) -> None:
         choix = QFileDialog.getExistingDirectory(
-            self, self.tr("Où enregistrer les images ?"),
+            self, self.tr("Where to save the images?"),
             self.champ_dossier.text() or str(Path.home()))
         if choix:
             self.champ_dossier.setText(choix)
@@ -557,7 +557,7 @@ class DialoguePreferences(QDialog):
             obtenu = autostart(voulu)
             if obtenu != voulu:
                 problemes.append(self.tr(
-                    "Impossible de modifier le démarrage automatique de Windows."))
+                    "Cannot change Windows autostart."))
             c.run_at_startup = obtenu
             c.save()
 
@@ -570,12 +570,12 @@ class DialoguePreferences(QDialog):
                     dossier.mkdir(parents=True, exist_ok=True)
                 except OSError as e:
                     problemes.append(
-                        self.tr("Dossier de destination inaccessible : {erreur}").format(erreur=e))
+                        self.tr("Destination folder unavailable: {error}").format(error=e))
                 else:
                     if not set_slideshow_dir(dossier):
                         problemes.append(self.tr(
-                            "Impossible de configurer le diaporama Windows "
-                            "(dossier vide ou COM indisponible)."))
+                            "Cannot configure the Windows slideshow "
+                            "(empty folder or COM unavailable)."))
                         c.slideshow_dir = False
                         c.save()
         return "\n".join(problemes) if problemes else None
@@ -602,7 +602,7 @@ class DialogueSignalerBug(QDialog):
                 report, or ``None`` to attach nothing.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Signaler un bug"))
+        self.setWindowTitle(self.tr("Report a bug"))
         self.setMinimumSize(560, 460)
         self._chemin_log = chemin_log
 
@@ -611,45 +611,45 @@ class DialogueSignalerBug(QDialog):
         colonne.setSpacing(8)
 
         intro = QLabel(self.tr(
-            "Décris le problème ci-dessous. « Ouvrir sur GitHub » composera "
-            "l'issue et l'ouvrira dans ton navigateur : tu n'auras plus qu'à "
-            "cliquer « Submit new issue » sur la page GitHub.\n\n"
-            "Un compte GitHub est nécessaire pour soumettre l'issue. Si tu "
-            "n'en as pas encore, tu pourras t'en créer un gratuitement à "
-            "l'étape « Sign in » depuis la même page."))
+            "Describe the problem below. “Open on GitHub” will "
+            "compose the issue and open it in your browser: you will only "
+            "need to click “Submit new issue” on the GitHub page.\n\n"
+            "A GitHub account is required to submit the issue. If you do "
+            "not have one yet, you can create one for free at the "
+            "“Sign in” step from the same page."))
         intro.setWordWrap(True)
         colonne.addWidget(intro)
 
         self.champ_titre = QLineEdit()
-        self.champ_titre.setPlaceholderText(self.tr("Résumé court du problème"))
-        colonne.addWidget(QLabel(self.tr("Titre :")))
+        self.champ_titre.setPlaceholderText(self.tr("Short summary of the problem"))
+        colonne.addWidget(QLabel(self.tr("Title:")))
         colonne.addWidget(self.champ_titre)
 
         self.zone_desc = QTextEdit()
         self.zone_desc.setPlaceholderText(self.tr(
-            "Ce qui se passe, ce que tu attendais, comment reproduire."))
-        colonne.addWidget(QLabel(self.tr("Description :")))
+            "What happens, what you expected, how to reproduce."))
+        colonne.addWidget(QLabel(self.tr("Description:")))
         colonne.addWidget(self.zone_desc, 1)
 
         self.case_contexte = QCheckBox(self.tr(
-            "Joindre la version, la plateforme et les 50 dernières lignes de log"))
+            "Attach the version, platform and the last 50 log lines"))
         self.case_contexte.setChecked(True)
         colonne.addWidget(self.case_contexte)
 
         boutons = QDialogButtonBox(self)
-        bouton_go = boutons.addButton(self.tr("Ouvrir sur GitHub"), QDialogButtonBox.AcceptRole)
+        bouton_go = boutons.addButton(self.tr("Open on GitHub"), QDialogButtonBox.AcceptRole)
         boutons.addButton(QDialogButtonBox.Cancel)
         bouton_go.clicked.connect(self._envoyer)
         boutons.rejected.connect(self.reject)
         colonne.addWidget(boutons)
 
     def _envoyer(self) -> None:
-        titre = self.champ_titre.text().strip() or self.tr("Rapport de bug")
+        titre = self.champ_titre.text().strip() or self.tr("Bug report")
         description = self.zone_desc.toPlainText().strip()
         if not description:
             QMessageBox.warning(
-                self, self.tr("Signaler un bug"),
-                self.tr("Merci d'ajouter une description avant d'ouvrir l'issue."))
+                self, self.tr("Report a bug"),
+                self.tr("Please add a description before opening the issue."))
             return
         corps = description
         contexte_joint = self.case_contexte.isChecked()
@@ -658,18 +658,18 @@ class DialogueSignalerBug(QDialog):
         url = build_issue_url(GITHUB_OWNER, GITHUB_REPOSITORY, titre, corps)
         if is_url_too_long(url):
             piste = (
-                self.tr("Décoche « Joindre la version, la plateforme et les 50 dernières "
-                        "lignes de log » (tu pourras coller le log dans un commentaire), "
-                        "ou raccourcis la description.")
+                self.tr("Uncheck “Attach the version, platform and the last "
+                        "50 log lines” (you can paste the log in a comment), "
+                        "or shorten the description.")
                 if contexte_joint
-                else self.tr("Raccourcis la description avant de réessayer.")
+                else self.tr("Shorten the description before trying again.")
             )
             QMessageBox.warning(
-                self, self.tr("Signaler un bug"),
-                self.tr("Ton rapport est trop long pour être pré-rempli via l'URL "
-                        "GitHub ({longueur} caractères, maximum {plafond}).\n\n"
-                        "{piste}").format(
-                    longueur=len(url), plafond=MAX_URL_LENGTH, piste=piste))
+                self, self.tr("Report a bug"),
+                self.tr("Your report is too long to be pre-filled via the "
+                        "GitHub URL ({length} characters, maximum {cap}).\n\n"
+                        "{hint}").format(
+                    length=len(url), cap=MAX_URL_LENGTH, hint=piste))
             return
         QDesktopServices.openUrl(QUrl(url))
         self.accept()
@@ -685,7 +685,7 @@ class DialogueAPropos(QDialog):
             parent: Qt parent widget.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("À propos de Glaneur"))
+        self.setWindowTitle(self.tr("About Glaneur"))
         self.setFixedSize(440, 320)
 
         colonne = QVBoxLayout(self)
@@ -710,8 +710,8 @@ class DialogueAPropos(QDialog):
         colonne.addSpacing(6)
 
         desc = QLabel(self.tr(
-            "Télécharge et synchronise en local les images publiées par un site "
-            "distant (WordPress, Djangoplicity…)."))
+            "Downloads and locally syncs images published by a remote "
+            "site (WordPress, Djangoplicity…)."))
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignCenter)
         colonne.addWidget(desc)
@@ -722,7 +722,7 @@ class DialogueAPropos(QDialog):
         colonne.addWidget(lien)
 
         licence = QLabel(self.tr(
-            "Distribué sous licence GNU GPL v3. Voir le fichier LICENSE."))
+            "Distributed under the GNU GPL v3 licence. See the LICENSE file."))
         licence.setStyleSheet("color: #666; font-size: 11px;")
         licence.setAlignment(Qt.AlignCenter)
         licence.setWordWrap(True)
@@ -753,7 +753,7 @@ class Fenetre(QMainWindow):
     def __init__(self) -> None:
         """Load the config, build the UI, and start the deadline timer."""
         super().__init__()
-        self.setWindowTitle(self.tr("Glaneur — Téléchargeur d'images {version}").format(
+        self.setWindowTitle(self.tr("Glaneur — Image downloader {version}").format(
             version=__version__))
         self.setWindowIcon(icone_application())
         self.resize(760, 520)
@@ -792,45 +792,45 @@ class Fenetre(QMainWindow):
     def _construire_menu(self) -> None:
         barre = self.menuBar()
 
-        menu_fichier = barre.addMenu(self.tr("&Fichier"))
-        self.action_maj = menu_fichier.addAction(self.tr("&Mettre à jour maintenant"))
+        menu_fichier = barre.addMenu(self.tr("&File"))
+        self.action_maj = menu_fichier.addAction(self.tr("&Update now"))
         self.action_maj.setShortcut(QKeySequence("Ctrl+R"))
         self.action_maj.triggered.connect(self._lancer)
 
-        self.action_arreter_menu = menu_fichier.addAction(self.tr("&Arrêter"))
+        self.action_arreter_menu = menu_fichier.addAction(self.tr("&Stop"))
         self.action_arreter_menu.setEnabled(False)
         self.action_arreter_menu.triggered.connect(self._arreter)
 
         menu_fichier.addSeparator()
-        action_ouvrir = menu_fichier.addAction(self.tr("&Ouvrir le dossier"))
+        action_ouvrir = menu_fichier.addAction(self.tr("&Open the folder"))
         action_ouvrir.triggered.connect(self._ouvrir_dossier)
 
         menu_fichier.addSeparator()
-        action_supprimees = menu_fichier.addAction(self.tr("&Images supprimées…"))
+        action_supprimees = menu_fichier.addAction(self.tr("&Deleted images…"))
         action_supprimees.triggered.connect(self._gerer_supprimees)
 
-        self.action_supprimer_fond = menu_fichier.addAction(self.tr("Supprimer ce &fond d'écran"))
+        self.action_supprimer_fond = menu_fichier.addAction(self.tr("Remove this &wallpaper"))
         self.action_supprimer_fond.triggered.connect(self._supprimer_fond)
         self.action_supprimer_fond.setEnabled(sys.platform == "win32")
 
         menu_fichier.addSeparator()
-        action_quitter = menu_fichier.addAction(self.tr("&Quitter"))
+        action_quitter = menu_fichier.addAction(self.tr("&Quit"))
         action_quitter.setShortcut(QKeySequence("Ctrl+Q"))
         action_quitter.triggered.connect(self._quitter)
 
         menu_conf = barre.addMenu(self.tr("&Configuration"))
-        action_prefs = menu_conf.addAction(self.tr("&Préférences…"))
+        action_prefs = menu_conf.addAction(self.tr("&Preferences…"))
         action_prefs.setShortcut(QKeySequence("Ctrl+,"))
         action_prefs.triggered.connect(self._ouvrir_preferences)
 
-        menu_aide = barre.addMenu(self.tr("&Aide"))
-        action_check_maj = menu_aide.addAction(self.tr("&Rechercher des mises à jour…"))
+        menu_aide = barre.addMenu(self.tr("&Help"))
+        action_check_maj = menu_aide.addAction(self.tr("&Check for updates…"))
         action_check_maj.triggered.connect(
             lambda: self._verifier_mise_a_jour(manuel=True))
         action_check_maj.setEnabled(sys.platform == "win32")
-        action_signaler = menu_aide.addAction(self.tr("&Signaler un bug…"))
+        action_signaler = menu_aide.addAction(self.tr("&Report a bug…"))
         action_signaler.triggered.connect(self._ouvrir_signaler_bug)
-        action_apropos = menu_aide.addAction(self.tr("&À propos…"))
+        action_apropos = menu_aide.addAction(self.tr("&About…"))
         action_apropos.triggered.connect(self._ouvrir_apropos)
 
     def _construire(self) -> None:
@@ -873,43 +873,43 @@ class Fenetre(QMainWindow):
         racine.setContentsMargins(14, 14, 14, 14)
         racine.setSpacing(10)
 
-        titre = QLabel(self.tr("Glaneur — Téléchargeur d'images"))
+        titre = QLabel(self.tr("Glaneur — Image downloader"))
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
         self.label_site = QLabel()
         self.label_site.setStyleSheet("color: #666;")
-        self.label_site.setToolTip(self.tr("Modifiable dans Configuration → Préférences…"))
+        self.label_site.setToolTip(self.tr("Editable via Configuration → Preferences…"))
         racine.addWidget(self.label_site)
 
         self.label_dossier = QLabel()
         self.label_dossier.setStyleSheet("color: #666;")
-        self.label_dossier.setToolTip(self.tr("Modifiable dans Configuration → Préférences…"))
+        self.label_dossier.setToolTip(self.tr("Editable via Configuration → Preferences…"))
         racine.addWidget(self.label_dossier)
 
         # --- actions -------------------------------------------------------
         ligne = QHBoxLayout()
-        self.bouton_lancer = QPushButton(self.tr("Mettre à jour maintenant"))
+        self.bouton_lancer = QPushButton(self.tr("Update now"))
         self.bouton_lancer.setObjectName("principal")
         self.bouton_lancer.clicked.connect(self._lancer)
         ligne.addWidget(self.bouton_lancer)
 
-        self.bouton_arreter = QPushButton(self.tr("Arrêter"))
+        self.bouton_arreter = QPushButton(self.tr("Stop"))
         self.bouton_arreter.setEnabled(False)
         self.bouton_arreter.clicked.connect(self._arreter)
         ligne.addWidget(self.bouton_arreter)
 
-        self.bouton_supprimer_fond = QPushButton(self.tr("Supprimer le fond actuel"))
+        self.bouton_supprimer_fond = QPushButton(self.tr("Remove current wallpaper"))
         self.bouton_supprimer_fond.setToolTip(self.tr(
-            "Efface l'image actuellement affichée par le diaporama Windows\n"
-            "et l'exclut des prochaines mises à jour."))
+            "Erases the image currently shown by the Windows slideshow\n"
+            "and excludes it from future updates."))
         self.bouton_supprimer_fond.clicked.connect(self._supprimer_fond)
         self.bouton_supprimer_fond.setEnabled(sys.platform == "win32")
         ligne.addWidget(self.bouton_supprimer_fond)
 
-        self.bouton_supprimees = QPushButton(self.tr("Images supprimées…"))
+        self.bouton_supprimees = QPushButton(self.tr("Deleted images…"))
         self.bouton_supprimees.setToolTip(self.tr(
-            "Images effacées du dossier, que l'application ne retélécharge plus."))
+            "Images erased from the folder that the application will no longer re-download."))
         self.bouton_supprimees.clicked.connect(self._gerer_supprimees)
         ligne.addWidget(self.bouton_supprimees)
         ligne.addStretch(1)
@@ -925,7 +925,7 @@ class Fenetre(QMainWindow):
         self.barre.setValue(0)
         racine.addWidget(self.barre)
 
-        self.label_statut = QLabel(self.tr("Prêt."))
+        self.label_statut = QLabel(self.tr("Ready."))
         racine.addWidget(self.label_statut)
 
         # --- journal -------------------------------------------------------
@@ -944,11 +944,11 @@ class Fenetre(QMainWindow):
         # Actions referenced elsewhere (setEnabled during/after a run): we
         # create them in every case, even if we do not attach them to a
         # menu when no tray is available.
-        self.action_afficher = QAction(self.tr("Afficher la fenêtre"), self)
+        self.action_afficher = QAction(self.tr("Show window"), self)
         self.action_afficher.triggered.connect(self._afficher)
-        self.action_maj_tray = QAction(self.tr("Mettre à jour maintenant"), self)
+        self.action_maj_tray = QAction(self.tr("Update now"), self)
         self.action_maj_tray.triggered.connect(self._lancer)
-        self.action_supprimer_fond_tray = QAction(self.tr("Supprimer ce fond d'écran"), self)
+        self.action_supprimer_fond_tray = QAction(self.tr("Remove this wallpaper"), self)
         self.action_supprimer_fond_tray.triggered.connect(self._supprimer_fond)
         self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
 
@@ -963,24 +963,24 @@ class Fenetre(QMainWindow):
             return
 
         self.tray = QSystemTrayIcon(icone_application(), self)
-        self.tray.setToolTip(self.tr("Glaneur — Téléchargeur d'images"))
+        self.tray.setToolTip(self.tr("Glaneur — Image downloader"))
 
         menu = QMenu()
         menu.addAction(self.action_afficher)
         menu.addAction(self.action_maj_tray)
         menu.addAction(self.action_supprimer_fond_tray)
 
-        action = QAction(self.tr("Ouvrir le dossier"), self)
+        action = QAction(self.tr("Open the folder"), self)
         action.triggered.connect(self._ouvrir_dossier)
         menu.addAction(action)
         menu.addSeparator()
 
-        action = QAction(self.tr("Préférences…"), self)
+        action = QAction(self.tr("Preferences…"), self)
         action.triggered.connect(self._ouvrir_preferences)
         menu.addAction(action)
         menu.addSeparator()
 
-        action = QAction(self.tr("Quitter"), self)
+        action = QAction(self.tr("Quit"), self)
         action.triggered.connect(self._quitter)
         menu.addAction(action)
 
@@ -990,9 +990,9 @@ class Fenetre(QMainWindow):
 
     def _rafraichir_bandeau(self) -> None:
         """Refresh the site and folder display labels."""
-        self.label_site.setText(self.tr("Site : {site}").format(site=self.cfg.site or "—"))
-        self.label_dossier.setText(self.tr("Dossier : {dossier}").format(
-            dossier=self.cfg.target_dir or "—"))
+        self.label_site.setText(self.tr("Site: {site}").format(site=self.cfg.site or "—"))
+        self.label_dossier.setText(self.tr("Folder: {folder}").format(
+            folder=self.cfg.target_dir or "—"))
 
     def _appliquer_diaporama_au_demarrage(self) -> None:
         """Reconfigure the slideshow on every launch when the option is on
@@ -1012,7 +1012,7 @@ class Fenetre(QMainWindow):
             self._rafraichir_bandeau()
             self._rafraichir_echeance()
             if probleme:
-                QMessageBox.warning(self, self.tr("Préférences"), probleme)
+                QMessageBox.warning(self, self.tr("Preferences"), probleme)
 
     def _ouvrir_apropos(self) -> None:
         DialogueAPropos(self).exec()
@@ -1056,33 +1056,33 @@ class Fenetre(QMainWindow):
     def _aucune_mise_a_jour_manuel(self, info) -> None:
         QMessageBox.information(
             self,
-            self.tr("Rechercher des mises à jour"),
-            self.tr("Vous utilisez déjà la dernière version ({version}).").format(
+            self.tr("Check for updates"),
+            self.tr("You are already on the latest version ({version}).").format(
                 version=info.current),
         )
 
     def _erreur_verification_manuel(self, message: str) -> None:
         self._ecrire(message)
-        QMessageBox.warning(self, self.tr("Rechercher des mises à jour"), message)
+        QMessageBox.warning(self, self.tr("Check for updates"), message)
 
     def _mise_a_jour_disponible(self, info) -> None:
         release = info.latest
         reponse = QMessageBox.question(
             self,
-            self.tr("Mise à jour disponible"),
-            self.tr("Une nouvelle version est disponible.\n\n"
-                    "Version actuelle : {actuelle}\n"
-                    "Nouvelle version : {nouvelle}\n\n"
-                    "Télécharger et installer maintenant ?").format(
-                actuelle=info.current, nouvelle=release.version),
+            self.tr("Update available"),
+            self.tr("A new version is available.\n\n"
+                    "Current version: {current}\n"
+                    "New version: {new}\n\n"
+                    "Download and install now?").format(
+                current=info.current, new=release.version),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
         if reponse != QMessageBox.Yes:
-            self._ecrire(self.tr("Mise à jour {version} reportée.").format(
+            self._ecrire(self.tr("Update {version} deferred.").format(
                 version=release.version))
             return
-        self._ecrire(self.tr("Téléchargement de la mise à jour {version}…").format(
+        self._ecrire(self.tr("Downloading update {version}…").format(
             version=release.version))
         self.telechargement_mise_a_jour = UpdateDownload(release)
         self.telechargement_mise_a_jour.completed.connect(self._mise_a_jour_telechargee)
@@ -1130,11 +1130,11 @@ class Fenetre(QMainWindow):
             )
         except OSError as error:
             log.exception("Lancement de l'installateur impossible")
-            self._ecrire(self.tr("Lancement de l'installateur impossible : {erreur}").format(
-                erreur=error))
+            self._ecrire(self.tr("Cannot launch the installer: {error}").format(
+                error=error))
             return
         log.info("Installateur lancé, log Inno attendu ici : %s. Fermeture de l'app.", log_inno)
-        self._ecrire(self.tr("Mise à jour lancée, fermeture pour installation…"))
+        self._ecrire(self.tr("Update launched, closing for installation…"))
         self._quitter_demande = True
         self.close()
 
@@ -1142,30 +1142,30 @@ class Fenetre(QMainWindow):
         try:
             open_dir(Path(self.cfg.target_dir))
         except OSError as e:
-            QMessageBox.warning(self, self.tr("Dossier inaccessible"), str(e))
+            QMessageBox.warning(self, self.tr("Folder unavailable"), str(e))
 
     def _gerer_supprimees(self) -> None:
         dossier = Path(self.cfg.target_dir).expanduser()
         entrees = list_deleted(dossier)
         if not entrees:
             QMessageBox.information(
-                self, self.tr("Images supprimées"),
-                self.tr("Aucune image effacée n'est mémorisée pour ce dossier."))
+                self, self.tr("Deleted images"),
+                self.tr("No deleted image is recorded for this folder."))
             return
         dialogue = DialogueSupprimees(self, entrees)
         if dialogue.exec() != QDialog.Accepted or not dialogue.choix():
             return
         n = restore(dossier, dialogue.choix())
-        self._ecrire(self.tr("{n} image(s) seront retéléchargées à la prochaine mise à jour.").format(n=n))
+        self._ecrire(self.tr("{n} image(s) will be re-downloaded at the next update.").format(n=n))
 
     def _supprimer_fond(self) -> None:
         fond = current_wallpaper()
         if fond is None:
             QMessageBox.information(
-                self, self.tr("Fond d'écran"),
-                self.tr("Impossible de déterminer l'image actuellement affichée.\n"
-                        "Fonction disponible uniquement sous Windows, avec un\n"
-                        "diaporama de fond d'écran actif."))
+                self, self.tr("Wallpaper"),
+                self.tr("Cannot determine the image currently shown.\n"
+                        "Feature only available on Windows, with an\n"
+                        "active wallpaper slideshow."))
             return
         dossier = Path(self.cfg.target_dir).expanduser()
         # simple ownership check for the message; the engine will run
@@ -1178,22 +1178,22 @@ class Fenetre(QMainWindow):
             interne = False
         if not interne:
             QMessageBox.information(
-                self, self.tr("Fond d'écran hors du dossier suivi"),
-                self.tr("L'image affichée n'appartient pas au dossier suivi :\n{fond}\n\n"
-                        "Rien n'a été supprimé.").format(fond=fond))
+                self, self.tr("Wallpaper outside the tracked folder"),
+                self.tr("The displayed image does not belong to the tracked folder:\n{wallpaper}\n\n"
+                        "Nothing was deleted.").format(wallpaper=fond))
             return
         reponse = QMessageBox.question(
-            self, self.tr("Supprimer le fond actuel"),
-            self.tr("Supprimer définitivement cette image ?\n{fond}\n\n"
-                    "Elle ne sera plus retéléchargée par les mises à jour suivantes.").format(
-                fond=fond))
+            self, self.tr("Remove current wallpaper"),
+            self.tr("Permanently delete this image?\n{wallpaper}\n\n"
+                    "It will no longer be re-downloaded by future updates.").format(
+                wallpaper=fond))
         if reponse != QMessageBox.Yes:
             return
         if delete_image(dossier, fond):
             advance_slideshow()
-            self._ecrire(self.tr("Fond d'écran supprimé : {fond}").format(fond=fond))
+            self._ecrire(self.tr("Wallpaper removed: {wallpaper}").format(wallpaper=fond))
         else:
-            self._ecrire(self.tr("Échec de suppression du fond : {fond}").format(fond=fond))
+            self._ecrire(self.tr("Wallpaper removal failed: {wallpaper}").format(wallpaper=fond))
 
     def _lancer(self, auto: bool = False) -> None:
         if self.travailleur and self.travailleur.isRunning():
@@ -1202,11 +1202,11 @@ class Fenetre(QMainWindow):
         try:
             dossier.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            message = self.tr("Impossible d'utiliser ce dossier :\n{erreur}").format(erreur=e)
+            message = self.tr("Cannot use this folder:\n{error}").format(error=e)
             if auto:
                 self._ecrire(message.replace("\n", " "))
                 return
-            QMessageBox.critical(self, self.tr("Dossier invalide"), message)
+            QMessageBox.critical(self, self.tr("Invalid folder"), message)
             return
 
         self.auto_en_cours = bool(auto)
@@ -1217,8 +1217,8 @@ class Fenetre(QMainWindow):
         self.bouton_arreter.setEnabled(True)
         self.action_arreter_menu.setEnabled(True)
         self.barre.setRange(0, 0)          # indeterminate during inventory
-        self._ecrire(self.tr("--- {horodatage} — début de la mise à jour").format(
-            horodatage=f"{datetime.now():%d/%m/%Y %H:%M}"))
+        self._ecrire(self.tr("--- {timestamp} — update started").format(
+            timestamp=f"{datetime.now():%d/%m/%Y %H:%M}"))
 
         options = Options(
             target_dir=dossier,
@@ -1244,7 +1244,7 @@ class Fenetre(QMainWindow):
         self.stop_event.set()
         self.bouton_arreter.setEnabled(False)
         self.action_arreter_menu.setEnabled(False)
-        self.label_statut.setText(self.tr("Arrêt en cours…"))
+        self.label_statut.setText(self.tr("Stopping…"))
 
     def _quitter(self) -> None:
         self._quitter_demande = True
@@ -1264,8 +1264,8 @@ class Fenetre(QMainWindow):
     def _progres(self, fait: int, total: int, etiquette: str) -> None:
         self.barre.setRange(0, max(total, 1))
         self.barre.setValue(fait)
-        self.label_statut.setText(self.tr("{fait}/{total} — {etiquette}").format(
-            fait=fait, total=total, etiquette=etiquette))
+        self.label_statut.setText(self.tr("{done}/{total} — {label}").format(
+            done=fait, total=total, label=etiquette))
 
     def _terminer(self, res: RunResult) -> None:
         self.bouton_lancer.setEnabled(True)
@@ -1282,16 +1282,16 @@ class Fenetre(QMainWindow):
         self.label_statut.setText(rendu)
         self._ecrire(rendu)
         if res.already_present:
-            self._ecrire(self.tr("{n} image(s) déjà présentes, non retéléchargées.").format(
+            self._ecrire(self.tr("{n} image(s) already present, not re-downloaded.").format(
                 n=res.already_present))
         if res.skipped:
             self._ecrire(self.tr(
-                "{n} image(s) que vous aviez supprimée(s), ignorée(s) — "
-                "bouton « Images supprimées… » pour en recharger.").format(n=res.skipped))
+                "{n} image(s) that you had deleted, skipped — "
+                "use the “Deleted images…” button to re-queue them.").format(n=res.skipped))
         if res.failures and not res.deferred:
             # On defer, `res.message` already explains the cut and gives
             # the deadline — no redundant/misleading "will be retried".
-            self._ecrire(self.tr("{n} échec(s) — seront retentés à la prochaine mise à jour.").format(
+            self._ecrire(self.tr("{n} failure(s) — will be retried at the next update.").format(
                 n=res.failures))
 
         if res.deferred:
@@ -1305,8 +1305,8 @@ class Fenetre(QMainWindow):
                 and res.downloaded and not self.isVisible()):
             self.tray.showMessage(
                 "Glaneur",
-                self.tr("{n} nouvelle(s) image(s) — {taille}").format(
-                    n=res.downloaded, taille=format_bytes(res.bytes)),
+                self.tr("{n} new image(s) — {size}").format(
+                    n=res.downloaded, size=format_bytes(res.bytes)),
                 icone_application(), 5000)
         self.auto_en_cours = False
 
@@ -1314,14 +1314,14 @@ class Fenetre(QMainWindow):
         if self.travailleur and self.travailleur.isRunning():
             return
         if self.planificateur.is_due():
-            self._ecrire(self.tr("Mise à jour automatique déclenchée."))
+            self._ecrire(self.tr("Automatic update triggered."))
             self._lancer(auto=True)
 
     def _rafraichir_echeance(self) -> None:
         texte = next_run_text(self.planificateur)
         self.label_echeance.setText(texte)
         if self.tray:
-            self.tray.setToolTip(self.tr("Glaneur — {texte}").format(texte=texte))
+            self.tray.setToolTip(self.tr("Glaneur — {text}").format(text=texte))
 
     def _ecrire(self, message: str) -> None:
         self.journal.appendPlainText(f"{datetime.now():%H:%M:%S}  {message}")
@@ -1351,7 +1351,7 @@ class Fenetre(QMainWindow):
             self.hide()
             self.tray.showMessage(
                 "Glaneur",
-                self.tr("L'application continue en arrière-plan. Clic droit sur l'icône pour quitter."),
+                self.tr("The application keeps running in the background. Right-click the icon to quit."),
                 icone_application(), 4000)
             return
 
@@ -1364,20 +1364,20 @@ class Fenetre(QMainWindow):
                 and not self._avertissement_tray_montre):
             self._avertissement_tray_montre = True
             QMessageBox.information(
-                self, self.tr("Fermeture de Glaneur"),
+                self, self.tr("Closing Glaneur"),
                 self.tr(
-                    "Aucun indicateur système n'est disponible sur cette session Linux, "
-                    "l'application ne peut pas rester en arrière-plan et va se fermer.\n\n"
-                    "Pour qu'elle continue à tourner icône dans la barre système, installer "
-                    "l'extension « AppIndicator and KStatusNotifierItem Support » "
-                    "(GNOME Shell) ou l'équivalent de votre environnement, puis relancer "
-                    "l'application."))
+                    "No system tray indicator is available on this Linux session, "
+                    "the application cannot stay in the background and will close.\n\n"
+                    "For it to keep running as an icon in the system tray, install "
+                    "the “AppIndicator and KStatusNotifierItem Support” extension "
+                    "(GNOME Shell) or the equivalent for your environment, then relaunch "
+                    "the application."))
 
         if self.travailleur and self.travailleur.isRunning():
             reponse = QMessageBox.question(
-                self, self.tr("Quitter"),
-                self.tr("Une mise à jour est en cours. Elle reprendra au prochain lancement.\n"
-                        "Quitter maintenant ?"))
+                self, self.tr("Quit"),
+                self.tr("An update is running. It will resume at the next launch.\n"
+                        "Quit now?"))
             if reponse != QMessageBox.Yes:
                 self._quitter_demande = False
                 event.ignore()

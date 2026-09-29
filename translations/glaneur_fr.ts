@@ -1,834 +1,862 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE TS>
-<TS version="2.1" language="fr" sourcelanguage="fr">
+<TS version="2.1" language="fr" sourcelanguage="en">
 <context>
     <name>BugReport</name>
     <message>
-        <location filename="../Glaneur/bug_report.py" line="112"/>
-        <source>Dernières lignes de log ({n} max)</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/bug_report.py" line="112" />
+        <source>Last log lines ({n} max)</source>
+        <translation>Dernières lignes de log ({n} max)</translation>
     </message>
     <message>
-        <location filename="../Glaneur/bug_report.py" line="135"/>
-        <source>date : {date}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/bug_report.py" line="135" />
+        <source>date: {date}</source>
+        <translation>date : {date}</translation>
     </message>
 </context>
 <context>
     <name>DialogueAPropos</name>
     <message>
-        <location filename="../app.py" line="688"/>
-        <source>À propos de Glaneur</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="688" />
+        <source>About Glaneur</source>
+        <translation>À propos de Glaneur</translation>
     </message>
     <message>
-        <location filename="../app.py" line="705"/>
+        <location filename="../app.py" line="705" />
         <source>Version {version}</source>
-        <translation type="unfinished"></translation>
+        <translation>Version {version}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="713"/>
-        <source>Télécharge et synchronise en local les images publiées par un site distant (WordPress, Djangoplicity…).</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="713" />
+        <source>Downloads and locally syncs images published by a remote site (WordPress, Djangoplicity…).</source>
+        <translation>Télécharge et synchronise en local les images publiées par un site distant (WordPress, Djangoplicity…).</translation>
     </message>
     <message>
-        <location filename="../app.py" line="725"/>
-        <source>Distribué sous licence GNU GPL v3. Voir le fichier LICENSE.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="725" />
+        <source>Distributed under the GNU GPL v3 licence. See the LICENSE file.</source>
+        <translation>Distribué sous licence GNU GPL v3. Voir le fichier LICENSE.</translation>
     </message>
 </context>
 <context>
     <name>DialoguePreferences</name>
     <message>
-        <location filename="../app.py" line="343"/>
-        <source>Préférences</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="343" />
+        <source>Preferences</source>
+        <translation>Préférences</translation>
     </message>
     <message>
-        <location filename="../app.py" line="352"/>
+        <location filename="../app.py" line="352" />
         <source>Site</source>
-        <translation type="unfinished"></translation>
+        <translation>Site</translation>
     </message>
     <message>
-        <location filename="../app.py" line="365"/>
-        <source>Type de site à interroger. WordPress lit l&apos;API REST /wp-json,
-Djangoplicity lit le flux JSON /images/d2d/ (ESO, ESA/Hubble…).</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="365" />
+        <source>Site type to query. WordPress reads the /wp-json REST API,
+Djangoplicity reads the /images/d2d/ JSON feed (ESO, ESA/Hubble…).</source>
+        <translation>Type de site à interroger. WordPress lit l'API REST /wp-json,
+Djangoplicity lit le flux JSON /images/d2d/ (ESO, ESA/Hubble…).</translation>
     </message>
     <message>
-        <location filename="../app.py" line="367"/>
-        <source>Type :</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="367" />
+        <source>Type:</source>
+        <translation>Type :</translation>
     </message>
     <message>
-        <location filename="../app.py" line="370"/>
-        <source>https://exemple.com</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="370" />
+        <source>https://example.com</source>
+        <translation>https://exemple.com</translation>
     </message>
     <message>
-        <location filename="../app.py" line="372"/>
-        <source>URL de base du site (sans /wp-json ni /images/d2d selon le type).</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="372" />
+        <source>Base URL of the site (without /wp-json or /images/d2d depending on the type).</source>
+        <translation>URL de base du site (sans /wp-json ni /images/d2d selon le type).</translation>
     </message>
     <message>
-        <location filename="../app.py" line="373"/>
-        <source>URL :</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="373" />
+        <source>URL:</source>
+        <translation>URL :</translation>
     </message>
     <message>
-        <location filename="../app.py" line="387"/>
-        <source>Résolution téléchargée pour Djangoplicity. Original = TIFF (souvent &gt;100 Mo).</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="387" />
+        <source>Resolution downloaded from Djangoplicity. Original = TIFF (often &gt;100 MB).</source>
+        <translation>Résolution téléchargée pour Djangoplicity. Original = TIFF (souvent &gt;100 Mo).</translation>
     </message>
     <message>
-        <location filename="../app.py" line="388"/>
-        <source>Format :</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="388" />
+        <source>Format:</source>
+        <translation>Format :</translation>
     </message>
     <message>
-        <location filename="../app.py" line="395"/>
+        <location filename="../app.py" line="395" />
         <source>Destination</source>
-        <translation type="unfinished"></translation>
+        <translation>Destination</translation>
     </message>
     <message>
-        <location filename="../app.py" line="399"/>
-        <source>Parcourir…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="399" />
+        <source>Browse…</source>
+        <translation>Parcourir…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="405"/>
+        <location filename="../app.py" line="405" />
         <source>Options</source>
-        <translation type="unfinished"></translation>
+        <translation>Options</translation>
     </message>
     <message>
-        <location filename="../app.py" line="412"/>
-        <source>Mise à jour :</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="412" />
+        <source>Update:</source>
+        <translation>Mise à jour :</translation>
     </message>
     <message>
-        <location filename="../app.py" line="418"/>
-        <source>Change la destination des nouvelles images. Les images déjà
-téléchargées restent là où elles sont.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="418" />
+        <source>Changes the destination of new images. Images already
+downloaded stay where they are.</source>
+        <translation>Change la destination des nouvelles images. Les images déjà
+téléchargées restent là où elles sont.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="420"/>
-        <source>Classement :</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="420" />
+        <source>Sort:</source>
+        <translation>Classement :</translation>
     </message>
     <message>
-        <location filename="../app.py" line="429"/>
+        <location filename="../app.py" line="429" />
         <source> px</source>
-        <translation type="unfinished"></translation>
+        <translation> px</translation>
     </message>
     <message>
-        <location filename="../app.py" line="432"/>
-        <source>Écarte les logos et vignettes sous cette largeur. 0 pour tout garder.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="432" />
+        <source>Discard logos and thumbnails below this width. 0 to keep everything.</source>
+        <translation>Écarte les logos et vignettes sous cette largeur. 0 pour tout garder.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="433"/>
-        <source>Largeur minimale :</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="433" />
+        <source>Minimum width:</source>
+        <translation>Largeur minimale :</translation>
     </message>
     <message>
-        <location filename="../app.py" line="435"/>
-        <source>Vérifier l&apos;intégrité des fichiers existants</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="435" />
+        <source>Verify integrity of existing files</source>
+        <translation>Vérifier l'intégrité des fichiers existants</translation>
     </message>
     <message>
-        <location filename="../app.py" line="438"/>
-        <source>Interroge le serveur sur chaque fichier connu (réponse 304 si identique).
-Plus lent, à réserver à un contrôle ponctuel.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="438" />
+        <source>Queries the server for each known file (304 response if identical).
+Slower, reserve for a one-off check.</source>
+        <translation>Interroge le serveur sur chaque fichier connu (réponse 304 si identique).
+Plus lent, à réserver à un contrôle ponctuel.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="443"/>
-        <source>Utiliser ce dossier pour le diaporama Windows</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="443" />
+        <source>Use this folder for the Windows slideshow</source>
+        <translation>Utiliser ce dossier pour le diaporama Windows</translation>
     </message>
     <message>
-        <location filename="../app.py" line="447"/>
-        <source>Configure le diaporama de fond d&apos;écran Windows pour piocher
-dans le dossier de téléchargement.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="447" />
+        <source>Configures the Windows wallpaper slideshow to pick from
+the download folder.</source>
+        <translation>Configure le diaporama de fond d'écran Windows pour piocher
+dans le dossier de téléchargement.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="451"/>
-        <source>Réduire dans la zone de notification à la fermeture</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="451" />
+        <source>Minimise to the notification area when closed</source>
+        <translation>Réduire dans la zone de notification à la fermeture</translation>
     </message>
     <message>
-        <location filename="../app.py" line="455"/>
-        <source>Lancer au démarrage de Windows</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="455" />
+        <source>Run at Windows startup</source>
+        <translation>Lancer au démarrage de Windows</translation>
     </message>
     <message>
-        <location filename="../app.py" line="460"/>
-        <source>Vérifier les mises à jour au démarrage</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="460" />
+        <source>Check for updates at startup</source>
+        <translation>Vérifier les mises à jour au démarrage</translation>
     </message>
     <message>
-        <location filename="../app.py" line="464"/>
-        <source>Interroge GitHub en arrière-plan au lancement de l&apos;application
-pour proposer la dernière version stable si elle est plus récente.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="464" />
+        <source>Queries GitHub in the background at application launch
+to offer the latest stable version if it is newer.</source>
+        <translation>Interroge GitHub en arrière-plan au lancement de l'application
+pour proposer la dernière version stable si elle est plus récente.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="471"/>
-        <source>Langue du système</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="471" />
+        <source>System language</source>
+        <translation>Langue du système</translation>
     </message>
     <message>
-        <location filename="../app.py" line="479"/>
-        <source>Le changement de langue prend effet au prochain lancement.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="479" />
+        <source>Language change takes effect at the next launch.</source>
+        <translation>Le changement de langue prend effet au prochain lancement.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="480"/>
-        <source>Langue :</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="480" />
+        <source>Language:</source>
+        <translation>Langue :</translation>
     </message>
     <message>
-        <location filename="../app.py" line="494"/>
-        <source>Où enregistrer les images ?</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="494" />
+        <source>Where to save the images?</source>
+        <translation>Où enregistrer les images ?</translation>
     </message>
     <message>
-        <location filename="../app.py" line="560"/>
-        <source>Impossible de modifier le démarrage automatique de Windows.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="560" />
+        <source>Cannot change Windows autostart.</source>
+        <translation>Impossible de modifier le démarrage automatique de Windows.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="573"/>
-        <source>Dossier de destination inaccessible : {erreur}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="573" />
+        <source>Destination folder unavailable: {error}</source>
+        <translation>Dossier de destination inaccessible : {erreur}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="577"/>
-        <source>Impossible de configurer le diaporama Windows (dossier vide ou COM indisponible).</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="577" />
+        <source>Cannot configure the Windows slideshow (empty folder or COM unavailable).</source>
+        <translation>Impossible de configurer le diaporama Windows (dossier vide ou COM indisponible).</translation>
     </message>
 </context>
 <context>
     <name>DialogueSignalerBug</name>
     <message>
-        <location filename="../app.py" line="605"/>
-        <location filename="../app.py" line="651"/>
-        <location filename="../app.py" line="668"/>
-        <source>Signaler un bug</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="605" />
+        <location filename="../app.py" line="651" />
+        <location filename="../app.py" line="668" />
+        <source>Report a bug</source>
+        <translation>Signaler un bug</translation>
     </message>
     <message>
-        <location filename="../app.py" line="614"/>
-        <source>Décris le problème ci-dessous. « Ouvrir sur GitHub » composera l&apos;issue et l&apos;ouvrira dans ton navigateur : tu n&apos;auras plus qu&apos;à cliquer « Submit new issue » sur la page GitHub.
+        <location filename="../app.py" line="614" />
+        <source>Describe the problem below. “Open on GitHub” will compose the issue and open it in your browser: you will only need to click “Submit new issue” on the GitHub page.
 
-Un compte GitHub est nécessaire pour soumettre l&apos;issue. Si tu n&apos;en as pas encore, tu pourras t&apos;en créer un gratuitement à l&apos;étape « Sign in » depuis la même page.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="624"/>
-        <source>Résumé court du problème</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="625"/>
-        <source>Titre :</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="630"/>
-        <source>Ce qui se passe, ce que tu attendais, comment reproduire.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="631"/>
-        <source>Description :</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="635"/>
-        <source>Joindre la version, la plateforme et les 50 dernières lignes de log</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="640"/>
-        <source>Ouvrir sur GitHub</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="647"/>
-        <source>Rapport de bug</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="652"/>
-        <source>Merci d&apos;ajouter une description avant d&apos;ouvrir l&apos;issue.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="661"/>
-        <source>Décoche « Joindre la version, la plateforme et les 50 dernières lignes de log » (tu pourras coller le log dans un commentaire), ou raccourcis la description.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="665"/>
-        <source>Raccourcis la description avant de réessayer.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="669"/>
-        <source>Ton rapport est trop long pour être pré-rempli via l&apos;URL GitHub ({longueur} caractères, maximum {plafond}).
+A GitHub account is required to submit the issue. If you do not have one yet, you can create one for free at the “Sign in” step from the same page.</source>
+        <translation>Décris le problème ci-dessous. « Ouvrir sur GitHub » composera l'issue et l'ouvrira dans ton navigateur : tu n'auras plus qu'à cliquer « Submit new issue » sur la page GitHub.
 
-{piste}</source>
-        <translation type="unfinished"></translation>
+Un compte GitHub est nécessaire pour soumettre l'issue. Si tu n'en as pas encore, tu pourras t'en créer un gratuitement à l'étape « Sign in » depuis la même page.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="624" />
+        <source>Short summary of the problem</source>
+        <translation>Résumé court du problème</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="625" />
+        <source>Title:</source>
+        <translation>Titre :</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="630" />
+        <source>What happens, what you expected, how to reproduce.</source>
+        <translation>Ce qui se passe, ce que tu attendais, comment reproduire.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="631" />
+        <source>Description:</source>
+        <translation>Description :</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="635" />
+        <source>Attach the version, platform and the last 50 log lines</source>
+        <translation>Joindre la version, la plateforme et les 50 dernières lignes de log</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="640" />
+        <source>Open on GitHub</source>
+        <translation>Ouvrir sur GitHub</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="647" />
+        <source>Bug report</source>
+        <translation>Rapport de bug</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="652" />
+        <source>Please add a description before opening the issue.</source>
+        <translation>Merci d'ajouter une description avant d'ouvrir l'issue.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="661" />
+        <source>Uncheck “Attach the version, platform and the last 50 log lines” (you can paste the log in a comment), or shorten the description.</source>
+        <translation>Décoche « Joindre la version, la plateforme et les 50 dernières lignes de log » (tu pourras coller le log dans un commentaire), ou raccourcis la description.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="665" />
+        <source>Shorten the description before trying again.</source>
+        <translation>Raccourcis la description avant de réessayer.</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="669" />
+        <source>Your report is too long to be pre-filled via the GitHub URL ({length} characters, maximum {cap}).
+
+{hint}</source>
+        <translation>Ton rapport est trop long pour être pré-rempli via l'URL GitHub ({longueur} caractères, maximum {plafond}).
+
+{piste}</translation>
     </message>
 </context>
 <context>
     <name>DialogueSupprimees</name>
     <message>
-        <location filename="../app.py" line="286"/>
-        <source>Images supprimées</source>
-        <extracomment>Structured engine event to render in the journal widget. Emitted with the raw :class:`EngineEvent` so the UI (main thread) is the one that calls :func:`_render_ui`, i.e. Qt&apos;s translation stack is only touched from the main thread.</extracomment>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="286" />
+        <source>Deleted images</source>
+        <extracomment>Structured engine event to render in the journal widget. Emitted with the raw :class:`EngineEvent` so the UI (main thread) is the one that calls :func:`_render_ui`, i.e. Qt's translation stack is only touched from the main thread.</extracomment>
+        <translation>Images supprimées</translation>
     </message>
     <message>
-        <location filename="../app.py" line="292"/>
-        <source>Ces images ont été téléchargées puis effacées du dossier.
-Cochez celles à retélécharger à la prochaine mise à jour.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="292" />
+        <source>These images were downloaded then erased from the folder.
+Tick the ones to re-download at the next update.</source>
+        <translation>Ces images ont été téléchargées puis effacées du dossier.
+Cochez celles à retélécharger à la prochaine mise à jour.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="297"/>
-        <source>{fichier}    (effacée le {date})</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="297" />
+        <source>{filename}    (deleted on {date})</source>
+        <translation>{fichier}    (effacée le {date})</translation>
     </message>
     <message>
-        <location filename="../app.py" line="306"/>
-        <source>Tout cocher</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="306" />
+        <source>Tick all</source>
+        <translation>Tout cocher</translation>
     </message>
 </context>
 <context>
     <name>Fenetre</name>
     <message>
-        <location filename="../app.py" line="795"/>
-        <source>&amp;Fichier</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="756" />
+        <source>Glaneur — Image downloader {version}</source>
+        <translation>&amp;Fichier</translation>
     </message>
     <message>
-        <location filename="../app.py" line="796"/>
-        <source>&amp;Mettre à jour maintenant</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="795" />
+        <source>&amp;File</source>
+        <translation>&amp;Mettre à jour maintenant</translation>
     </message>
     <message>
-        <location filename="../app.py" line="800"/>
-        <source>&amp;Arrêter</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="796" />
+        <source>&amp;Update now</source>
+        <translation>&amp;Arrêter</translation>
     </message>
     <message>
-        <location filename="../app.py" line="805"/>
-        <source>&amp;Ouvrir le dossier</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="800" />
+        <source>&amp;Stop</source>
+        <translation>&amp;Ouvrir le dossier</translation>
     </message>
     <message>
-        <location filename="../app.py" line="809"/>
-        <source>&amp;Images supprimées…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="805" />
+        <source>&amp;Open the folder</source>
+        <translation>&amp;Images supprimées…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="812"/>
-        <source>Supprimer ce &amp;fond d&apos;écran</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="809" />
+        <source>&amp;Deleted images…</source>
+        <translation>Supprimer ce &amp;fond d'écran</translation>
     </message>
     <message>
-        <location filename="../app.py" line="817"/>
-        <source>&amp;Quitter</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="812" />
+        <source>Remove this &amp;wallpaper</source>
+        <translation>&amp;Quitter</translation>
     </message>
     <message>
-        <location filename="../app.py" line="821"/>
+        <location filename="../app.py" line="817" />
+        <source>&amp;Quit</source>
+        <translation>&amp;Configuration</translation>
+    </message>
+    <message>
+        <location filename="../app.py" line="821" />
         <source>&amp;Configuration</source>
-        <translation type="unfinished"></translation>
+        <translation>&amp;Préférences…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="822"/>
-        <source>&amp;Préférences…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="822" />
+        <source>&amp;Preferences…</source>
+        <translation>&amp;Aide</translation>
     </message>
     <message>
-        <location filename="../app.py" line="826"/>
-        <source>&amp;Aide</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="826" />
+        <source>&amp;Help</source>
+        <translation>&amp;Rechercher des mises à jour…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="827"/>
-        <source>&amp;Rechercher des mises à jour…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="827" />
+        <source>&amp;Check for updates…</source>
+        <translation>&amp;Signaler un bug…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="831"/>
-        <source>&amp;Signaler un bug…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="831" />
+        <source>&amp;Report a bug…</source>
+        <translation>&amp;À propos…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="833"/>
-        <source>&amp;À propos…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="833" />
+        <source>&amp;About…</source>
+        <translation>Glaneur — Téléchargeur d'images {version}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="756"/>
-        <source>Glaneur — Téléchargeur d&apos;images {version}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="876" />
+        <location filename="../app.py" line="966" />
+        <source>Glaneur — Image downloader</source>
+        <translation>Glaneur — Téléchargeur d'images</translation>
     </message>
     <message>
-        <location filename="../app.py" line="876"/>
-        <location filename="../app.py" line="966"/>
-        <source>Glaneur — Téléchargeur d&apos;images</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="882" />
+        <location filename="../app.py" line="887" />
+        <source>Editable via Configuration → Preferences…</source>
+        <translation>Modifiable dans Configuration → Préférences…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="882"/>
-        <location filename="../app.py" line="887"/>
-        <source>Modifiable dans Configuration → Préférences…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="892" />
+        <location filename="../app.py" line="949" />
+        <source>Update now</source>
+        <translation>Mettre à jour maintenant</translation>
     </message>
     <message>
-        <location filename="../app.py" line="892"/>
-        <location filename="../app.py" line="949"/>
-        <source>Mettre à jour maintenant</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="897" />
+        <source>Stop</source>
+        <translation>Arrêter</translation>
     </message>
     <message>
-        <location filename="../app.py" line="897"/>
-        <source>Arrêter</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="902" />
+        <location filename="../app.py" line="1186" />
+        <source>Remove current wallpaper</source>
+        <translation>Supprimer le fond actuel</translation>
     </message>
     <message>
-        <location filename="../app.py" line="902"/>
-        <location filename="../app.py" line="1186"/>
-        <source>Supprimer le fond actuel</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="904" />
+        <source>Erases the image currently shown by the Windows slideshow
+and excludes it from future updates.</source>
+        <translation>Efface l'image actuellement affichée par le diaporama Windows
+et l'exclut des prochaines mises à jour.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="904"/>
-        <source>Efface l&apos;image actuellement affichée par le diaporama Windows
-et l&apos;exclut des prochaines mises à jour.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="910" />
+        <source>Deleted images…</source>
+        <translation>Images supprimées…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="910"/>
-        <source>Images supprimées…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="912" />
+        <source>Images erased from the folder that the application will no longer re-download.</source>
+        <translation>Images effacées du dossier, que l'application ne retélécharge plus.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="912"/>
-        <source>Images effacées du dossier, que l&apos;application ne retélécharge plus.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="928" />
+        <source>Ready.</source>
+        <translation>Prêt.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="928"/>
-        <source>Prêt.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../app.py" line="932"/>
+        <location filename="../app.py" line="932" />
         <source>Journal</source>
-        <translation type="unfinished"></translation>
+        <translation>Journal</translation>
     </message>
     <message>
-        <location filename="../app.py" line="947"/>
-        <source>Afficher la fenêtre</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="947" />
+        <source>Show window</source>
+        <translation>Afficher la fenêtre</translation>
     </message>
     <message>
-        <location filename="../app.py" line="951"/>
-        <source>Supprimer ce fond d&apos;écran</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="951" />
+        <source>Remove this wallpaper</source>
+        <translation>Supprimer ce fond d'écran</translation>
     </message>
     <message>
-        <location filename="../app.py" line="973"/>
-        <source>Ouvrir le dossier</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="973" />
+        <source>Open the folder</source>
+        <translation>Ouvrir le dossier</translation>
     </message>
     <message>
-        <location filename="../app.py" line="978"/>
-        <source>Préférences…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="978" />
+        <source>Preferences…</source>
+        <translation>Préférences…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="983"/>
-        <location filename="../app.py" line="1378"/>
-        <source>Quitter</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="983" />
+        <location filename="../app.py" line="1378" />
+        <source>Quit</source>
+        <translation>Quitter</translation>
     </message>
     <message>
-        <location filename="../app.py" line="993"/>
-        <source>Site : {site}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="993" />
+        <source>Site: {site}</source>
+        <translation>Site : {site}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="994"/>
-        <source>Dossier : {dossier}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="994" />
+        <source>Folder: {folder}</source>
+        <translation>Dossier : {dossier}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1015"/>
-        <source>Préférences</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1015" />
+        <source>Preferences</source>
+        <translation>Préférences</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1059"/>
-        <location filename="../app.py" line="1066"/>
-        <source>Rechercher des mises à jour</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1059" />
+        <location filename="../app.py" line="1066" />
+        <source>Check for updates</source>
+        <translation>Rechercher des mises à jour</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1060"/>
-        <source>Vous utilisez déjà la dernière version ({version}).</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1060" />
+        <source>You are already on the latest version ({version}).</source>
+        <translation>Vous utilisez déjà la dernière version ({version}).</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1072"/>
-        <source>Mise à jour disponible</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1072" />
+        <source>Update available</source>
+        <translation>Mise à jour disponible</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1073"/>
-        <source>Une nouvelle version est disponible.
+        <location filename="../app.py" line="1073" />
+        <source>A new version is available.
+
+Current version: {current}
+New version: {new}
+
+Download and install now?</source>
+        <translation>Une nouvelle version est disponible.
 
 Version actuelle : {actuelle}
 Nouvelle version : {nouvelle}
 
-Télécharger et installer maintenant ?</source>
-        <translation type="unfinished"></translation>
+Télécharger et installer maintenant ?</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1082"/>
-        <source>Mise à jour {version} reportée.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1082" />
+        <source>Update {version} deferred.</source>
+        <translation>Mise à jour {version} reportée.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1085"/>
-        <source>Téléchargement de la mise à jour {version}…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1085" />
+        <source>Downloading update {version}…</source>
+        <translation>Téléchargement de la mise à jour {version}…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1133"/>
-        <source>Lancement de l&apos;installateur impossible : {erreur}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1133" />
+        <source>Cannot launch the installer: {error}</source>
+        <translation>Lancement de l'installateur impossible : {erreur}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1137"/>
-        <source>Mise à jour lancée, fermeture pour installation…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1137" />
+        <source>Update launched, closing for installation…</source>
+        <translation>Mise à jour lancée, fermeture pour installation…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1145"/>
-        <source>Dossier inaccessible</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1145" />
+        <source>Folder unavailable</source>
+        <translation>Dossier inaccessible</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1152"/>
-        <source>Images supprimées</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1152" />
+        <source>Deleted images</source>
+        <translation>Images supprimées</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1153"/>
-        <source>Aucune image effacée n&apos;est mémorisée pour ce dossier.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1153" />
+        <source>No deleted image is recorded for this folder.</source>
+        <translation>Aucune image effacée n'est mémorisée pour ce dossier.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1159"/>
-        <source>{n} image(s) seront retéléchargées à la prochaine mise à jour.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1159" />
+        <source>{n} image(s) will be re-downloaded at the next update.</source>
+        <translation>{n} image(s) seront retéléchargées à la prochaine mise à jour.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1165"/>
-        <source>Fond d&apos;écran</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1165" />
+        <source>Wallpaper</source>
+        <translation>Fond d'écran</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1166"/>
-        <source>Impossible de déterminer l&apos;image actuellement affichée.
+        <location filename="../app.py" line="1166" />
+        <source>Cannot determine the image currently shown.
+Feature only available on Windows, with an
+active wallpaper slideshow.</source>
+        <translation>Impossible de déterminer l'image actuellement affichée.
 Fonction disponible uniquement sous Windows, avec un
-diaporama de fond d&apos;écran actif.</source>
-        <translation type="unfinished"></translation>
+diaporama de fond d'écran actif.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1181"/>
-        <source>Fond d&apos;écran hors du dossier suivi</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1181" />
+        <source>Wallpaper outside the tracked folder</source>
+        <translation>Fond d'écran hors du dossier suivi</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1182"/>
-        <source>L&apos;image affichée n&apos;appartient pas au dossier suivi :
+        <location filename="../app.py" line="1182" />
+        <source>The displayed image does not belong to the tracked folder:
+{wallpaper}
+
+Nothing was deleted.</source>
+        <translation>L'image affichée n'appartient pas au dossier suivi :
 {fond}
 
-Rien n&apos;a été supprimé.</source>
-        <translation type="unfinished"></translation>
+Rien n'a été supprimé.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1187"/>
-        <source>Supprimer définitivement cette image ?
+        <location filename="../app.py" line="1187" />
+        <source>Permanently delete this image?
+{wallpaper}
+
+It will no longer be re-downloaded by future updates.</source>
+        <translation>Supprimer définitivement cette image ?
 {fond}
 
-Elle ne sera plus retéléchargée par les mises à jour suivantes.</source>
-        <translation type="unfinished"></translation>
+Elle ne sera plus retéléchargée par les mises à jour suivantes.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1194"/>
-        <source>Fond d&apos;écran supprimé : {fond}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1194" />
+        <source>Wallpaper removed: {wallpaper}</source>
+        <translation>Fond d'écran supprimé : {fond}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1196"/>
-        <source>Échec de suppression du fond : {fond}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1196" />
+        <source>Wallpaper removal failed: {wallpaper}</source>
+        <translation>Échec de suppression du fond : {fond}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1205"/>
-        <source>Impossible d&apos;utiliser ce dossier :
-{erreur}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1205" />
+        <source>Cannot use this folder:
+{error}</source>
+        <translation>Impossible d'utiliser ce dossier :
+{erreur}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1209"/>
-        <source>Dossier invalide</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1209" />
+        <source>Invalid folder</source>
+        <translation>Dossier invalide</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1220"/>
-        <source>--- {horodatage} — début de la mise à jour</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1220" />
+        <source>--- {timestamp} — update started</source>
+        <translation>--- {horodatage} — début de la mise à jour</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1247"/>
-        <source>Arrêt en cours…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1247" />
+        <source>Stopping…</source>
+        <translation>Arrêt en cours…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1267"/>
-        <source>{fait}/{total} — {etiquette}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1267" />
+        <source>{done}/{total} — {label}</source>
+        <translation>{fait}/{total} — {etiquette}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1285"/>
-        <source>{n} image(s) déjà présentes, non retéléchargées.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1285" />
+        <source>{n} image(s) already present, not re-downloaded.</source>
+        <translation>{n} image(s) déjà présentes, non retéléchargées.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1289"/>
-        <source>{n} image(s) que vous aviez supprimée(s), ignorée(s) — bouton « Images supprimées… » pour en recharger.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1289" />
+        <source>{n} image(s) that you had deleted, skipped — use the “Deleted images…” button to re-queue them.</source>
+        <translation>{n} image(s) que vous aviez supprimée(s), ignorée(s) — bouton « Images supprimées… » pour en recharger.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1294"/>
-        <source>{n} échec(s) — seront retentés à la prochaine mise à jour.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1294" />
+        <source>{n} failure(s) — will be retried at the next update.</source>
+        <translation>{n} échec(s) — seront retentés à la prochaine mise à jour.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1308"/>
-        <source>{n} nouvelle(s) image(s) — {taille}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1308" />
+        <source>{n} new image(s) — {size}</source>
+        <translation>{n} nouvelle(s) image(s) — {taille}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1317"/>
-        <source>Mise à jour automatique déclenchée.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1317" />
+        <source>Automatic update triggered.</source>
+        <translation>Mise à jour automatique déclenchée.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1324"/>
-        <source>Glaneur — {texte}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1324" />
+        <source>Glaneur — {text}</source>
+        <translation>Glaneur — {texte}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1367"/>
-        <source>Fermeture de Glaneur</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1354" />
+        <source>The application keeps running in the background. Right-click the icon to quit.</source>
+        <translation>Fermeture de Glaneur</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1354"/>
-        <source>L&apos;application continue en arrière-plan. Clic droit sur l&apos;icône pour quitter.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1367" />
+        <source>Closing Glaneur</source>
+        <translation>L'application continue en arrière-plan. Clic droit sur l'icône pour quitter.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1369"/>
-        <source>Aucun indicateur système n&apos;est disponible sur cette session Linux, l&apos;application ne peut pas rester en arrière-plan et va se fermer.
+        <location filename="../app.py" line="1369" />
+        <source>No system tray indicator is available on this Linux session, the application cannot stay in the background and will close.
 
-Pour qu&apos;elle continue à tourner icône dans la barre système, installer l&apos;extension « AppIndicator and KStatusNotifierItem Support » (GNOME Shell) ou l&apos;équivalent de votre environnement, puis relancer l&apos;application.</source>
-        <translation type="unfinished"></translation>
+For it to keep running as an icon in the system tray, install the “AppIndicator and KStatusNotifierItem Support” extension (GNOME Shell) or the equivalent for your environment, then relaunch the application.</source>
+        <translation>Aucun indicateur système n'est disponible sur cette session Linux, l'application ne peut pas rester en arrière-plan et va se fermer.
+
+Pour qu'elle continue à tourner icône dans la barre système, installer l'extension « AppIndicator and KStatusNotifierItem Support » (GNOME Shell) ou l'équivalent de votre environnement, puis relancer l'application.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="1379"/>
-        <source>Une mise à jour est en cours. Elle reprendra au prochain lancement.
-Quitter maintenant ?</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="1379" />
+        <source>An update is running. It will resume at the next launch.
+Quit now?</source>
+        <translation>Une mise à jour est en cours. Elle reprendra au prochain lancement.
+Quitter maintenant ?</translation>
     </message>
 </context>
 <context>
-    <name>Planificateur</name>
+    <name>Scheduler</name>
     <message>
-        <location filename="../Glaneur/scheduler_labels.py" line="35"/>
-        <location filename="../Glaneur/scheduler_labels.py" line="38"/>
-        <source>Mise à jour automatique désactivée</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/scheduler_labels.py" line="35" />
+        <location filename="../Glaneur/scheduler_labels.py" line="38" />
+        <source>Automatic update disabled</source>
+        <translation>Mise à jour automatique désactivée</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler_labels.py" line="41"/>
-        <source>Prochaine mise à jour : imminente</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/scheduler_labels.py" line="41" />
+        <source>Next update: imminent</source>
+        <translation>Prochaine mise à jour : imminente</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler_labels.py" line="46"/>
-        <source>{jours} j {heures} h</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/scheduler_labels.py" line="46" />
+        <source>{days} d {hours} h</source>
+        <translation>{days} j {hours} h</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler_labels.py" line="49"/>
-        <source>{heures} h {minutes:02d} min</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/scheduler_labels.py" line="49" />
+        <source>{hours} h {minutes:02d} min</source>
+        <translation>{hours} h {minutes:02d} min</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler_labels.py" line="52"/>
+        <location filename="../Glaneur/scheduler_labels.py" line="52" />
         <source>{minutes} min</source>
-        <translation type="unfinished"></translation>
+        <translation>{minutes} min</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler_labels.py" line="55"/>
-        <source>Reprise reportée dans {delai} ({date})</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/scheduler_labels.py" line="55" />
+        <source>Resume deferred, in {delay} ({date})</source>
+        <translation>Reprise reportée dans {delay} ({date})</translation>
     </message>
     <message>
-        <location filename="../Glaneur/scheduler_labels.py" line="58"/>
-        <source>Prochaine mise à jour dans {delai} ({date})</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/scheduler_labels.py" line="58" />
+        <source>Next update in {delay} ({date})</source>
+        <translation>Prochaine mise à jour dans {delay} ({date})</translation>
     </message>
 </context>
 <context>
     <name>UiJournal</name>
     <message>
-        <location filename="../app.py" line="135"/>
-        <source>Manifeste illisible, reconstruction complète.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="135" />
+        <source>Manifest unreadable, full rebuild.</source>
+        <translation>Manifeste illisible, reconstruction complète.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="138"/>
-        <source>{count} image(s) déjà connues.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="138" />
+        <source>{count} image(s) already known.</source>
+        <translation>{count} image(s) déjà connues.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="141"/>
-        <source>Cache : ne redemande à l&apos;API que les médias postérieurs à {date}.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="141" />
+        <source>Cache: only asking the API for media newer than {date}.</source>
+        <translation>Cache : ne redemande à l'API que les médias postérieurs à {date}.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="146"/>
-        <source>{count} vignette(s) ou logo(s) écarté(s) (moins de {min_width} px).</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="146" />
+        <source>{count} thumbnail(s)/logo(s) discarded (below {min_width} px).</source>
+        <translation>{count} vignette(s) ou logo(s) écarté(s) (moins de {min_width} px).</translation>
     </message>
     <message>
-        <location filename="../app.py" line="151"/>
-        <source>Aucune image ne correspond aux critères.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="151" />
+        <source>No image matches the criteria.</source>
+        <translation>Aucune image ne correspond aux critères.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="154"/>
-        <source>{known} déjà à jour, {todo} à traiter.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="154" />
+        <source>{known} already up-to-date, {todo} to process.</source>
+        <translation>{known} déjà à jour, {todo} à traiter.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="159"/>
-        <source>{count} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="159" />
+        <source>{count} image(s) erased from disk, will not be re-downloaded.</source>
+        <translation>{count} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="164"/>
-        <source>Tout est déjà à jour.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="164" />
+        <source>Everything is already up to date.</source>
+        <translation>Tout est déjà à jour.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="167"/>
-        <source>Identification des galeries…</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="167" />
+        <source>Identifying galleries…</source>
+        <translation>Identification des galeries…</translation>
     </message>
     <message>
-        <location filename="../app.py" line="170"/>
-        <source>{filename} : introuvable</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="170" />
+        <source>{filename}: not found</source>
+        <translation>{filename} : introuvable</translation>
     </message>
     <message>
-        <location filename="../app.py" line="173"/>
-        <source>{filename} : erreur {error}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="173" />
+        <source>{filename}: {error}</source>
+        <translation>{filename} : erreur {error}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="176"/>
-        <source>{count} nouvelle(s) image(s), {size} téléchargés.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="176" />
+        <source>{count} new image(s), {size} downloaded.</source>
+        <translation>{count} nouvelle(s) image(s), {size} téléchargés.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="181"/>
-        <source>Interrompu — la reprise repartira d&apos;ici.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="181" />
+        <source>Interrupted — the resume will start here.</source>
+        <translation>Interrompu — la reprise repartira d'ici.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="184"/>
-        <source>Erreur : {error}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="184" />
+        <source>Error: {error}</source>
+        <translation>Erreur : {error}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="187"/>
-        <source>Problème d&apos;écriture : {error}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="187" />
+        <source>Write problem: {error}</source>
+        <translation>Problème d'écriture : {error}</translation>
     </message>
     <message>
-        <location filename="../app.py" line="190"/>
-        <source>Serveur indisponible ou quota atteint — reprise après {until}.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="190" />
+        <source>Server unavailable or quota reached — resume after {until}.</source>
+        <translation>Serveur indisponible ou quota atteint — reprise après {until}.</translation>
     </message>
     <message>
-        <location filename="../app.py" line="195"/>
-        <source>Serveur indisponible ou quota atteint — reprise différée.</source>
-        <translation type="unfinished"></translation>
+        <location filename="../app.py" line="195" />
+        <source>Server unavailable or quota reached — resume deferred.</source>
+        <translation>Serveur indisponible ou quota atteint — reprise différée.</translation>
     </message>
 </context>
 <context>
     <name>Updater</name>
     <message>
-        <location filename="../Glaneur/updater/github_release.py" line="74"/>
-        <source>Réponse GitHub Releases invalide</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/updater/qt_threads.py" line="57" />
+        <source>Update check failed: {error}</source>
+        <translation>Réponse GitHub Releases invalide</translation>
     </message>
     <message>
-        <location filename="../Glaneur/updater/qt_threads.py" line="57"/>
-        <source>Vérification de mise à jour impossible : {erreur}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/updater/qt_threads.py" line="92" />
+        <source>Windows installer or checksum missing from the release</source>
+        <translation>Vérification de mise à jour impossible : {erreur}</translation>
     </message>
     <message>
-        <location filename="../Glaneur/updater/qt_threads.py" line="92"/>
-        <source>Installateur Windows ou checksum absent de la release</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/updater/qt_threads.py" line="99" />
+        <source>SHA-256 verification failed</source>
+        <translation>Installateur Windows ou checksum absent de la release</translation>
     </message>
     <message>
-        <location filename="../Glaneur/updater/qt_threads.py" line="99"/>
-        <source>Vérification SHA-256 échouée</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/updater/qt_threads.py" line="104" />
+        <source>Update download failed: {error}</source>
+        <translation>Vérification SHA-256 échouée</translation>
     </message>
     <message>
-        <location filename="../Glaneur/updater/qt_threads.py" line="104"/>
-        <source>Téléchargement de la mise à jour impossible : {erreur}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/updater/github_release.py" line="74" />
+        <source>Invalid GitHub Releases response</source>
+        <translation>Téléchargement de la mise à jour impossible : {erreur}</translation>
     </message>
     <message>
-        <location filename="../Glaneur/updater/downloader.py" line="56"/>
-        <source>Téléchargement impossible : {erreur}</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/updater/downloader.py" line="56" />
+        <source>Download failed: {error}</source>
+        <translation>Téléchargement impossible : {erreur}</translation>
     </message>
     <message>
-        <location filename="../Glaneur/updater/downloader.py" line="61"/>
-        <source>Téléchargement vide</source>
-        <translation type="unfinished"></translation>
+        <location filename="../Glaneur/updater/downloader.py" line="61" />
+        <source>Empty download</source>
+        <translation>Téléchargement vide</translation>
     </message>
 </context>
 </TS>

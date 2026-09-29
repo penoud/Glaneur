@@ -312,7 +312,7 @@ class Transport:
                             min(tentative, len(_RETRY_BACKOFF_S) - 1)
                         ]
                     self.sleep(pause)
-        raise RuntimeError(f"L'API ne répond pas ({derniere})")
+        raise RuntimeError(f"The API is not responding ({derniere})")
 
 
 class Source(ABC):
