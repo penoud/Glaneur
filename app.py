@@ -992,6 +992,9 @@ class Fenetre(QMainWindow):
         self.stop_event = threading.Event()
         self.travailleur: Travailleur | None = None
         self.auto_en_cours = False
+        #: Index of the profile row the engine is currently updating.
+        #: Set by :meth:`_lancer`; consumed by :meth:`_terminer`.
+        self._row_en_cours: int = 0
         self._quitter_demande = False
         self.verification_mise_a_jour: UpdateCheck | None = None
         self.telechargement_mise_a_jour: UpdateDownload | None = None
@@ -1485,10 +1488,33 @@ class Fenetre(QMainWindow):
         else:
             self._ecrire(self.tr("Wallpaper removal failed: {wallpaper}").format(wallpaper=fond))
 
+    def _selected_profile_row(self) -> int:
+        """Return the row index of the currently selected profile.
+
+        Falls back to row 0 (the default profile) when no row is
+        selected or the selection is out of bounds. Auto-triggered
+        runs (:meth:`_verifier_echeance`) also come through here and
+        get the default profile, matching the pre-multi-profile
+        behaviour every existing scheduled setup depends on.
+        """
+        rows_ok = self.profils_model.rowCount()
+        if rows_ok <= 0:
+            return 0
+        indexes = self.table_profils.selectionModel().selectedRows()
+        if indexes and 0 <= indexes[0].row() < rows_ok:
+            return indexes[0].row()
+        return 0
+
     def _lancer(self, auto: bool = False) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        dossier = Path(self.cfg.target_dir).expanduser()
+        # Pick the profile to run: an auto-triggered run stays on the
+        # default profile (index 0) so scheduled cadence keeps matching
+        # today's behaviour; a user click respects the table selection.
+        row = 0 if auto else self._selected_profile_row()
+        profile = self.cfg.profiles()[row]
+        defaults = self.cfg.defaults()
+        dossier = Path(profile.target_dir).expanduser()
         try:
             dossier.mkdir(parents=True, exist_ok=True)
         except OSError as e:
@@ -1500,6 +1526,7 @@ class Fenetre(QMainWindow):
             return
 
         self.auto_en_cours = bool(auto)
+        self._row_en_cours = row
         self.stop_event.clear()
         self.bouton_lancer.setEnabled(False)
         self.action_maj.setEnabled(False)
@@ -1510,14 +1537,10 @@ class Fenetre(QMainWindow):
         self._ecrire(self.tr("--- {timestamp} — update started").format(
             timestamp=f"{datetime.now():%d/%m/%Y %H:%M}"))
 
-        # Per-profile fields go through the default-profile builder so
-        # this call site keeps working verbatim when E3 part B step 2
-        # flips Config storage to a real list[Profile]. The two
+        # Per-profile fields go through the picked profile; the two
         # inheritable settings (min_width, verify_integrity) resolve
         # via the None-inheritance rule against `defaults()`. The
         # request delay is application-level and stays on `cfg`.
-        profile = self.cfg.default_profile()
-        defaults = self.cfg.defaults()
         options = Options(
             target_dir=dossier,
             site=profile.site,
@@ -1533,7 +1556,8 @@ class Fenetre(QMainWindow):
         self.travailleur.progres.connect(self._progres)
         self.travailleur.fini.connect(self._terminer)
         self.profils_model.set_status(
-            QCoreApplication.translate("UiTable", "Running…"))
+            QCoreApplication.translate("UiTable", "Running…"),
+            row=self._row_en_cours)
         self.travailleur.start()
 
     def _journal_evenement(self, event: EngineEvent) -> None:
@@ -1581,7 +1605,8 @@ class Fenetre(QMainWindow):
         rendu = _render_ui(res.message_event) if res.message_event else res.message
         self.label_statut.setText(rendu)
         self._ecrire(rendu)
-        self.profils_model.set_status(self._status_from_result(res))
+        self.profils_model.set_status(self._status_from_result(res),
+                                      row=self._row_en_cours)
         if res.already_present:
             self._ecrire(self.tr("{n} image(s) already present, not re-downloaded.").format(
                 n=res.already_present))

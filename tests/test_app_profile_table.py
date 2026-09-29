@@ -233,6 +233,50 @@ class TestProfileRowFrom:
         assert row.status == "—"
 
 
+class TestSelectedProfileRow:
+    """`Fenetre._selected_profile_row` maps the QTableView selection
+    to a row index, falling back to 0 (default profile) when the
+    selection is missing or invalid."""
+
+    def _fenetre_stub(self, row_count: int, selected: int | None = None):
+        """Build a tiny stand-in for Fenetre with just what
+        _selected_profile_row reads: the model row count and the
+        current selection. Avoids constructing the full main window
+        (which spins timers, tray icon, etc.)."""
+        from unittest.mock import MagicMock
+        model = MagicMock()
+        model.rowCount.return_value = row_count
+        table = MagicMock()
+        selection = MagicMock()
+        if selected is None:
+            selection.selectedRows.return_value = []
+        else:
+            idx = MagicMock()
+            idx.row.return_value = selected
+            selection.selectedRows.return_value = [idx]
+        table.selectionModel.return_value = selection
+        stub = MagicMock()
+        stub.profils_model = model
+        stub.table_profils = table
+        return stub
+
+    def test_no_selection_returns_zero(self):
+        stub = self._fenetre_stub(row_count=3, selected=None)
+        assert app_module.Fenetre._selected_profile_row(stub) == 0
+
+    def test_selected_row_is_returned(self):
+        stub = self._fenetre_stub(row_count=3, selected=2)
+        assert app_module.Fenetre._selected_profile_row(stub) == 2
+
+    def test_out_of_range_selection_falls_back_to_zero(self):
+        stub = self._fenetre_stub(row_count=2, selected=5)
+        assert app_module.Fenetre._selected_profile_row(stub) == 0
+
+    def test_empty_model_returns_zero(self):
+        stub = self._fenetre_stub(row_count=0, selected=None)
+        assert app_module.Fenetre._selected_profile_row(stub) == 0
+
+
 # --------------------------------------------------------------------------- #
 # Status pipeline: RunResult → status column
 # --------------------------------------------------------------------------- #
