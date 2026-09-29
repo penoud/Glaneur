@@ -9,82 +9,79 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**US-EN-08 — AppStream metainfo and residual FR text mop-up.**
+**Lot 0.8 — CLI choices derived from `Glaneur/config.py` registries.**
 
-Eighth (and final) story of the sprint
-`docs/sprints/2026-09-french-to-english-complete.md`.
+Small independent fix from
+`docs/design/roadmap.md` and
+`docs/design/evolution-multi-sources.md` §2. Removes the last
+hard-coded copy of the source-type / image-format / sort-mode lists
+in `cli.py` and drives it from `SORT_MODES`, `SOURCE_TYPES` and
+`DJANGOPLICITY_FORMATS` — the single source of truth per boundary 3.
 
-Rewrites the three remaining French user-visible surfaces:
+Motivation: with profiles (lot 5) and filters (lot 11.2) coming
+next, these lists will drift apart if two copies remain.
 
-1. **CLI stdout summary** in `cli.py`: `téléchargées`, `reprises`,
-   `déjà à jour`, `inchangées`, `supprimées`, `ignorées`, `échecs`,
-   `volume`, `Interrompu.`, `Dossier déjà en cours d'utilisation`,
-   `image(s) remise(s) en file` → English.
-2. **AppStream metainfo** at `packaging/linux/org.glaneur.Glaneur.metainfo.xml`:
-   summary + description flipped to English and updated from
-   WordPress-only wording to include Djangoplicity, per CLAUDE.md's
-   long-standing known gap.
-3. **`Glaneur.desktop`** and **`bump-metainfo.sh`** comment strings.
+### Rename table
 
-Closes the "French → English" sprint. The only remaining intentional
-French text is the dual-language README.
+None. Argparse `choices=` on `--type`, `--format`, `--sort` /
+`--classement` now iterate `dict.values()` on the config registries
+instead of listing the literals inline.
 
 ## Directly modified
 
-- `cli.py` — stdout summary lines and `Interrupted` /
-  `Folder already in use` messages.
-- `tests/test_cli.py` — assertions on the CLI summary substrings and
-  the `--restore` output line.
-- `packaging/linux/org.glaneur.Glaneur.metainfo.xml` — `<summary>`,
-  `<description>`, XML comment.
-- `packaging/linux/Glaneur.desktop` — `Comment=`, `Keywords=`.
-- `packaging/linux/bump-metainfo.sh` — script comment header, error
-  message, success message.
-- `CLAUDE.md` — Known gaps list pruned: dispatch values, manifest
-  keys, CLI flags, Qt contexts, `.ts` source language, French
-  docstrings, and the AppStream WordPress-only gap all closed; only
-  the intentional dual-language README note remains, plus the
-  independent WINDOWS_PFX_BASE64 signing note (story 9).
+- `cli.py::_build_parser` — `choices=list(SOURCE_TYPES.values())`
+  for `--type`, `choices=list(DJANGOPLICITY_FORMATS.values())` for
+  `--format`, `choices=list(SORT_MODES.values())` for `--sort` and
+  its FR alias `--classement`. Imports come from
+  `Glaneur.config`.
+- `tests/test_cli.py` — new focused test locking the boundary:
+  argparse rejects `--type flickr` because `flickr` is not in
+  `SOURCE_TYPES.values()`, and if a new registry entry is added the
+  parser accepts it without a code change to `cli.py`.
 
 ## Direct dependencies
 
-- No engine, source, config, or persisted format touched.
-- No new tests: `tests/test_cli.py` already covers the CLI stdout
-  branches; only its French assertion substrings switch to EN.
+- `Glaneur/config.py` — read only; `SORT_MODES`, `SOURCE_TYPES`
+  and `DJANGOPLICITY_FORMATS` already exported (imported by
+  `app.py`).
 
 ## Explicitly out of scope
 
-- README dual-language content — sprint decision.
-- **`__version__`** — unchanged.
+- Lot 0.9 (contract test on `min_width` re-run after loosening) —
+  separate small fix, gets its own commit.
+- Any lot 5.x work (profiles) — depends on lots 3–4 and is much
+  bigger.
+- `__version__` — unchanged.
 
 ## Tests
 
-- `tests/test_cli.py::TestReturnCodes::test_130_on_keyboard_interrupt`
-  asserts on `"Interrupted"`.
-- `tests/test_cli.py::TestStdoutOutput::test_summary_contains_the_counters`
-  asserts on the new EN summary labels (`downloaded`, `resumed`,
-  `up-to-date`, `unchanged`, `deleted`, `skipped`, `failures`).
-- `tests/test_cli.py::TestRestore.*` asserts on `re-queued`.
+- Existing `TestOptionsFromCli::test_invalid_source_type_choice`,
+  `::test_invalid_format_choice` and
+  `::test_invalid_sort_mode_choice` still pass — they exercise the
+  same rejection surface.
+- New `TestChoicesTrackConfig` (or extension of TestOptionsFromCli):
+  monkey-patches a new key into `SOURCE_TYPES` and asserts the
+  parser accepts it, without touching `cli.py`.
 
 Verification:
 
-- `pytest -q` → still 507 passed / 2 skipped.
+- `pytest -q` → still 507+ passed / 2 skipped.
 - `python tools/check_coverage.py` → floors held.
-- `ruff check` on touched files: no new warnings.
+- `ruff check cli.py tests/test_cli.py` clean on baseline.
 
 ## Invariants
 
 - `__version__` unchanged.
-- No engine/source/config change.
-- No dispatch/manifest/cache key touched.
-- CLI flag names unchanged (US-EN-06 owns those).
-- Qt tr()/translate() sources unchanged (US-EN-07 owns those).
-- Coverage floors held.
+- No engine / source / config / persisted-format change.
+- CLI flag names unchanged; only their `choices=` argument moves
+  from a literal list to `dict.values()`.
+- Argparse's rejection of unknown values still fires; the runtime
+  behaviour is unchanged for every value already accepted before
+  this commit.
 
 ## Validation
 
-Level `local` per sprint doc.
+Level `local` per the roadmap's lot 0 footprint.
 
 - `pytest -q` green.
-- `python tools/check_coverage.py` green.
-- `ruff check cli.py tests/test_cli.py packaging/` clean on baseline.
+- `ruff check cli.py tests/test_cli.py` clean on baseline.

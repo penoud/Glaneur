@@ -219,6 +219,23 @@ class TestArgumentsToOptions:
         with pytest.raises(SystemExit):
             _run(monkeypatch, ["--sort", "aleatoire"])
 
+    def test_choices_track_config_registries(self, monkeypatch, tmp_path):
+        """Lot 0.8 boundary: CLI --type/--format/--sort choices come from
+        the SOURCE_TYPES / DJANGOPLICITY_FORMATS / SORT_MODES registries
+        in Glaneur.config, not from a hard-coded copy. Adding a value to
+        one of those registries must make the parser accept it, without
+        touching cli.py.
+        """
+        from Glaneur.config import SOURCE_TYPES
+        patched = dict(SOURCE_TYPES)
+        patched["Test source"] = "test-source"
+        monkeypatch.setattr(cli, "SOURCE_TYPES", patched)
+        # Argparse now accepts the new key. The stub engine ignores the
+        # value, so the run still returns 0.
+        rc = _run(monkeypatch, ["--type", "test-source"])
+        assert rc == 0
+        assert _FauxEngine.dernier.options.source_type == "test-source"
+
 
 # --------------------------------------------------------------------------- #
 # Exit codes

@@ -10,7 +10,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from Glaneur.config import Config
+from Glaneur.config import (
+    DJANGOPLICITY_FORMATS,
+    SORT_MODES,
+    SOURCE_TYPES,
+    Config,
+)
 from Glaneur.engine import (
     Engine,
     EngineEvent,
@@ -44,19 +49,27 @@ def _build_parser(c: Config) -> argparse.ArgumentParser:
                    default=c.target_dir, help="destination folder")
     p.add_argument("--dossier", dest="target_dir", help=argparse.SUPPRESS)
 
+    # Choices come from the single-source-of-truth registries in
+    # `Glaneur.config`; hard-coded copies drift as soon as a profile
+    # (lot 5) or filter (lot 11.2) adds a value (roadmap lot 0.8,
+    # boundary 3).
+    source_types = list(SOURCE_TYPES.values())
+    image_formats = list(DJANGOPLICITY_FORMATS.values())
+    sort_modes = list(SORT_MODES.values())
+
     p.add_argument("--type", dest="source_type",
-                   choices=["wordpress", "djangoplicity"],
+                   choices=source_types,
                    default=c.source_type, help="site type to query")
     p.add_argument("--format", dest="image_format",
-                   choices=["Large", "Original", "Small"],
+                   choices=image_formats,
                    default=c.image_format,
                    help="Djangoplicity resolution (ignored for WordPress)")
 
     p.add_argument("--sort", dest="sort_mode",
-                   choices=["gallery", "date", "flat"],
+                   choices=sort_modes,
                    default=c.sort_mode, help="folder layout of downloaded files")
     p.add_argument("--classement", dest="sort_mode",
-                   choices=["gallery", "date", "flat"], help=argparse.SUPPRESS)
+                   choices=sort_modes, help=argparse.SUPPRESS)
 
     p.add_argument("--min-width", dest="min_width", type=int,
                    default=c.min_width,
