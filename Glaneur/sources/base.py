@@ -57,10 +57,10 @@ class ErrorClassification:
     and Napoleon).
     """
 
-    #: Error category. ``"transitoire"`` = retry immediately,
-    #: ``"coupure"`` = the server cut us off (the engine must defer the
-    #: run), ``"definitif"`` = nothing to retry.
-    category: Literal["transitoire", "coupure", "definitif"]
+    #: Error category. ``"transient"`` = retry immediately,
+    #: ``"cut"`` = the server cut us off (the engine must defer the
+    #: run), ``"definitive"`` = nothing to retry.
+    category: Literal["transient", "cut", "definitive"]
     #: Number of seconds to wait before retrying, extracted from a
     #: ``Retry-After`` header (integer or HTTP-date). ``None`` if the
     #: information is missing — the engine falls back on its own backoff.
@@ -121,31 +121,31 @@ def classify_error(
     if reponse is not None:
         code = reponse.status_code
         if code in _CUT_STATUSES:
-            return ErrorClassification("coupure", retry_after)
+            return ErrorClassification("cut", retry_after)
         if code in _DEFINITIVE_STATUSES:
-            return ErrorClassification("definitif", retry_after)
+            return ErrorClassification("definitive", retry_after)
         if 500 <= code < 600:
             # 5xx not listed above: treated as transient
             # (an isolated 500 is not a cut).
-            return ErrorClassification("transitoire", retry_after)
+            return ErrorClassification("transient", retry_after)
 
     if exc is not None:
         if isinstance(exc, requests.exceptions.Timeout):
-            return ErrorClassification("transitoire", retry_after)
+            return ErrorClassification("transient", retry_after)
         if isinstance(exc, requests.exceptions.ConnectionError):
             message = str(exc)
             if any(mot in message for mot in _CUT_KEYWORDS):
-                return ErrorClassification("coupure", retry_after)
-            return ErrorClassification("transitoire", retry_after)
+                return ErrorClassification("cut", retry_after)
+            return ErrorClassification("transient", retry_after)
         if isinstance(exc, (
             requests.exceptions.MissingSchema,
             requests.exceptions.InvalidSchema,
             requests.exceptions.InvalidURL,
             requests.exceptions.URLRequired,
         )):
-            return ErrorClassification("definitif", retry_after)
+            return ErrorClassification("definitive", retry_after)
 
-    return ErrorClassification("transitoire", retry_after)
+    return ErrorClassification("transient", retry_after)
 
 
 class Interrupted(Exception):
@@ -188,7 +188,7 @@ class Element:
     #: :meth:`Glaneur.engine.core.Engine.file_complete` to validate).
     size: int | None = None
     #: Parent identifier (WordPress gallery, Djangoplicity collection)
-    #: for the ``galerie`` sort mode.
+    #: for the ``gallery`` sort mode.
     group: str | None = None
     #: Free-form metadata passed through to the manifest (credit,
     #: checksum, ...). The engine does not interpret them.
@@ -251,11 +251,11 @@ class Transport:
 
         The policy is driven by :func:`classify_error`:
 
-        - ``definitif`` (401, 403, 404 outside ``fin_si``, malformed URL,
-          ...): the original exception is re-raised on the first attempt
-          — no retry, no wait. Retrying would only add noise for the
-          remote and delay the caller.
-        - ``transitoire`` or ``coupure``: a new attempt is scheduled, up
+        - ``definitive`` (401, 403, 404 outside ``fin_si``, malformed
+          URL, ...): the original exception is re-raised on the first
+          attempt — no retry, no wait. Retrying would only add noise
+          for the remote and delay the caller.
+        - ``transient`` or ``cut``: a new attempt is scheduled, up
           to ``essais`` in total. When the server supplies a
           ``Retry-After``, it is honoured, capped at
           :data:`_MAX_RETRY_AFTER`; otherwise the default
@@ -279,7 +279,7 @@ class Transport:
             response code belongs to ``fin_si``.
 
         Raises:
-            requests.RequestException: On a ``definitif`` classification
+            requests.RequestException: On a ``definitive`` classification
                 (client errors, malformed URL); re-raised unchanged.
             RuntimeError: After ``essais`` transient/cut attempts are
                 exhausted without success.
@@ -297,7 +297,7 @@ class Transport:
             except requests.RequestException as e:
                 derniere = e
                 classification = classify_error(e, getattr(e, "response", None))
-                if classification.category == "definitif":
+                if classification.category == "definitive":
                     # 401/403/404 (outside fin_si), malformed URL, etc.:
                     # surface the exception rather than wasting attempts.
                     raise
@@ -377,7 +377,7 @@ class Source(ABC):
         """Resolve group identifiers into folder names.
 
         Default implementation: return ``connus`` as-is — no additional
-        grouping. Sources that expose a ``galerie`` sort mode (see
+        grouping. Sources that expose a ``gallery`` sort mode (see
         :attr:`sort_modes`) override this to query the missing titles.
 
         Args:

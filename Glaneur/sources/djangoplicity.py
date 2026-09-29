@@ -52,7 +52,7 @@ class Djangoplicity(Source):
     """Adapter for a Djangoplicity site exposing ``/images/d2d/``.
 
     Works with ESO, ESA/Hubble or ESA/Webb. Does not support the
-    ``galerie`` sort mode (the CMS does not expose a coherent album
+    ``gallery`` sort mode (the CMS does not expose a coherent album
     online — see the historical note in
     :file:`docs/design/evolution-multi-sources.md`).
 
@@ -64,10 +64,10 @@ class Djangoplicity(Source):
 
     #: Key used in ``Glaneur.sources.SOURCES``.
     type = "djangoplicity"
-    # No "galerie": Djangoplicity does not expose a coherent album online.
+    # No "gallery": Djangoplicity does not expose a coherent album online.
     # Sorting by `Subject.Category` (§9 Q5) is deliberately deferred.
-    #: Set of supported sort modes (no ``galerie``).
-    sort_modes = frozenset({"date", "plat"})
+    #: Set of supported sort modes (no ``gallery``).
+    sort_modes = frozenset({"date", "flat"})
 
     def __init__(self, base, transport, settings, journal=None, progression=None):
         """Instantiate the adapter and compute the ``d2d`` endpoint.

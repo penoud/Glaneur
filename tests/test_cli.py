@@ -141,7 +141,7 @@ class TestArgumentsToOptions:
                 "--dossier", str(tmp_path / "cli-dest"),
                 "--type", "djangoplicity",
                 "--format", "Small",
-                "--classement", "galerie",
+                "--classement", "gallery",
                 "--largeur-min", "1200",
                 "--delai", "2.25",
                 "--verifier",
@@ -156,7 +156,7 @@ class TestArgumentsToOptions:
         assert o.target_dir == (tmp_path / "cli-dest").expanduser()
         assert o.source_type == "djangoplicity"
         assert o.image_format == "Small"
-        assert o.sort_mode == "galerie"
+        assert o.sort_mode == "gallery"
         assert o.min_width == 1200
         assert o.delay == 2.25
         assert o.verify is True

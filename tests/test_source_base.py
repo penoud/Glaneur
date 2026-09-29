@@ -4,7 +4,7 @@
 Strict scope:
 
 - classification of a `requests` exception and/or an HTTP response into
-  the three categories (`transitoire`, `coupure`, `definitif`) and the
+  the three categories (`transient`, `cut`, `definitive`) and the
   extraction of the matching `Retry-After`;
 - retry policy of `Transport.get_json`: definitive errors raise
   immediately, transient/cut errors retry with `Retry-After` honoured
@@ -45,7 +45,7 @@ def _reponse(status: int, retry_after: str | None = None) -> requests.Response:
 
 class TestCut:
     def test_dns_name_resolution_error_is_a_cut(self):
-        """A DNS blackhole (NameResolutionError) is classified as `coupure`."""
+        """A DNS blackhole (NameResolutionError) is classified as `cut`."""
         exc = requests.exceptions.ConnectionError(
             "HTTPSConnectionPool(host='www.eso.org', port=443): "
             "Max retries exceeded with url: /images/d2d/ "
@@ -54,35 +54,35 @@ class TestCut:
             "Name or service not known)\"))"
         )
         c = classify_error(exc)
-        assert c.category == "coupure"
+        assert c.category == "cut"
 
     def test_dns_failed_to_resolve_is_a_cut(self):
-        """A lone 'Failed to resolve' message is enough to classify as `coupure`."""
+        """A lone 'Failed to resolve' message is enough to classify as `cut`."""
         exc = requests.exceptions.ConnectionError(
             "Failed to resolve 'example.invalid'"
         )
-        assert classify_error(exc).category == "coupure"
+        assert classify_error(exc).category == "cut"
 
     def test_dns_getaddrinfo_failed_is_a_cut(self):
-        """A 'getaddrinfo failed' message is classified as `coupure`."""
+        """A 'getaddrinfo failed' message is classified as `cut`."""
         exc = requests.exceptions.ConnectionError(
             "socket.gaierror: [Errno -2] getaddrinfo failed"
         )
-        assert classify_error(exc).category == "coupure"
+        assert classify_error(exc).category == "cut"
 
     def test_max_retries_exceeded_is_a_cut(self):
-        """ConnectionError 'Max retries exceeded' is classified as `coupure`."""
+        """ConnectionError 'Max retries exceeded' is classified as `cut`."""
         exc = requests.exceptions.ConnectionError(
             "HTTPSConnectionPool(host='x', port=443): "
             "Max retries exceeded with url: /"
         )
-        assert classify_error(exc).category == "coupure"
+        assert classify_error(exc).category == "cut"
 
     @pytest.mark.parametrize("status", [429, 502, 503, 504])
     def test_upstream_status_is_a_cut(self, status):
-        """429 and upstream 5xx (502/503/504) are classified as `coupure`."""
+        """429 and upstream 5xx (502/503/504) are classified as `cut`."""
         c = classify_error(None, _reponse(status))
-        assert c.category == "coupure"
+        assert c.category == "cut"
 
 
 # --------------------------------------------------------------------------- #
@@ -92,13 +92,13 @@ class TestCut:
 
 class TestTransient:
     def test_lone_timeout_is_transient(self):
-        """`requests.exceptions.Timeout` alone is `transitoire`."""
+        """`requests.exceptions.Timeout` alone is `transient`."""
         exc = requests.exceptions.Timeout("Read timed out.")
-        assert classify_error(exc).category == "transitoire"
+        assert classify_error(exc).category == "transient"
 
     def test_isolated_500_is_transient(self):
-        """An isolated 500 is not a cut: it stays `transitoire`."""
-        assert classify_error(None, _reponse(500)).category == "transitoire"
+        """An isolated 500 is not a cut: it stays `transient`."""
+        assert classify_error(None, _reponse(500)).category == "transient"
 
 
 # --------------------------------------------------------------------------- #
@@ -109,13 +109,13 @@ class TestTransient:
 class TestDefinitive:
     @pytest.mark.parametrize("status", [401, 403, 404])
     def test_client_errors_are_definitive(self, status):
-        """401/403/404 are classified as `definitif` (nothing to retry)."""
-        assert classify_error(None, _reponse(status)).category == "definitif"
+        """401/403/404 are classified as `definitive` (nothing to retry)."""
+        assert classify_error(None, _reponse(status)).category == "definitive"
 
     def test_missing_schema_is_definitive(self):
-        """A malformed URL (`MissingSchema`) is `definitif`."""
+        """A malformed URL (`MissingSchema`) is `definitive`."""
         exc = requests.exceptions.MissingSchema("Invalid URL 'foo'")
-        assert classify_error(exc).category == "definitif"
+        assert classify_error(exc).category == "definitive"
 
 
 # --------------------------------------------------------------------------- #
@@ -145,12 +145,12 @@ class TestRetryAfter:
         assert c.retry_after is None
 
     def test_dns_error_no_retry_after(self):
-        """A DNS `coupure` exposes no `retry_after` by default."""
+        """A DNS `cut` exposes no `retry_after` by default."""
         exc = requests.exceptions.ConnectionError(
             "Failed to resolve 'example.invalid'"
         )
         c = classify_error(exc)
-        assert c.category == "coupure"
+        assert c.category == "cut"
         assert c.retry_after is None
 
 
@@ -164,7 +164,7 @@ class TestClassificationDataclass:
         """`ErrorClassification` is immutable (frozen dataclass)."""
         c = classify_error(None, _reponse(429, retry_after="1"))
         with pytest.raises((AttributeError, Exception)):
-            c.category = "definitif"  # type: ignore[misc]
+            c.category = "definitive"  # type: ignore[misc]
 
     def test_classification_exposes_category_and_retry_after(self):
         """The returned object exposes at least `categorie` and `retry_after`."""

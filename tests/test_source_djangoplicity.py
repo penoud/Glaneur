@@ -90,9 +90,9 @@ class FauxServeur:
 class TestBase:
     def test_type_and_sort_modes(self):
         assert Djangoplicity.type == "djangoplicity"
-        # doc §3: "galerie" has no natural equivalent
-        assert "galerie" not in Djangoplicity.sort_modes
-        assert {"date", "plat"} <= Djangoplicity.sort_modes
+        # doc §3: "gallery" has no natural equivalent
+        assert "gallery" not in Djangoplicity.sort_modes
+        assert {"date", "flat"} <= Djangoplicity.sort_modes
 
     def test_endpoint_derived_from_base(self):
         s = _source(base="https://www.eso.org/public/")

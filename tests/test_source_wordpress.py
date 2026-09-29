@@ -50,7 +50,7 @@ def _media(id_, url="https://x/wp-content/uploads/2026/01/img.jpg",
 class TestBase:
     def test_type_and_sort_modes(self):
         assert WordPress.type == "wordpress"
-        assert WordPress.sort_modes == frozenset({"galerie", "date", "plat"})
+        assert WordPress.sort_modes == frozenset({"gallery", "date", "flat"})
 
     def test_base_normalise_slash_final(self):
         s = _wp(base="https://example.test/")
@@ -220,7 +220,7 @@ class TestBasesRest:
         types = {
             "post": {"rest_base": "posts"},
             "page": {"rest_base": "pages"},
-            "galerie": {"rest_base": "galeries"},
+            "gallery": {"rest_base": "galeries"},
             "attachment": {"rest_base": "media"},
             "wp_block": {"rest_base": "blocks"},
             "nav_menu_item": {"rest_base": "menu-items"},

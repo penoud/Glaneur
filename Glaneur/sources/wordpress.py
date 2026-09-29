@@ -31,8 +31,8 @@ def _clean(titre: str, defaut: str = "divers") -> str:
 class WordPress(Source):
     """Adapter for a WordPress site exposing ``/wp-json/wp/v2/``.
 
-    Supports the three sort modes (``galerie``, ``date``, ``plat``). The
-    ``galerie`` mode queries ``/wp-json/wp/v2/types`` to list the
+    Supports the three sort modes (``gallery``, ``date``, ``flat``). The
+    ``gallery`` mode queries ``/wp-json/wp/v2/types`` to list the
     available post types then resolves the parent identifiers into
     titles via the matching endpoint.
     """
@@ -40,7 +40,7 @@ class WordPress(Source):
     #: Key used in ``Glaneur.sources.SOURCES``.
     type = "wordpress"
     #: Set of supported sort modes.
-    sort_modes = frozenset({"galerie", "date", "plat"})
+    sort_modes = frozenset({"gallery", "date", "flat"})
 
     def __init__(self, base, transport, settings, journal=None, progression=None):
         """Instantiate the adapter and compute the v2 API URL.

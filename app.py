@@ -537,7 +537,7 @@ class DialoguePreferences(QDialog):
         c.site = self.champ_site.text().strip()
         c.target_dir = self.champ_dossier.text()
         c.interval_hours = INTERVALS.get(self.combo_intervalle.currentText(), 24)
-        c.sort_mode = SORT_MODES.get(self.combo_classement.currentText(), "galerie")
+        c.sort_mode = SORT_MODES.get(self.combo_classement.currentText(), "gallery")
         c.source_type = SOURCE_TYPES.get(self.combo_type.currentText(), "wordpress")
         c.image_format = DJANGOPLICITY_FORMATS.get(
             self.combo_format.currentText(), "Large")

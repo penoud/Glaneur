@@ -28,9 +28,9 @@ INTERVALS: dict[str, int] = {
 
 # sort modes offered in the UI: label -> stored value
 SORT_MODES: dict[str, str] = {
-    "Par galerie": "galerie",
+    "Par galerie": "gallery",
     "Par date": "date",
-    "Tout dans un dossier": "plat",
+    "Tout dans un dossier": "flat",
 }
 
 # supported site types: label -> key of the `sources.SOURCES` registry
@@ -158,6 +158,15 @@ _LEGACY_FIELD_ALIASES: dict[str, str] = {
     "langue": "language",
 }
 
+# Legacy sort_mode value aliases: a config.json written before US-EN-04
+# stored "galerie"/"plat" as the sort_mode value. Translate on load so
+# users do not lose their chosen sort mode; the next Config.save
+# rewrites the file with the English value.
+_LEGACY_SORT_MODE_ALIASES: dict[str, str] = {
+    "galerie": "gallery",
+    "plat": "flat",
+}
+
 
 @dataclass
 class Config:
@@ -178,8 +187,8 @@ class Config:
     interval_hours: int = 24
     #: Skips images narrower than this (in pixels).
     min_width: int = 800
-    #: ``galerie``, ``date`` or ``plat``.
-    sort_mode: str = "galerie"
+    #: ``gallery``, ``date`` or ``flat``.
+    sort_mode: str = "gallery"
     #: Key of the ``Glaneur.sources.SOURCES`` registry.
     source_type: str = "wordpress"
     #: Used by Djangoplicity; values in ``DJANGOPLICITY_FORMATS``.
@@ -247,6 +256,10 @@ class Config:
                     cle = _LEGACY_FIELD_ALIASES.get(cle, cle)
                     if cle in connus:
                         setattr(cfg, cle, valeur)
+                # Translate legacy sort_mode values ("galerie"/"plat")
+                # so US-EN-04 does not silently reset the user's choice.
+                if cfg.sort_mode in _LEGACY_SORT_MODE_ALIASES:
+                    cfg.sort_mode = _LEGACY_SORT_MODE_ALIASES[cfg.sort_mode]
             except (json.JSONDecodeError, OSError, TypeError):
                 pass  # unreadable config: fall back to default values
         if not cfg.target_dir:
@@ -286,7 +299,7 @@ class Config:
             self.interval_hours = 24
         self.min_width = max(0, min(int(self.min_width), 10000))
         if self.sort_mode not in SORT_MODES.values():
-            self.sort_mode = "galerie"
+            self.sort_mode = "gallery"
         if self.source_type not in SOURCE_TYPES.values():
             self.source_type = "wordpress"
         if self.image_format not in DJANGOPLICITY_FORMATS.values():

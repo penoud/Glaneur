@@ -95,12 +95,12 @@ class TestRetryAfter:
 class TestClassifyError:
     def test_5xx_outside_list_is_transient(self):
         c = classify_error(None, _reponse({}, status=500))
-        assert c.category == "transitoire"
+        assert c.category == "transient"
 
     def test_generic_connection_error_is_transient(self):
-        # ConnectionError without a "coupure" keyword: transient retry.
+        # ConnectionError without a "cut" keyword: transient retry.
         c = classify_error(requests.exceptions.ConnectionError("timeout doux"), None)
-        assert c.category == "transitoire"
+        assert c.category == "transient"
 
     def test_connection_error_with_keyword_is_a_cut(self):
         c = classify_error(
@@ -108,16 +108,16 @@ class TestClassifyError:
                 "NameResolutionError: unreachable",
             ), None,
         )
-        assert c.category == "coupure"
+        assert c.category == "cut"
 
     def test_invalid_url_is_definitive(self):
         c = classify_error(requests.exceptions.InvalidURL("no scheme"), None)
-        assert c.category == "definitif"
+        assert c.category == "definitive"
 
     def test_neither_response_nor_exception_is_transient(self):
         # Extreme fallback: nothing to classify. Kept as transient so
         # the engine at least retries once.
-        assert classify_error(None, None) == ErrorClassification("transitoire", None)
+        assert classify_error(None, None) == ErrorClassification("transient", None)
 
 
 # --------------------------------------------------------------------------- #

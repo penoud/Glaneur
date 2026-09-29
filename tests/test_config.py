@@ -139,7 +139,7 @@ class TestLoad:
     def test_missing_file_uses_default_values(self, tmp_path):
         cfg = Config.load(tmp_path / "absent.json")
         assert cfg.interval_hours == 24
-        assert cfg.sort_mode == "galerie"
+        assert cfg.sort_mode == "gallery"
         assert cfg.min_width == 800
         assert cfg.verify_integrity is False
         assert cfg.slideshow_dir is False
@@ -256,7 +256,7 @@ class TestValidate:
         c = self._neuve(tmp_path)
         c.sort_mode = "pouet"
         c.validate()
-        assert c.sort_mode == "galerie"
+        assert c.sort_mode == "gallery"
 
     def test_delay_floor(self, tmp_path):
         c = self._neuve(tmp_path)
@@ -290,20 +290,20 @@ class TestValidate:
         assert c.image_format == "Large"
 
     def test_sort_mode_snaps_when_source_does_not_support_it(self, tmp_path):
-        # Djangoplicity does not support "galerie": `valider` falls back to "date"
+        # Djangoplicity does not support "gallery": `valider` falls back to "date"
         c = self._neuve(tmp_path)
         c.source_type = "djangoplicity"
-        c.sort_mode = "galerie"
+        c.sort_mode = "gallery"
         c.validate()
         assert c.sort_mode == "date"
 
     def test_sort_mode_kept_when_supported(self, tmp_path):
-        # WordPress supports "galerie": nothing to change
+        # WordPress supports "gallery": nothing to change
         c = self._neuve(tmp_path)
         c.source_type = "wordpress"
-        c.sort_mode = "galerie"
+        c.sort_mode = "gallery"
         c.validate()
-        assert c.sort_mode == "galerie"
+        assert c.sort_mode == "gallery"
 
     def test_v1038_config_loads_without_new_fields(self, tmp_path):
         # config written by 1.0.38 (without type_source or format_image):
@@ -313,12 +313,12 @@ class TestValidate:
         chemin.write_text(json.dumps({
             "site": "https://old.example",
             "interval_hours": 6,
-            "sort_mode": "galerie",
+            "sort_mode": "gallery",
         }))
         c = Config.load(chemin)
         assert c.source_type == "wordpress"
         assert c.image_format == "Large"
-        assert c.sort_mode == "galerie"   # not snapped because WP supports it
+        assert c.sort_mode == "gallery"   # not snapped because WP supports it
 
 
 class TestSourceConstants:
@@ -485,3 +485,35 @@ class TestLegacyFieldAliases:
         }), encoding="utf-8")
         c = Config.load(chemin)
         assert c.target_dir == "/tmp/via-en"
+
+
+class TestLegacySortModeAliases:
+    """A ``config.json`` written before US-EN-04 used ``"galerie"`` /
+    ``"plat"`` as the ``sort_mode`` value. The load path translates
+    them, so the user does not silently lose their choice.
+    """
+
+    def test_galerie_becomes_gallery(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({"sort_mode": "galerie"}),
+                          encoding="utf-8")
+        assert Config.load(chemin).sort_mode == "gallery"
+
+    def test_plat_becomes_flat(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({"sort_mode": "plat"}),
+                          encoding="utf-8")
+        assert Config.load(chemin).sort_mode == "flat"
+
+    def test_date_is_kept_as_is(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({"sort_mode": "date"}),
+                          encoding="utf-8")
+        assert Config.load(chemin).sort_mode == "date"
+
+    def test_save_rewrites_with_english_value(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        chemin.write_text(json.dumps({"sort_mode": "galerie"}),
+                          encoding="utf-8")
+        Config.load(chemin).save()
+        assert json.loads(chemin.read_text())["sort_mode"] == "gallery"

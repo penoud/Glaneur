@@ -204,7 +204,7 @@ last 50 lines of log).
 | `target_dir` | image destination | user's Pictures folder |
 | `interval_hours` | 0, 6, 12, 24 or 168 | `24` |
 | `min_width` | width threshold in pixels | `800` |
-| `sort_mode` | `galerie`, `date` or `plat` | `galerie` |
+| `sort_mode` | `gallery`, `date` or `flat` | `gallery` |
 | `image_format` | Djangoplicity: `Large` / `Small` / `Original` | `Large` |
 | `verify_integrity` | conditional revalidation | `false` |
 | `check_updates_on_start` | queries GitHub Releases at launch | `true` |

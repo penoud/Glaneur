@@ -53,7 +53,7 @@ def main() -> int:
                    choices=["Large", "Original", "Small"],
                    default=c.image_format,
                    help="résolution Djangoplicity (ignoré pour WordPress)")
-    p.add_argument("--classement", choices=["galerie", "date", "plat"],
+    p.add_argument("--classement", choices=["gallery", "date", "flat"],
                    default=c.sort_mode)
     p.add_argument("--largeur-min", type=int, default=c.min_width)
     p.add_argument("--delai", type=float, default=c.request_delay)

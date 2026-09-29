@@ -224,13 +224,13 @@ class Engine:
         Args:
             element: Element to place.
             titres: ``{parent_id -> cleaned title}`` table resolved
-                upstream by the source, used for ``classement="galerie"``.
+                upstream by the source, used for ``sort_mode="gallery"``.
 
         Returns:
-            A relative sub-folder name, or an empty string in ``plat``
+            A relative sub-folder name, or an empty string in ``flat``
             mode (everything at the root level).
         """
-        if self.o.sort_mode == "plat":
+        if self.o.sort_mode == "flat":
             return ""
         if self.o.sort_mode == "date" or not element.group:
             return element.month or "divers"
@@ -288,15 +288,15 @@ class Engine:
         Returns:
             A four-tuple ``(status, infos, classification, error)``:
 
-            - ``status`` is a stable code, one of ``"ok"``, ``"repris"``,
-              ``"inchangé"``, ``"introuvable"`` or ``"erreur"``;
+            - ``status`` is a stable code, one of ``"ok"``, ``"resumed"``,
+              ``"unchanged"``, ``"not-found"`` or ``"error"``;
             - ``infos`` is the new state to write to the manifest, or
               ``None`` if nothing was fetched;
             - ``classification`` is the
               :class:`Glaneur.sources.base.ErrorClassification` of the
               error (``None`` on success), consumed by :meth:`run` to
               decide on a circuit-breaker trip;
-            - ``error`` is ``str(exception)`` on the ``"erreur"`` path
+            - ``error`` is ``str(exception)`` on the ``"error"`` path
               only, otherwise ``None`` — it lets the caller build a
               :class:`~Glaneur.engine.events.EngineEvent` for the
               per-file journal line.
@@ -323,9 +323,9 @@ class Engine:
         try:
             r = self.session.get(url, timeout=60, stream=True, headers=entetes)
             if r.status_code == 304:
-                return "inchangé", etat, None, None
+                return "unchanged", etat, None, None
             if r.status_code == 404:
-                return "introuvable", None, ErrorClassification("definitif", None), None
+                return "not-found", None, ErrorClassification("definitive", None), None
             if r.status_code == 416:
                 tmp.unlink(missing_ok=True)
                 depuis = 0
@@ -348,12 +348,12 @@ class Engine:
                 "url": url,
             }
             self._pause(self.o.delay)
-            return ("repris" if reprise else "ok"), infos, None, None
+            return ("resumed" if reprise else "ok"), infos, None, None
 
         except requests.RequestException as e:
             reponse = getattr(e, "response", None)
             classification = classify_error(e, reponse)
-            return "erreur", None, classification, str(e)
+            return "error", None, classification, str(e)
 
     def _trigger_defer(
         self,
@@ -519,8 +519,8 @@ class Engine:
                              for k, v in (cache.get("titres_parents") or {}).items()}
             inconnus = {e.group for e, connu in a_faire
                         if e.group and connu is None}
-            if (self.o.sort_mode == "galerie"
-                    and "galerie" in self.source.sort_modes
+            if (self.o.sort_mode == "gallery"
+                    and "gallery" in self.source.sort_modes
                     and inconnus):
                 self._progression(
                     0, len(a_faire),
@@ -558,16 +558,16 @@ class Engine:
                     res.downloaded += 1
                     res.bytes += infos["taille"]
                     echecs_consecutifs = 0
-                elif statut == "repris":
+                elif statut == "resumed":
                     res.resumed += 1
                     res.bytes += infos["taille"]
                     echecs_consecutifs = 0
-                elif statut == "inchangé":
+                elif statut == "unchanged":
                     res.unchanged += 1
                     echecs_consecutifs = 0
                 else:
                     res.failures += 1
-                    if statut == "introuvable":
+                    if statut == "not-found":
                         self._journal(EngineEvent(
                             "file-not-found", {"filename": file_path.name}))
                     else:
@@ -577,16 +577,16 @@ class Engine:
                              "error": error_text or ""},
                         ))
 
-                    categorie = classification.category if classification else "transitoire"
-                    if categorie == "coupure":
+                    categorie = classification.category if classification else "transient"
+                    if categorie == "cut":
                         self._trigger_defer(res, classification, i, len(a_faire))
                         break
-                    if categorie == "transitoire":
+                    if categorie == "transient":
                         echecs_consecutifs += 1
                         if echecs_consecutifs >= 5:
                             self._trigger_defer(res, None, i, len(a_faire))
                             break
-                    else:  # "definitif" — a single 404/URL error stays local
+                    else:  # "definitive" — a single 404/URL error stays local
                         echecs_consecutifs = 0
 
                 self._progression(i, len(a_faire), f"{file_path.parent.name}/{file_path.name}")

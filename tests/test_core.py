@@ -398,7 +398,7 @@ class TestFolderFor:
     `element.month` and `element.group`."""
 
     def test_flat(self, tmp_path):
-        m = _moteur(tmp_path, sort_mode="plat")
+        m = _moteur(tmp_path, sort_mode="flat")
         assert m.folder_for(_element(1), {}) == ""
 
     def test_date(self, tmp_path):
@@ -410,17 +410,17 @@ class TestFolderFor:
         assert m.folder_for(_element(1, month=None), {}) == "divers"
 
     def test_gallery_with_title(self, tmp_path):
-        m = _moteur(tmp_path, sort_mode="galerie")
+        m = _moteur(tmp_path, sort_mode="gallery")
         element = _element(1, group=17)
         assert m.folder_for(element, {"17": "match-du-siecle"}) == "match-du-siecle"
 
     def test_gallery_without_title(self, tmp_path):
-        m = _moteur(tmp_path, sort_mode="galerie")
+        m = _moteur(tmp_path, sort_mode="gallery")
         element = _element(1, group=17)
         assert m.folder_for(element, {}) == "contenu-17"
 
     def test_gallery_without_group_falls_back_to_date(self, tmp_path):
-        m = _moteur(tmp_path, sort_mode="galerie")
+        m = _moteur(tmp_path, sort_mode="gallery")
         element = _element(1, group=None, month="2025-03")
         assert m.folder_for(element, {}) == "2025-03"
 
@@ -485,7 +485,7 @@ class TestDownload:
         dest.write_bytes(b"deja")
         statut, infos, _, _ = m.download("https://x/f.jpg", dest,
                                          {"etag": "e1", "taille": 4})
-        assert statut == "inchangé"
+        assert statut == "unchanged"
         # the returned state is the one passed in, unaltered
         assert infos == {"etag": "e1", "taille": 4}
 
@@ -495,7 +495,7 @@ class TestDownload:
         m.session.get.return_value = FakeResponse(404)
         dest = tmp_path / "sortie.jpg"
         statut, infos, _, _ = m.download("https://x/f.jpg", dest, None)
-        assert statut == "introuvable"
+        assert statut == "not-found"
         assert infos is None
         assert not dest.exists()
 
@@ -507,7 +507,7 @@ class TestDownload:
         dest = tmp_path / "reprise.jpg"
         (dest.with_suffix(dest.suffix + ".part")).write_bytes(b"AB")
         statut, _infos, _, _ = m.download("https://x/f.jpg", dest, None)
-        assert statut == "repris"
+        assert statut == "resumed"
         # the final content concatenates the .part and the downloaded remainder
         assert dest.read_bytes() == b"ABXYZ"
         # the Range was sent
@@ -543,18 +543,18 @@ class TestDownload:
             "Wed, 01 Jan 2026 00:00:00 GMT"
 
     def test_network_error(self, tmp_path):
-        """Network exception yields status ``"erreur"`` and raw error text."""
+        """Network exception yields status ``"error"`` and raw error text."""
         m = _moteur(tmp_path)
         m.session = MagicMock()
         m.session.get.side_effect = requests.ConnectionError("boum")
         dest = tmp_path / "s.jpg"
         statut, infos, classification, error_text = m.download(
             "https://x/f.jpg", dest, None)
-        assert statut == "erreur"
+        assert statut == "error"
         assert infos is None
         assert not dest.exists()
         assert classification is not None
-        assert classification.category in {"coupure", "transitoire", "definitif"}
+        assert classification.category in {"cut", "transient", "definitive"}
         # Error text carries the raw exception message for the ``file-failed``
         # event; no French translation happens inside ``Engine.download``.
         assert error_text is not None
@@ -666,7 +666,7 @@ class TestRun:
                       month="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
-                          return_value=("repris", {"taille": 3, "etag": "",
+                          return_value=("resumed", {"taille": 3, "etag": "",
                                                    "modifie": "", "url": "u"},
                                         None, None)):
             res = moteur.run()
@@ -682,7 +682,7 @@ class TestRun:
         moteur._journal = journal.append
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
-                          return_value=("erreur", None, None, "boum")):
+                          return_value=("error", None, None, "boum")):
             res = moteur.run()
         assert res.failures == 1
         # The engine emits the failure through a structured event, no
@@ -766,7 +766,7 @@ class TestRun:
 # --------------------------------------------------------------------------- #
 
 class TestCircuitBreaker:
-    """Engine circuit breaker: clean stop on ``coupure`` or 5 ``transitoire``.
+    """Engine circuit breaker: clean stop on ``cut`` or 5 ``transient``.
 
     These tests mock :meth:`Engine.download` to inject the
     ``(statut, infos, ErrorClassification)`` triple directly — no network access,
@@ -786,12 +786,12 @@ class TestCircuitBreaker:
         ]
 
     def test_one_cut_interrupts_the_run(self, tmp_path):
-        """Une seule erreur ``coupure`` termine le run en report et stoppe la boucle."""
+        """A single ``cut`` error defers the run and stops the loop."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(3)
         reponses = [
             self._OK,
-            ("erreur", None, ErrorClassification("coupure", None), "coupure"),
+            ("error", None, ErrorClassification("cut", None), "cut"),
         ]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download", side_effect=reponses) as tel:
@@ -802,26 +802,26 @@ class TestCircuitBreaker:
         assert tel.call_count == 2
 
     def test_five_consecutive_transients_interrupt(self, tmp_path):
-        """Five consecutive ``transitoire`` failures trigger a defer."""
+        """Five consecutive ``transient`` failures trigger a defer."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
-        transitoire = ("erreur", None,
-                       ErrorClassification("transitoire", None), "timeout")
+        transient = ("error", None,
+                     ErrorClassification("transient", None), "timeout")
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
-                          side_effect=[transitoire] * 5) as tel:
+                          side_effect=[transient] * 5) as tel:
             res = moteur.run()
         assert res.deferred is True
         assert res.failures == 5
         assert tel.call_count == 5
 
     def test_success_resets_the_counter(self, tmp_path):
-        """A success between two runs of ``transitoire`` failures resets the counter."""
+        """A success between two runs of ``transient`` failures resets the counter."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
-        transitoire = ("erreur", None,
-                       ErrorClassification("transitoire", None), "timeout")
-        reponses = [transitoire] * 4 + [self._OK] + [transitoire] * 4 + [self._OK]
+        transient = ("error", None,
+                     ErrorClassification("transient", None), "timeout")
+        reponses = [transient] * 4 + [self._OK] + [transient] * 4 + [self._OK]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download", side_effect=reponses):
             res = moteur.run()
@@ -830,14 +830,14 @@ class TestCircuitBreaker:
         assert res.downloaded == 2
 
     def test_definitive_does_not_trip_the_breaker(self, tmp_path):
-        """Une erreur ``definitif`` (404) ne fait pas monter le compteur de ``transitoire``."""
+        """A ``definitive`` error (404) does not increment the ``transient`` counter."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(10)
-        transitoire = ("erreur", None,
-                       ErrorClassification("transitoire", None), "timeout")
-        introuvable = ("introuvable", None,
-                       ErrorClassification("definitif", None), None)
-        reponses = ([transitoire] * 4 + [introuvable] + [transitoire] * 4
+        transient = ("error", None,
+                     ErrorClassification("transient", None), "timeout")
+        not_found = ("not-found", None,
+                     ErrorClassification("definitive", None), None)
+        reponses = ([transient] * 4 + [not_found] + [transient] * 4
                     + [self._OK])
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download", side_effect=reponses):
@@ -848,8 +848,8 @@ class TestCircuitBreaker:
         """A ``Retry-After`` of 3600 s produces an ISO 8601 about 1 h in the future."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = self._elements(1)[0]
-        reponse = ("erreur", None,
-                   ErrorClassification("coupure", 3600.0), "quota")
+        reponse = ("error", None,
+                   ErrorClassification("cut", 3600.0), "quota")
         avant = datetime.now(timezone.utc)
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download", return_value=reponse):
@@ -867,8 +867,8 @@ class TestCircuitBreaker:
         """Without ``Retry-After``, ``res.retry_after`` stays empty: the scheduler decides."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = self._elements(1)[0]
-        reponse = ("erreur", None,
-                   ErrorClassification("coupure", None), "boum")
+        reponse = ("error", None,
+                   ErrorClassification("cut", None), "boum")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download", return_value=reponse):
             res = moteur.run()
@@ -879,11 +879,11 @@ class TestCircuitBreaker:
         """The on-disk manifest keeps the entries downloaded before the cut."""
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = self._elements(3)
-        coupure = ("erreur", None,
-                   ErrorClassification("coupure", None), "coupure")
+        cut = ("error", None,
+               ErrorClassification("cut", None), "cut")
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
-                          side_effect=[self._OK, coupure]):
+                          side_effect=[self._OK, cut]):
             res = moteur.run()
         assert res.deferred is True
         m = read_manifest(tmp_path)
@@ -893,11 +893,11 @@ class TestCircuitBreaker:
         """A cut does not write the engine cache (same as ``Interrupted``)."""
         moteur = _moteur(tmp_path, site="https://x", sort_mode="date")
         elements = self._elements(3)
-        coupure = ("erreur", None,
-                   ErrorClassification("coupure", None), "coupure")
+        cut = ("error", None,
+               ErrorClassification("cut", None), "cut")
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
-                          side_effect=[self._OK, coupure]):
+                          side_effect=[self._OK, cut]):
             moteur.run()
         assert not cache_path(tmp_path).exists()
 
@@ -1009,14 +1009,14 @@ class TestRunExtra:
         moteur = _moteur(tmp_path, verify=True)
         with _patch_inventaire(moteur, [_element(1, size=5)]), \
              patch.object(moteur, "download",
-                          return_value=("inchangé",
+                          return_value=("unchanged",
                                         {"fichier": "ok.jpg", "taille": 5,
                                          "etag": "e"}, None, None)):
             res = moteur.run()
         assert res.unchanged == 1
 
     def test_resolve_groups_called_in_gallery_mode(self, tmp_path):
-        moteur = _moteur(tmp_path, sort_mode="galerie")
+        moteur = _moteur(tmp_path, sort_mode="gallery")
         el = _element(1, group=42)
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur.source, "resolve_groups",
@@ -1033,10 +1033,10 @@ class TestRunExtra:
         assert m["1"]["fichier"].replace("\\", "/").startswith("match-42/")
 
     def test_resolve_groups_skipped_when_source_does_not_support(self, tmp_path):
-        # Djangoplicity does not have "galerie" in its sort modes. Even if
+        # Djangoplicity does not have "gallery" in its sort modes. Even if
         # the user left it in their options, the engine must not call
         # resoudre_groupes, and fall back to the by-date sort.
-        moteur = _moteur(tmp_path, sort_mode="galerie",
+        moteur = _moteur(tmp_path, sort_mode="gallery",
                          source_type="djangoplicity")
         el = _element(1, group="42", month="2026-03",
                       url="https://cdn.eso.org/large/potw.jpg")
@@ -1223,7 +1223,7 @@ class TestCacheAPI:
         assert cache["site"] == "https://x"
 
     def test_run_caches_gallery_titles(self, tmp_path):
-        m = _moteur(tmp_path, site="https://x", sort_mode="galerie")
+        m = _moteur(tmp_path, site="https://x", sort_mode="gallery")
         el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
                       group=42, month="2026-03")
         with _patch_inventaire(m, [el]), \
@@ -1247,7 +1247,7 @@ class TestCacheAPI:
             "site": "https://x",
             "titres_parents": {"42": "match-cache"},
         })
-        m = _moteur(tmp_path, site="https://x", sort_mode="galerie")
+        m = _moteur(tmp_path, site="https://x", sort_mode="gallery")
         el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
                       group=42, month="2026-03")
         appels = []
