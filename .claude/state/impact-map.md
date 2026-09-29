@@ -9,79 +9,101 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 0.8 — CLI choices derived from `Glaneur/config.py` registries.**
+**Lot 0.2 + 0.3 — Djangoplicity: `Next` origin check and format
+fallback logging.**
 
-Small independent fix from
-`docs/design/roadmap.md` and
-`docs/design/evolution-multi-sources.md` §2. Removes the last
-hard-coded copy of the source-type / image-format / sort-mode lists
-in `cli.py` and drives it from `SORT_MODES`, `SOURCE_TYPES` and
-`DJANGOPLICITY_FORMATS` — the single source of truth per boundary 3.
+Two small fixes from `docs/design/roadmap.md`'s lot 0, both in
+`Glaneur/sources/djangoplicity.py`. Bundled because they share the
+same file and test module and each is a few lines.
 
-Motivation: with profiles (lot 5) and filters (lot 11.2) coming
-next, these lists will drift apart if two copies remain.
+### Lot 0.2 — Stop if `Next` changes host or scheme
 
-### Rename table
+`Djangoplicity.inventory` today follows the `Next` URL as-is. If a
+misbehaving or compromised feed returns a `Next` pointing to a
+different host or scheme, we would happily crawl it. Per
+`evolution-multi-sources.md` §8, we now stop with a
+`RuntimeError` when scheme or netloc of `Next` disagree with `base`.
 
-None. Argparse `choices=` on `--type`, `--format`, `--sort` /
-`--classement` now iterate `dict.values()` on the config registries
-instead of listing the literals inline.
+### Lot 0.3 — Log every format fallback, still never `Original`
+
+`_select_resource` already excludes `Original` from the automatic
+fallback list (that half of 0.3 is done). The other half is missing:
+when the requested format is missing and we fall back to `Large` or
+`Small`, we return the fallback silently. Now we emit a
+``source-message`` journal entry so the user sees the fallback.
+
+Also flips two French free-text strings still in `inventory`
+(``Catalogue : …``, ``Inventaire… …``) to English, US-EN-08 residue
+missed because they were f-strings, not `tr()` sources.
 
 ## Directly modified
 
-- `cli.py::_build_parser` — `choices=list(SOURCE_TYPES.values())`
-  for `--type`, `choices=list(DJANGOPLICITY_FORMATS.values())` for
-  `--format`, `choices=list(SORT_MODES.values())` for `--sort` and
-  its FR alias `--classement`. Imports come from
-  `Glaneur.config`.
-- `tests/test_cli.py` — new focused test locking the boundary:
-  argparse rejects `--type flickr` because `flickr` is not in
-  `SOURCE_TYPES.values()`, and if a new registry entry is added the
-  parser accepts it without a code change to `cli.py`.
+- `Glaneur/sources/djangoplicity.py`:
+  - New helper `_same_origin(base, other) -> bool` at module level.
+  - `inventory()` verifies `_same_origin(self.base, suivante)` before
+    following; raises `RuntimeError` on mismatch.
+  - `_select_resource` becomes an instance method (already is) and
+    journals a fallback message when the returned format differs
+    from the requested one. Both element and journal go through the
+    existing `self._journal` sink.
+  - Two FR free-text strings translated to English.
+- `tests/test_source_djangoplicity.py`:
+  - New `TestNextOriginCheck` covering: `Next` on the same host is
+    followed; `Next` on a different host raises;
+    `Next` with a different scheme raises;
+    a scheme-relative or path-relative `Next` (empty netloc) is
+    treated as same-origin.
+  - New `TestFormatFallback` covering: requested==effective emits no
+    fallback journal; requested missing → effective is a fallback →
+    the source-message journal fires with both the requested and the
+    effective format; `Original` never picked as an automatic
+    fallback (existing behaviour re-asserted).
 
 ## Direct dependencies
 
-- `Glaneur/config.py` — read only; `SORT_MODES`, `SOURCE_TYPES`
-  and `DJANGOPLICITY_FORMATS` already exported (imported by
-  `app.py`).
+- `Glaneur/sources/base.py::Source` — unchanged; `_journal` and
+  `_progression` sinks used the same way.
+- Cache/manifest formats — unchanged.
 
 ## Explicitly out of scope
 
-- Lot 0.9 (contract test on `min_width` re-run after loosening) —
-  separate small fix, gets its own commit.
-- Any lot 5.x work (profiles) — depends on lots 3–4 and is much
-  bigger.
+- The `Checksum` level (roadmap lot 0.1) still needs the real-server
+  test of lot 1.3 to settle; not touched here.
+- WordPress `Link: rel="https://api.w.org/"` detection (roadmap
+  lot 7) — separate lot.
 - `__version__` — unchanged.
 
 ## Tests
 
-- Existing `TestOptionsFromCli::test_invalid_source_type_choice`,
-  `::test_invalid_format_choice` and
-  `::test_invalid_sort_mode_choice` still pass — they exercise the
-  same rejection surface.
-- New `TestChoicesTrackConfig` (or extension of TestOptionsFromCli):
-  monkey-patches a new key into `SOURCE_TYPES` and asserts the
-  parser accepts it, without touching `cli.py`.
+- Existing `tests/test_source_djangoplicity.py::TestInventory` and
+  `::TestToElement` still cover the happy paths.
+- Two new focused test classes cover the new branches with a
+  fake session and `_source()` helper already present in the module.
 
 Verification:
 
-- `pytest -q` → still 507+ passed / 2 skipped.
+- `pytest -q` → still passes; 509 + new tests.
 - `python tools/check_coverage.py` → floors held.
-- `ruff check cli.py tests/test_cli.py` clean on baseline.
+- `ruff check` on `Glaneur/sources/djangoplicity.py` and
+  `tests/test_source_djangoplicity.py`: no new warnings.
 
 ## Invariants
 
 - `__version__` unchanged.
-- No engine / source / config / persisted-format change.
-- CLI flag names unchanged; only their `choices=` argument moves
-  from a literal list to `dict.values()`.
-- Argparse's rejection of unknown values still fires; the runtime
-  behaviour is unchanged for every value already accepted before
-  this commit.
+- No persisted-format touched.
+- No dispatch-value literal touched.
+- The `Original` variant is still never picked as an automatic
+  fallback (this lot only *makes visible* the existing behaviour).
+- Same-origin follows the (scheme, netloc) pair; a relative
+  `Next` (empty netloc) is treated as same-origin — this matches
+  `urljoin` semantics used implicitly today when `requests` resolves
+  a relative URL.
 
 ## Validation
 
-Level `local` per the roadmap's lot 0 footprint.
+Level `local` — same-file changes, targeted tests, no boundary or
+persisted format touched. `invariant-reviewer` not required per the
+roadmap's lot 0 footprint.
 
 - `pytest -q` green.
-- `ruff check cli.py tests/test_cli.py` clean on baseline.
+- `ruff check` clean on touched files.

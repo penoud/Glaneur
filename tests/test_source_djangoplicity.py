@@ -11,6 +11,8 @@ from __future__ import annotations
 import threading
 from unittest.mock import patch
 
+import pytest
+
 from Glaneur.engine import Engine, Options, read_manifest
 from Glaneur.sources import Transport
 from Glaneur.sources.djangoplicity import Djangoplicity
@@ -304,6 +306,122 @@ class TestAfterInclusive:
         # manifest extended, but entry `a` was not duplicated
         m = read_manifest(tmp_path)
         assert "a:Large" in m and "b:Large" in m
+
+
+# --------------------------------------------------------------------------- #
+# Lot 0.2 — Next URL must stay on the configured origin
+# --------------------------------------------------------------------------- #
+
+class TestNextOriginCheck:
+    """Per docs/design/evolution-multi-sources.md §8: a `Next` that
+    switches host or scheme relative to the configured base is refused,
+    not crawled. A relative `Next` (no netloc) stays on origin by
+    construction and is allowed.
+    """
+
+    def test_next_on_same_host_is_followed(self):
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="https://x.example/images/d2d/?page=2")
+        page2 = _reponse([_entree("b")], next_url=None)
+        faux = FauxServeur({
+            "https://x.example/images/d2d/": page1,
+            "https://x.example/images/d2d/?page=2": page2,
+        })
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json):
+            r = list(s.inventory(None, None))
+        assert [e.ident for e in r] == ["a:Large", "b:Large"]
+
+    def test_next_on_different_host_raises(self):
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="https://evil.example/images/d2d/?page=2")
+        faux = FauxServeur({"https://x.example/images/d2d/": page1})
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json), \
+             pytest.raises(RuntimeError, match="leaves the configured origin"):
+            list(s.inventory(None, None))
+
+    def test_next_with_different_scheme_raises(self):
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="http://x.example/images/d2d/?page=2")
+        faux = FauxServeur({"https://x.example/images/d2d/": page1})
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json), \
+             pytest.raises(RuntimeError, match="leaves the configured origin"):
+            list(s.inventory(None, None))
+
+    def test_relative_next_is_allowed(self):
+        """A `Next` without an explicit netloc stays on origin by
+        construction (the HTTP client resolves it against the base)."""
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="/images/d2d/?page=2")
+        page2 = _reponse([_entree("b")], next_url=None)
+        faux = FauxServeur({
+            "https://x.example/images/d2d/": page1,
+            "/images/d2d/?page=2": page2,
+        })
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json):
+            r = list(s.inventory(None, None))
+        assert [e.ident for e in r] == ["a:Large", "b:Large"]
+
+
+# --------------------------------------------------------------------------- #
+# Lot 0.3 — format fallback must be visible (never silent)
+# --------------------------------------------------------------------------- #
+
+class TestFormatFallback:
+    """Per roadmap lot 0.3: when the requested format is missing and the
+    adapter falls back to Large or Small, the fallback is journalled so
+    the user sees it. `Original` is never picked as an automatic
+    fallback (existing behaviour re-asserted here).
+    """
+
+    def test_no_journal_when_requested_format_matches(self):
+        journal: list[str] = []
+        s = _source(format_image="Large")
+        s._journal = journal.append
+        el = s._to_element(_entree("a"))
+        assert el.ident == "a:Large"
+        assert not any("falling back" in m for m in journal)
+
+    def test_fallback_from_small_to_large_is_journalled(self):
+        """If the source only exposes Large and Original, and the user
+        asked for Small, the adapter falls back to Large and journals
+        the substitution with both formats named."""
+        journal: list[str] = []
+        s = _source(format_image="Small")
+        s._journal = journal.append
+        entree = _entree("a", ressources=[
+            _ressource("Original", "https://cdn.eso.org/original/a.tif",
+                       size=50_000_000, dims=(4096, 2160)),
+            _ressource("Large", "https://cdn.eso.org/large/a.jpg",
+                       size=3_500_000, dims=(1600, 900)),
+        ])
+        el = s._to_element(entree)
+        assert el.ident == "a:Large"   # fell back to Large
+        assert any("'Small'" in m and "'Large'" in m and "falling back" in m
+                   for m in journal), journal
+
+    def test_original_never_picked_as_fallback(self):
+        """If the user asked for Small and only Original is available,
+        the adapter refuses: `Original` is not in the automatic
+        fallback list — pulling down a one-GB TIFF is not a friendly
+        surprise. The Element comes back without a URL, which the
+        engine counts as skipped.
+        """
+        journal: list[str] = []
+        s = _source(format_image="Small")
+        s._journal = journal.append
+        entree = _entree("a", ressources=[
+            _ressource("Original", "https://cdn.eso.org/original/a.tif",
+                       size=50_000_000, dims=(4096, 2160)),
+        ])
+        el = s._to_element(entree)
+        assert el.url is None
+        # No misleading fallback message when there is nothing to fall
+        # back to.
+        assert not any("falling back" in m for m in journal)
 
 
 # --------------------------------------------------------------------------- #
