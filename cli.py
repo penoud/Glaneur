@@ -45,8 +45,15 @@ def _build_parser(c: Config) -> argparse.ArgumentParser:
     """
     p = argparse.ArgumentParser(
         description="Download images from a site (WordPress or Djangoplicity).")
+    # Per-profile defaults come through the forward-compat builder so
+    # this call site keeps working verbatim when E3 part B step 2
+    # flips Config storage to a real list[Profile] (roadmap §5.1).
+    # `request_delay` is application-level and stays on `c`.
+    profile = c.default_profile()
+    defaults = c.defaults()
+
     p.add_argument("-d", "--folder", dest="target_dir",
-                   default=c.target_dir, help="destination folder")
+                   default=profile.target_dir, help="destination folder")
     p.add_argument("--dossier", dest="target_dir", help=argparse.SUPPRESS)
 
     # Choices come from the single-source-of-truth registries in
@@ -59,20 +66,21 @@ def _build_parser(c: Config) -> argparse.ArgumentParser:
 
     p.add_argument("--type", dest="source_type",
                    choices=source_types,
-                   default=c.source_type, help="site type to query")
+                   default=profile.source_type, help="site type to query")
     p.add_argument("--format", dest="image_format",
                    choices=image_formats,
-                   default=c.image_format,
+                   default=profile.image_format,
                    help="Djangoplicity resolution (ignored for WordPress)")
 
     p.add_argument("--sort", dest="sort_mode",
                    choices=sort_modes,
-                   default=c.sort_mode, help="folder layout of downloaded files")
+                   default=profile.sort_mode,
+                   help="folder layout of downloaded files")
     p.add_argument("--classement", dest="sort_mode",
                    choices=sort_modes, help=argparse.SUPPRESS)
 
     p.add_argument("--min-width", dest="min_width", type=int,
-                   default=c.min_width,
+                   default=profile.effective_min_width(defaults),
                    help="skip images narrower than this (pixels)")
     p.add_argument("--largeur-min", dest="min_width", type=int,
                    help=argparse.SUPPRESS)
@@ -137,7 +145,7 @@ def main() -> int:
 
     options = Options(
         target_dir=Path(args.target_dir).expanduser(),
-        site=c.site,
+        site=c.default_profile().site,
         sort_mode=args.sort_mode,
         min_width=args.min_width,
         delay=args.delay,
