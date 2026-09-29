@@ -138,17 +138,17 @@ class TestArgumentsToOptions:
         rc = _run(
             monkeypatch,
             [
-                "--dossier", str(tmp_path / "cli-dest"),
+                "--folder", str(tmp_path / "cli-dest"),
                 "--type", "djangoplicity",
                 "--format", "Small",
-                "--classement", "gallery",
-                "--largeur-min", "1200",
-                "--delai", "2.25",
-                "--verifier",
+                "--sort", "gallery",
+                "--min-width", "1200",
+                "--delay", "2.25",
+                "--verify",
                 "--force",
-                "--pas-cache",
-                "--depuis", "2026-01-01",
-                "--jusqua", "2026-06-30",
+                "--no-cache",
+                "--since", "2026-01-01",
+                "--until", "2026-06-30",
             ],
         )
         assert rc == 0
@@ -161,9 +161,51 @@ class TestArgumentsToOptions:
         assert o.delay == 2.25
         assert o.verify is True
         assert o.force is True
-        assert o.use_cache is False   # --pas-cache inverts the default
+        assert o.use_cache is False   # --no-cache inverts the default
         assert o.since == "2026-01-01"
         assert o.until == "2026-06-30"
+
+    def test_fr_aliases_still_work(self, monkeypatch, tmp_path):
+        """Every FR flag from the pre-US-EN-06 CLI is preserved as a
+        hidden alias sharing the EN dest, so existing scripts and
+        scheduled tasks keep working."""
+        rc = _run(
+            monkeypatch,
+            [
+                "--dossier", str(tmp_path / "cli-dest"),
+                "--classement", "gallery",
+                "--largeur-min", "1200",
+                "--delai", "2.25",
+                "--verifier",
+                "--pas-cache",
+                "--depuis", "2026-01-01",
+                "--jusqua", "2026-06-30",
+            ],
+        )
+        assert rc == 0
+        o = _FauxEngine.dernier.options
+        assert o.target_dir == (tmp_path / "cli-dest").expanduser()
+        assert o.sort_mode == "gallery"
+        assert o.min_width == 1200
+        assert o.delay == 2.25
+        assert o.verify is True
+        assert o.use_cache is False
+        assert o.since == "2026-01-01"
+        assert o.until == "2026-06-30"
+
+    def test_help_hides_fr_aliases(self, monkeypatch, capsys):
+        """`--help` lists the canonical EN flags but no FR alias."""
+        with pytest.raises(SystemExit):
+            _run(monkeypatch, ["--help"])
+        out = capsys.readouterr().out
+        for en in ("--folder", "--sort", "--min-width", "--delay",
+                   "--verify", "--no-cache", "--since", "--until",
+                   "--restore"):
+            assert en in out, f"expected {en!r} in --help output"
+        for fr in ("--dossier", "--classement", "--largeur-min", "--delai",
+                   "--verifier", "--pas-cache", "--depuis", "--jusqua",
+                   "--restaurer"):
+            assert fr not in out, f"FR alias {fr!r} leaked into --help output"
 
     def test_invalid_source_type_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
@@ -175,7 +217,7 @@ class TestArgumentsToOptions:
 
     def test_invalid_sort_mode_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
-            _run(monkeypatch, ["--classement", "aleatoire"])
+            _run(monkeypatch, ["--sort", "aleatoire"])
 
 
 # --------------------------------------------------------------------------- #
@@ -282,7 +324,7 @@ class TestRestore:
 
         rc = _run(
             monkeypatch,
-            ["--dossier", str(tmp_path), "--restaurer", "12", "34", "56"],
+            ["--folder", str(tmp_path), "--restore", "12", "34", "56"],
         )
         assert rc == 0
         assert appels["target_dir"] == tmp_path.expanduser()
@@ -305,7 +347,7 @@ class TestRestore:
         monkeypatch.setattr(cli, "list_deleted", faux_lister)
         monkeypatch.setattr(cli, "restore", faux_restaurer)
 
-        rc = _run(monkeypatch, ["--dossier", str(tmp_path), "--restaurer"])
+        rc = _run(monkeypatch, ["--folder", str(tmp_path), "--restore"])
         assert rc == 0
         assert appels["ids"] == ["a", "b"]
         assert "2 image(s) remise(s)" in capsys.readouterr().out

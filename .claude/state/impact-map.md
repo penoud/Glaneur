@@ -9,116 +9,116 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**US-EN-05 — Manifest keys → English with a one-way read shim.**
+**US-EN-06 — CLI flags → English with hidden FR aliases.**
 
-Fifth story of the sprint
-`docs/sprints/2026-09-french-to-english-complete.md`. Depends on
-US-EN-04 (dispatch values landed in `cb6b68b`).
+Sixth story of the sprint
+`docs/sprints/2026-09-french-to-english-complete.md`. Independent of
+US-EN-03/04/05 in principle; runs on top of the current tree.
 
 ### Rename table
 
-| Old key | New key |
-|---|---|
-| `"taille"` | `"size"` |
-| `"fichier"` | `"filename"` |
-| `"modifie"` | `"modified"` |
-| `"supprime"` | `"deleted"` |
-| `"restaure"` | `"restored"` |
+| Old flag | New (canonical) flag | dest |
+|---|---|---|
+| `--dossier` | `--folder` (and `-d`) | `target_dir` |
+| `--classement` | `--sort` | `sort_mode` |
+| `--largeur-min` | `--min-width` | `min_width` |
+| `--delai` | `--delay` | `delay` |
+| `--verifier` | `--verify` | `verify` |
+| `--pas-cache` | `--no-cache` | `no_cache` |
+| `--depuis` | `--since` | `since` |
+| `--jusqua` | `--until` | `until` |
+| `--restaurer` | `--restore` | `restore` |
 
-Unchanged: `"etag"`, `"url"`, `"extra"`.
+Unchanged: `--type`, `--format`, `--force` (already English).
 
-### Read shim contract
+### Alias mechanism
 
-`read_manifest.py` gains `_MANIFEST_KEY_ALIASES` and translates every
-per-entry key found in the JSON before returning. A single pre-US-EN-05
-manifest keeps loading forever, and the next `write_manifest` call
-emits English keys. Only reads translate — writes stay literal.
+Each canonical EN flag registers via `add_argument("--folder", ...)`
+with visible help text. The FR alias registers via a second
+`add_argument("--dossier", dest="target_dir", help=argparse.SUPPRESS)`
+so it stays hidden from `--help` but keeps existing scripts working.
+Verified interactively: argparse accepts two `add_argument` calls
+sharing the same `dest`, and `SUPPRESS` hides the FR row from help
+output.
 
 ## Directly modified
 
-- `Glaneur/engine/read_manifest.py` — add `_MANIFEST_KEY_ALIASES`
-  and translation loop over every entry.
-- `Glaneur/engine/write_manifest.py` — no change (writes what's in
-  memory, which is now English keys).
-- `Glaneur/engine/_merge.py` — `"supprime"` → `"deleted"`,
-  `"restaure"` → `"restored"` in the mark-merging logic and its
-  docstring.
-- `Glaneur/engine/core.py` — every `etat["fichier"]`, `etat.get("taille")`,
-  `etat.get("modifie")`, `etat.get("supprime")`, `etat.get("restaure")`,
-  `etat["supprime"] = ...`, `etat.pop("restaure", ...)`, `e["fichier"]`,
-  and every `infos["fichier"]`, `infos["taille"]`, `infos["modifie"]`.
-  Also the docstring in `Engine.download` that lists ``infos`` keys.
-- `Glaneur/engine/delete_image.py` — `etat.get("fichier")`,
-  `entree["supprime"] = ...`, `entree.pop("restaure", ...)`.
-- `Glaneur/engine/list_deleted.py` — `etat.get("supprime")` filter,
-  the two sort keys, and the docstring naming `supprime`.
-- `Glaneur/engine/restore.py` — `etat.pop("supprime", ...)`,
-  `etat["restaure"] = True` and its docstring.
-- `app.py` — `DialogueSupprimees` reads `e.get("fichier", ...)` and
-  `e.get("supprime", ...)`. Rename to `filename` and `deleted`. Qt
-  translation placeholders (`{fichier}`) stay French (US-EN-07).
-- `cli.py` — nothing beyond `list_deleted` still returns `e["id"]`
-  (already English). Verify.
-- `tests/test_*.py` — every fixture and assertion that constructs
-  `write_manifest(..., {"1": {"fichier": ..., "taille": ...}})` or
-  reads `m["1"]["fichier"]` / `.get("supprime")` etc. Batch replace.
+- `cli.py` — the argparse block. Every visible help string and the
+  parser `description` translated to English at the same time. Every
+  `args.<fr_name>` reference (`args.dossier`, `args.classement`,
+  `args.delai`, `args.verifier`, `args.pas_cache`, `args.depuis`,
+  `args.jusqua`, `args.restaurer`, `args.largeur_min`) updated to
+  `args.<en_dest>`.
+- `tests/test_cli.py` — the `test_overrides_via_flags` scenario
+  switches to the EN flag names; a new `test_fr_aliases_still_work`
+  test locks the backwards-compat contract by driving the parser
+  with the FR flags and asserting the same Options are built.
+  `test_invalid_sort_mode_choice` swaps `--classement` → `--sort`.
+  `TestRestore` switches `--dossier`/`--restaurer` → `--folder`/
+  `--restore`.
 
 ## Direct dependencies
 
-- `Options`, `Element`, engine events: unchanged.
-- Cache format (`derniere_date_media`, `titres_parents`): unchanged
-  — US-EN-05 is manifest only. A cache-key rename is a separate US.
-- Config format: unchanged.
+- `Config`, `Options`, `Engine`: unchanged. Flags map to their
+  existing dataclass fields.
+- No manifest, cache, or dispatch-value changes.
 
 ## Explicitly out of scope
 
-- **Cache keys** (`derniere_date_media`, `titres_parents`) — separate
-  US, not part of US-EN-05.
-- **Config keys** — already renamed in an earlier batch; sort_mode
-  values were handled by US-EN-04.
-- **CLI flags** — US-EN-06.
-- **Qt UI translation placeholders** (`{fichier}`, `{taille}`
-  strings inside `tr(...)`) — US-EN-07.
+- **Stdout summary lines** (`téléchargées`, `reprises`, `déjà à
+  jour`, `inchangées`, `supprimées`, `ignorées`, `échecs`, `volume`)
+  — user-visible French UI strings; belong to US-EN-08 residual FR
+  text mop-up (or a locals-cleanup follow-up). Not touched here.
+- **`--type` / `--format` / `--force`** — already English, kept
+  as-is.
+- **`Interrompu.` message** on Ctrl+C — French user-visible; US-EN-08.
+- **`Dossier déjà en cours d'utilisation`** stderr message — French
+  user-visible; US-EN-08.
+- **CLI docstring examples** (`python cli.py --dossier ...`) — updated
+  in lockstep with the flag rename, since they'd otherwise document
+  a hidden alias.
+- **`--largeur-min` dest was `min_width`** already; no dataclass
+  rename here.
 - **`__version__`** — unchanged.
 
 ## Tests
 
-Every test that seeds a manifest with FR keys or asserts on FR keys
-gets the keys rewritten. A **new integration test** covers the read
-shim end-to-end: seed a manifest file on disk with FR keys → call
-`read_manifest` → assert the returned dict uses EN keys → run the
-engine or `_merge_ui_marks` → assert the written file has EN keys.
+`tests/test_cli.py` covers:
+- `test_overrides_via_flags` (renamed EN flags produce the same
+  Options as before).
+- **NEW** `test_fr_aliases_still_work` — same scenario but through
+  every FR alias; asserts identical Options.
+- `test_invalid_sort_mode_choice` uses the new EN name.
+- `TestRestore.test_restore_with_explicit_ids` and
+  `test_restore_without_ids_takes_all_deleted` use `--folder` and
+  `--restore`.
+- **NEW** `test_help_hides_fr_aliases` — captures `--help` output
+  via `SystemExit` from `parser.parse_args(["--help"])` and asserts
+  the EN names appear and no FR name is listed.
 
 Verification:
 
-- `pytest -q` → passes with 500+ tests (from 499, at least one new
-  migration test).
+- `pytest -q` → still passes, +2 new tests.
 - `python tools/check_coverage.py` → floors still met.
 - `ruff check` on touched files: no new warnings.
-- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` if
-  the docstring changes affect the API pages (Engine.download's
-  `infos` list of keys).
 
 ## Invariants
 
 - `__version__` unchanged.
-- No cache or config key touched.
-- No dispatch value literal touched.
-- No CLI flag renamed.
-- Read shim is strictly one-way (old → new). No new shim reads
-  English → French. No English → French key emitted on write.
-- After one round-trip (load an FR manifest, save without changes),
-  the on-disk file uses EN keys — this is the intended migration
-  path.
+- Every pre-US-EN-06 FR flag still parses to the same `Options`.
+- Help text lists only the canonical EN flags plus `-h`/`--help`.
+- No config, manifest, cache, or dispatch value literal touched.
+- No engine or source code touched.
 - Coverage floors held.
 
 ## Validation
 
-Level `full` — persisted format touched.
+Level `module` — a single-file CLI change with parametrised argparse
+plus its dedicated test module. `invariant-reviewer` not required
+per the sprint doc's per-US validation column, and no boundary or
+persisted format is crossed.
 
 - `pytest -q --cov=Glaneur --cov-branch` green.
 - `python tools/check_coverage.py` green.
-- Full `ruff check` no new warnings.
-- `sphinx-build -W` green if docstrings changed.
-- `invariant-reviewer` — persisted-format boundary, read shim
-  correctness, backwards-compatibility guarantee.
+- `ruff check` clean on `cli.py` and `tests/test_cli.py` (baseline
+  preserved).

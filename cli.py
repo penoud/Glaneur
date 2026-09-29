@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Command-line interface, useful for testing the engine without the UI.
 
-    python cli.py --dossier ./photos --dry-run
-    python cli.py --dossier ./photos --verifier
+    python cli.py --folder ./photos --verify
 """
 
 from __future__ import annotations
@@ -25,6 +24,79 @@ from Glaneur.scheduler import Scheduler
 from Glaneur.scheduler_labels import next_run_text
 
 
+def _build_parser(c: Config) -> argparse.ArgumentParser:
+    """Build the argparse parser, exposing English flags and hidden FR aliases.
+
+    Every French flag from the pre-US-EN-06 CLI is preserved as a
+    second ``add_argument`` call sharing the same ``dest`` and marked
+    ``help=argparse.SUPPRESS`` so it stays out of ``--help`` while
+    keeping existing scripts working.
+
+    Args:
+        c: Persisted config, used only to seed the flag defaults.
+
+    Returns:
+        A configured ``argparse.ArgumentParser``.
+    """
+    p = argparse.ArgumentParser(
+        description="Download images from a site (WordPress or Djangoplicity).")
+    p.add_argument("-d", "--folder", dest="target_dir",
+                   default=c.target_dir, help="destination folder")
+    p.add_argument("--dossier", dest="target_dir", help=argparse.SUPPRESS)
+
+    p.add_argument("--type", dest="source_type",
+                   choices=["wordpress", "djangoplicity"],
+                   default=c.source_type, help="site type to query")
+    p.add_argument("--format", dest="image_format",
+                   choices=["Large", "Original", "Small"],
+                   default=c.image_format,
+                   help="Djangoplicity resolution (ignored for WordPress)")
+
+    p.add_argument("--sort", dest="sort_mode",
+                   choices=["gallery", "date", "flat"],
+                   default=c.sort_mode, help="folder layout of downloaded files")
+    p.add_argument("--classement", dest="sort_mode",
+                   choices=["gallery", "date", "flat"], help=argparse.SUPPRESS)
+
+    p.add_argument("--min-width", dest="min_width", type=int,
+                   default=c.min_width,
+                   help="skip images narrower than this (pixels)")
+    p.add_argument("--largeur-min", dest="min_width", type=int,
+                   help=argparse.SUPPRESS)
+
+    p.add_argument("--delay", dest="delay", type=float,
+                   default=c.request_delay,
+                   help="floor of the pause between two requests (seconds)")
+    p.add_argument("--delai", dest="delay", type=float,
+                   help=argparse.SUPPRESS)
+
+    p.add_argument("--verify", dest="verify", action="store_true",
+                   help="revalidate files already present")
+    p.add_argument("--verifier", dest="verify", action="store_true",
+                   help=argparse.SUPPRESS)
+
+    p.add_argument("--force", action="store_true", help="ignore the manifest")
+
+    p.add_argument("--no-cache", dest="no_cache", action="store_true",
+                   help="ignore the API cache (max date, gallery titles)"
+                        " and re-fetch everything")
+    p.add_argument("--pas-cache", dest="no_cache", action="store_true",
+                   help=argparse.SUPPRESS)
+
+    p.add_argument("--since", dest="since", help="YYYY-MM-DD lower bound")
+    p.add_argument("--depuis", dest="since", help=argparse.SUPPRESS)
+
+    p.add_argument("--until", dest="until", help="YYYY-MM-DD upper bound")
+    p.add_argument("--jusqua", dest="until", help=argparse.SUPPRESS)
+
+    p.add_argument("--restore", dest="restore", nargs="*", metavar="ID",
+                   help="re-queue previously deleted images"
+                        " (all of them if no ID is given)")
+    p.add_argument("--restaurer", dest="restore", nargs="*", metavar="ID",
+                   help=argparse.SUPPRESS)
+    return p
+
+
 def main() -> int:
     """CLI entry point.
 
@@ -43,46 +115,24 @@ def main() -> int:
         keyboard interrupt (shell convention).
     """
     c = Config.load()
-    p = argparse.ArgumentParser(
-        description="Télécharge les images d'un site (WordPress ou Djangoplicity).")
-    p.add_argument("-d", "--dossier", default=c.target_dir, help="dossier de destination")
-    p.add_argument("--type", dest="source_type",
-                   choices=["wordpress", "djangoplicity"],
-                   default=c.source_type, help="type de site à interroger")
-    p.add_argument("--format", dest="image_format",
-                   choices=["Large", "Original", "Small"],
-                   default=c.image_format,
-                   help="résolution Djangoplicity (ignoré pour WordPress)")
-    p.add_argument("--classement", choices=["gallery", "date", "flat"],
-                   default=c.sort_mode)
-    p.add_argument("--largeur-min", type=int, default=c.min_width)
-    p.add_argument("--delai", type=float, default=c.request_delay)
-    p.add_argument("--verifier", action="store_true", help="revalider les fichiers existants")
-    p.add_argument("--force", action="store_true", help="ignorer le manifeste")
-    p.add_argument("--pas-cache", action="store_true",
-                   help="ignorer le cache API (date max, titres galeries) et tout redemander")
-    p.add_argument("--depuis", help="AAAA-MM-JJ")
-    p.add_argument("--jusqua", help="AAAA-MM-JJ")
-    p.add_argument("--restaurer", nargs="*", metavar="ID",
-                   help="remet en file des images supprimées (toutes si aucun ID)")
-    args = p.parse_args()
+    args = _build_parser(c).parse_args()
 
-    if args.restaurer is not None:
-        dossier = Path(args.dossier).expanduser()
-        ids = args.restaurer or [e["id"] for e in list_deleted(dossier)]
+    if args.restore is not None:
+        dossier = Path(args.target_dir).expanduser()
+        ids = args.restore or [e["id"] for e in list_deleted(dossier)]
         print(f"{restore(dossier, ids)} image(s) remise(s) en file.")
 
     options = Options(
-        target_dir=Path(args.dossier).expanduser(),
+        target_dir=Path(args.target_dir).expanduser(),
         site=c.site,
-        sort_mode=args.classement,
-        min_width=args.largeur_min,
-        delay=args.delai,
-        verify=args.verifier,
+        sort_mode=args.sort_mode,
+        min_width=args.min_width,
+        delay=args.delay,
+        verify=args.verify,
         force=args.force,
-        since=args.depuis,
-        until=args.jusqua,
-        use_cache=not args.pas_cache,
+        since=args.since,
+        until=args.until,
+        use_cache=not args.no_cache,
         source_type=args.source_type,
         image_format=args.image_format,
     )
