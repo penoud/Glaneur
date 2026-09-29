@@ -267,8 +267,8 @@ class TestAfterInclusive:
         fichier_a.write_bytes(b"contenu-a-attendu")
         from Glaneur.engine import write_manifest
         write_manifest(tmp_path, {
-            "a:Large": {"fichier": "a.jpg",
-                        "taille": len(b"contenu-a-attendu")},
+            "a:Large": {"filename": "a.jpg",
+                        "size": len(b"contenu-a-attendu")},
         })
 
         options = Options(
@@ -293,8 +293,8 @@ class TestAfterInclusive:
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 42, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 42, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             res = moteur.run()
 
@@ -332,8 +332,8 @@ class TestMissingResource:
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 3_500_000, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 3_500_000, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             res = moteur.run()
         # good: downloaded; bad: ignored

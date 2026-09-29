@@ -295,8 +295,8 @@ class DialogueSupprimees(QDialog):
         self.liste = QListWidget()
         for e in entrees:
             item = QListWidgetItem(self.tr("{fichier}    (effacée le {date})").format(
-                fichier=e.get("fichier", "?"),
-                date=e.get("supprime", "")[:10]))
+                fichier=e.get("filename", "?"),
+                date=e.get("deleted", "")[:10]))
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
             self.liste.addItem(item)

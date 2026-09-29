@@ -113,11 +113,11 @@ class TestManifestIO:
 
     def test_read_valid_json(self, tmp_path):
         manifest_path(tmp_path).write_text(
-            json.dumps({"1": {"fichier": "a.jpg"}}), encoding="utf-8")
-        assert read_manifest(tmp_path) == {"1": {"fichier": "a.jpg"}}
+            json.dumps({"1": {"filename": "a.jpg"}}), encoding="utf-8")
+        assert read_manifest(tmp_path) == {"1": {"filename": "a.jpg"}}
 
     def test_write_then_read(self, tmp_path):
-        m = {"7": {"fichier": "x/y.jpg", "taille": 42}}
+        m = {"7": {"filename": "x/y.jpg", "size": 42}}
         write_manifest(tmp_path, m)
         assert read_manifest(tmp_path) == m
 
@@ -129,13 +129,94 @@ class TestManifestIO:
 
     def test_write_creates_directory(self, tmp_path):
         sous = tmp_path / "nouveau"
-        write_manifest(sous, {"1": {"fichier": "a.jpg"}})
+        write_manifest(sous, {"1": {"filename": "a.jpg"}})
         assert (sous / ".etat.json").exists()
 
     def test_utf8_preserve(self, tmp_path):
-        m = {"1": {"fichier": "été/genève.jpg"}}
+        m = {"1": {"filename": "été/genève.jpg"}}
         write_manifest(tmp_path, m)
         assert read_manifest(tmp_path) == m
+
+
+# --------------------------------------------------------------------------- #
+# Manifest — legacy FR keys read shim (US-EN-05)
+# --------------------------------------------------------------------------- #
+
+class TestManifestLegacyKeyMigration:
+    """A ``.etat.json`` written before US-EN-05 uses FR keys. The read
+    shim (`_MANIFEST_KEY_ALIASES` in ``read_manifest``) translates them
+    so the rest of the engine only ever sees the English names, and the
+    next ``write_manifest`` migrates the file in place.
+    """
+
+    _LEGACY_ENTRY: dict = {  # noqa: RUF012 — read-only test fixture
+        "fichier": "gallery-a/img.jpg",
+        "taille": 4242,
+        "modifie": "Wed, 01 Jan 2026 00:00:00 GMT",
+        "supprime": "2026-02-01T10:00:00",
+        "restaure": True,
+        "etag": "abc",
+        "url": "https://x/img.jpg",
+    }
+
+    def test_read_translates_every_fr_key(self, tmp_path):
+        manifest_path(tmp_path).write_text(
+            json.dumps({"1": self._LEGACY_ENTRY}), encoding="utf-8")
+        m = read_manifest(tmp_path)
+        assert m == {"1": {
+            "filename": "gallery-a/img.jpg",
+            "size": 4242,
+            "modified": "Wed, 01 Jan 2026 00:00:00 GMT",
+            "deleted": "2026-02-01T10:00:00",
+            "restored": True,
+            "etag": "abc",
+            "url": "https://x/img.jpg",
+        }}
+
+    def test_unknown_keys_pass_through(self, tmp_path):
+        """A key not in the alias table survives unchanged (e.g. ``extra``,
+        or a future addition not yet aliased)."""
+        manifest_path(tmp_path).write_text(
+            json.dumps({"1": {"fichier": "a.jpg", "extra": {"credit": "X"}}}),
+            encoding="utf-8")
+        m = read_manifest(tmp_path)
+        assert m["1"] == {"filename": "a.jpg", "extra": {"credit": "X"}}
+
+    def test_round_trip_migrates_file_in_place(self, tmp_path):
+        """Load a legacy file, save the returned dict without changes:
+        the on-disk file now carries EN keys only."""
+        manifest_path(tmp_path).write_text(
+            json.dumps({"1": self._LEGACY_ENTRY}), encoding="utf-8")
+        write_manifest(tmp_path, read_manifest(tmp_path))
+        reecrit = json.loads(manifest_path(tmp_path).read_text(encoding="utf-8"))
+        for cle_fr in ("fichier", "taille", "modifie", "supprime", "restaure"):
+            assert cle_fr not in reecrit["1"]
+        for cle_en in ("filename", "size", "modified", "deleted", "restored"):
+            assert cle_en in reecrit["1"]
+
+    def test_hybrid_entry_prefers_english_en_first(self, tmp_path):
+        """When both variants coexist and the EN key comes first in the
+        JSON, the EN value wins."""
+        manifest_path(tmp_path).write_text(
+            json.dumps({"1": {"filename": "en.jpg", "fichier": "fr.jpg"}}),
+            encoding="utf-8")
+        assert read_manifest(tmp_path)["1"]["filename"] == "en.jpg"
+
+    def test_hybrid_entry_prefers_english_fr_first(self, tmp_path):
+        """When both variants coexist and the FR key comes first in the
+        JSON, the EN value STILL wins — the shim never lets a stale FR
+        legacy value overwrite a fresh EN one."""
+        manifest_path(tmp_path).write_text(
+            json.dumps({"1": {"fichier": "fr.jpg", "filename": "en.jpg"}}),
+            encoding="utf-8")
+        assert read_manifest(tmp_path)["1"]["filename"] == "en.jpg"
+
+    def test_non_dict_top_level_returns_empty(self, tmp_path):
+        """A manifest file whose top-level JSON is not an object (e.g.
+        a stray list from a corruption) is treated as absent."""
+        manifest_path(tmp_path).write_text(
+            json.dumps(["not", "a", "dict"]), encoding="utf-8")
+        assert read_manifest(tmp_path) == {}
 
 
 # --------------------------------------------------------------------------- #
@@ -148,9 +229,9 @@ class TestListDeleted:
 
     def test_filters_deleted_entries(self, tmp_path):
         write_manifest(tmp_path, {
-            "1": {"fichier": "a.jpg"},
-            "2": {"fichier": "b.jpg", "supprime": "2026-01-02T10:00:00"},
-            "3": {"fichier": "c.jpg", "supprime": "2026-01-01T10:00:00"},
+            "1": {"filename": "a.jpg"},
+            "2": {"filename": "b.jpg", "deleted": "2026-01-02T10:00:00"},
+            "3": {"filename": "c.jpg", "deleted": "2026-01-01T10:00:00"},
         })
         e = list_deleted(tmp_path)
         assert len(e) == 2
@@ -160,42 +241,42 @@ class TestListDeleted:
 
     def test_id_is_carried(self, tmp_path):
         write_manifest(tmp_path, {
-            "42": {"fichier": "x.jpg", "supprime": "2026-01-01"},
+            "42": {"filename": "x.jpg", "deleted": "2026-01-01"},
         })
         e = list_deleted(tmp_path)
         assert e[0]["id"] == "42"
-        assert e[0]["fichier"] == "x.jpg"
+        assert e[0]["filename"] == "x.jpg"
 
 
 class TestRestore:
     def test_removes_deleted_and_sets_restored(self, tmp_path):
         write_manifest(tmp_path, {
-            "1": {"fichier": "a.jpg", "supprime": "2026-01-01"},
+            "1": {"filename": "a.jpg", "deleted": "2026-01-01"},
         })
         assert restore(tmp_path, ["1"]) == 1
         entree = read_manifest(tmp_path)["1"]
-        assert "supprime" not in entree
-        assert entree["restaure"] is True
+        assert "deleted" not in entree
+        assert entree["restored"] is True
 
     def test_unknown_id_ignored(self, tmp_path):
-        write_manifest(tmp_path, {"1": {"fichier": "a.jpg"}})
+        write_manifest(tmp_path, {"1": {"filename": "a.jpg"}})
         assert restore(tmp_path, ["999"]) == 0
 
     def test_entry_without_deleted_ignored(self, tmp_path):
-        write_manifest(tmp_path, {"1": {"fichier": "a.jpg"}})
+        write_manifest(tmp_path, {"1": {"filename": "a.jpg"}})
         assert restore(tmp_path, ["1"]) == 0
 
     def test_multiple_ids(self, tmp_path):
         write_manifest(tmp_path, {
-            "1": {"fichier": "a.jpg", "supprime": "2026-01-01"},
-            "2": {"fichier": "b.jpg", "supprime": "2026-01-02"},
-            "3": {"fichier": "c.jpg"},
+            "1": {"filename": "a.jpg", "deleted": "2026-01-01"},
+            "2": {"filename": "b.jpg", "deleted": "2026-01-02"},
+            "3": {"filename": "c.jpg"},
         })
         assert restore(tmp_path, ["1", "2", "3"]) == 2
 
     def test_integer_id_normalised(self, tmp_path):
         write_manifest(tmp_path, {
-            "42": {"fichier": "a.jpg", "supprime": "2026-01-01"},
+            "42": {"filename": "a.jpg", "deleted": "2026-01-01"},
         })
         # restore accepts ints, must str() internally
         assert restore(tmp_path, [42]) == 1
@@ -213,27 +294,27 @@ class TestDeleteImage:
         autre = tmp_path / "galerie-a" / "podium.jpg"
         autre.write_bytes(b"y" * 10)
         write_manifest(tmp_path, {
-            "111": {"fichier": "galerie-a/match.jpg", "taille": 42, "etag": "abc"},
-            "222": {"fichier": "galerie-a/podium.jpg", "taille": 10, "etag": "def"},
+            "111": {"filename": "galerie-a/match.jpg", "size": 42, "etag": "abc"},
+            "222": {"filename": "galerie-a/podium.jpg", "size": 10, "etag": "def"},
         })
 
         assert delete_image(tmp_path, fichier) is True
         assert not fichier.exists()
         m = read_manifest(tmp_path)
-        assert "supprime" in m["111"]
-        assert "supprime" not in m["222"]
+        assert "deleted" in m["111"]
+        assert "deleted" not in m["222"]
         assert m["222"]["etag"] == "def"
 
     def test_restored_flag_removed(self, tmp_path):
         fichier = tmp_path / "image.jpg"
         fichier.write_bytes(b"y")
         write_manifest(tmp_path, {
-            "1": {"fichier": "image.jpg", "taille": 1, "restaure": True},
+            "1": {"filename": "image.jpg", "size": 1, "restored": True},
         })
         assert delete_image(tmp_path, fichier) is True
         entree = read_manifest(tmp_path)["1"]
-        assert "restaure" not in entree
-        assert "supprime" in entree
+        assert "restored" not in entree
+        assert "deleted" in entree
 
     def test_outside_directory(self, tmp_path):
         interne = tmp_path / "interne"
@@ -242,10 +323,10 @@ class TestDeleteImage:
         externe.mkdir()
         intrus = externe / "photo.jpg"
         intrus.write_bytes(b"z")
-        write_manifest(interne, {"1": {"fichier": "photo.jpg", "taille": 1}})
+        write_manifest(interne, {"1": {"filename": "photo.jpg", "size": 1}})
         assert delete_image(interne, intrus) is False
         assert intrus.exists()
-        assert "supprime" not in read_manifest(interne)["1"]
+        assert "deleted" not in read_manifest(interne)["1"]
 
     def test_sibling_directory_with_same_prefix(self, tmp_path):
         """`commonpath` avoids the trap of a naive `startswith`."""
@@ -262,25 +343,25 @@ class TestDeleteImage:
         (tmp_path / "galerie-b").mkdir()
         fichier = tmp_path / "galerie-b" / "match.jpg"
         fichier.write_bytes(b"y")
-        write_manifest(tmp_path, {"77": {"fichier": "galerie-b\\match.jpg"}})
+        write_manifest(tmp_path, {"77": {"filename": "galerie-b\\match.jpg"}})
         assert delete_image(tmp_path, fichier) is True
-        assert "supprime" in read_manifest(tmp_path)["77"]
+        assert "deleted" in read_manifest(tmp_path)["77"]
 
     def test_file_already_absent(self, tmp_path):
         fantome = tmp_path / "disparu.jpg"
-        write_manifest(tmp_path, {"9": {"fichier": "disparu.jpg", "taille": 5}})
+        write_manifest(tmp_path, {"9": {"filename": "disparu.jpg", "size": 5}})
         assert delete_image(tmp_path, fantome) is True
-        assert "supprime" in read_manifest(tmp_path)["9"]
+        assert "deleted" in read_manifest(tmp_path)["9"]
 
     def test_file_not_in_manifest(self, tmp_path):
         # valid file in the directory but unknown to the manifest: deletion
         # succeeds, nothing to mark
         fichier = tmp_path / "orphelin.jpg"
         fichier.write_bytes(b"o")
-        write_manifest(tmp_path, {"1": {"fichier": "autre.jpg"}})
+        write_manifest(tmp_path, {"1": {"filename": "autre.jpg"}})
         assert delete_image(tmp_path, fichier) is True
         assert not fichier.exists()
-        assert "supprime" not in read_manifest(tmp_path)["1"]
+        assert "deleted" not in read_manifest(tmp_path)["1"]
 
     def test_file_equal_to_directory_refused(self, tmp_path):
         # deleting the directory itself must absolutely not be accepted
@@ -304,23 +385,23 @@ class TestDeleteImage:
         # PermissionError inherits from OSError: the file stays, we return False
         fichier = tmp_path / "verrouille.jpg"
         fichier.write_bytes(b"y")
-        write_manifest(tmp_path, {"1": {"fichier": "verrouille.jpg"}})
+        write_manifest(tmp_path, {"1": {"filename": "verrouille.jpg"}})
         with patch("pathlib.Path.unlink",
                    side_effect=PermissionError("verrouille")):
             assert delete_image(tmp_path, fichier) is False
         # the mark was not set since the deletion failed
-        assert "supprime" not in read_manifest(tmp_path)["1"]
+        assert "deleted" not in read_manifest(tmp_path)["1"]
 
     def test_manifest_entry_without_file_ignored(self, tmp_path):
-        # an entry without a 'fichier' field must not crash the lookup
+        # an entry without a 'filename' field must not crash the lookup
         fichier = tmp_path / "cible.jpg"
         fichier.write_bytes(b"y")
         write_manifest(tmp_path, {
-            "1": {"taille": 42},   # no file
-            "2": {"fichier": "cible.jpg"},
+            "1": {"size": 42},   # no file
+            "2": {"filename": "cible.jpg"},
         })
         assert delete_image(tmp_path, fichier) is True
-        assert "supprime" in read_manifest(tmp_path)["2"]
+        assert "deleted" in read_manifest(tmp_path)["2"]
 
 
 # --------------------------------------------------------------------------- #
@@ -372,12 +453,12 @@ class TestFileComplete:
     def test_correct_size_via_state(self, tmp_path):
         f = tmp_path / "ok.jpg"
         f.write_bytes(b"abcde")
-        assert Engine.file_complete(f, {"taille": 5}, None) is True
+        assert Engine.file_complete(f, {"size": 5}, None) is True
 
     def test_wrong_size(self, tmp_path):
         f = tmp_path / "trop.jpg"
         f.write_bytes(b"abcde")
-        assert Engine.file_complete(f, {"taille": 999}, None) is False
+        assert Engine.file_complete(f, {"size": 999}, None) is False
 
     def test_fallback_to_api_size(self, tmp_path):
         f = tmp_path / "sans-etat.jpg"
@@ -473,9 +554,9 @@ class TestDownload:
         statut, infos, _, _ = m.download("https://x/f.jpg", dest, None)
         assert statut == "ok"
         assert dest.read_bytes() == b"payload"
-        assert infos["taille"] == 7
+        assert infos["size"] == 7
         assert infos["etag"] == "e1"
-        assert infos["modifie"] == "m1"
+        assert infos["modified"] == "m1"
 
     def test_304_unchanged(self, tmp_path):
         m = _moteur(tmp_path, verify=True)
@@ -484,10 +565,10 @@ class TestDownload:
         dest = tmp_path / "existe.jpg"
         dest.write_bytes(b"deja")
         statut, infos, _, _ = m.download("https://x/f.jpg", dest,
-                                         {"etag": "e1", "taille": 4})
+                                         {"etag": "e1", "size": 4})
         assert statut == "unchanged"
         # the returned state is the one passed in, unaltered
-        assert infos == {"etag": "e1", "taille": 4}
+        assert infos == {"etag": "e1", "size": 4}
 
     def test_404_not_found(self, tmp_path):
         m = _moteur(tmp_path)
@@ -537,7 +618,7 @@ class TestDownload:
         dest.write_bytes(b"deja")
         _statut, _infos, _classification, _error = m.download(
             "https://x/f.jpg", dest,
-            {"modifie": "Wed, 01 Jan 2026 00:00:00 GMT", "taille": 4})
+            {"modified": "Wed, 01 Jan 2026 00:00:00 GMT", "size": 4})
         _, kw = m.session.get.call_args
         assert kw["headers"].get("If-Modified-Since") == \
             "Wed, 01 Jan 2026 00:00:00 GMT"
@@ -596,8 +677,8 @@ def _patch_inventaire(moteur, elements):
 class TestRun:
     def test_ignores_deleted_entries(self, tmp_path):
         write_manifest(tmp_path, {
-            "42": {"fichier": "photo.jpg", "taille": 100,
-                   "supprime": "2026-01-01T00:00:00"},
+            "42": {"filename": "photo.jpg", "size": 100,
+                   "deleted": "2026-01-01T00:00:00"},
         })
         moteur = _moteur(tmp_path)
         with _patch_inventaire(moteur, [_element(42)]), \
@@ -605,7 +686,7 @@ class TestRun:
             res = moteur.run()
         assert res.skipped == 1
         assert tel.call_count == 0
-        assert "supprime" in read_manifest(tmp_path)["42"]
+        assert "deleted" in read_manifest(tmp_path)["42"]
 
     def test_ignores_elements_without_url(self, tmp_path):
         # A source that did not find a resource at the requested format:
@@ -621,7 +702,7 @@ class TestRun:
     def test_detects_local_erasure(self, tmp_path):
         # complete state but file gone → marked deleted, no download
         write_manifest(tmp_path, {
-            "8": {"fichier": "manquant.jpg", "taille": 10},
+            "8": {"filename": "manquant.jpg", "size": 10},
         })
         moteur = _moteur(tmp_path)
         with _patch_inventaire(moteur, [_element(8, size=10)]), \
@@ -629,13 +710,13 @@ class TestRun:
             res = moteur.run()
         assert res.deleted == 1
         assert tel.call_count == 0
-        assert "supprime" in read_manifest(tmp_path)["8"]
+        assert "deleted" in read_manifest(tmp_path)["8"]
 
     def test_already_present(self, tmp_path):
         f = tmp_path / "ok.jpg"
         f.write_bytes(b"1234567890")
         write_manifest(tmp_path, {
-            "1": {"fichier": "ok.jpg", "taille": 10},
+            "1": {"filename": "ok.jpg", "size": 10},
         })
         moteur = _moteur(tmp_path)
         with _patch_inventaire(moteur, [_element(1, size=10)]), \
@@ -650,15 +731,15 @@ class TestRun:
                       month="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 12, "etag": "e",
-                                               "modifie": "m", "url": "u"},
+                          return_value=("ok", {"size": 12, "etag": "e",
+                                               "modified": "m", "url": "u"},
                                         None, None)):
             res = moteur.run()
         assert res.downloaded == 1
         assert res.bytes == 12
         m = read_manifest(tmp_path)
         assert "5" in m
-        assert m["5"]["fichier"].replace("\\", "/") == "2026-03/f.jpg"
+        assert m["5"]["filename"].replace("\\", "/") == "2026-03/f.jpg"
 
     def test_incremental_resume(self, tmp_path):
         moteur = _moteur(tmp_path, sort_mode="date")
@@ -666,8 +747,8 @@ class TestRun:
                       month="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
-                          return_value=("resumed", {"taille": 3, "etag": "",
-                                                   "modifie": "", "url": "u"},
+                          return_value=("resumed", {"size": 3, "etag": "",
+                                                   "modified": "", "url": "u"},
                                         None, None)):
             res = moteur.run()
         assert res.resumed == 1
@@ -706,8 +787,8 @@ class TestRun:
                          width=2000, month="2026-04")
         with _patch_inventaire(moteur, [petit, grand]), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             res = moteur.run()
         assert res.downloaded == 1   # only the big one was processed
@@ -745,16 +826,16 @@ class TestRun:
     def test_force_ignores_manifest(self, tmp_path):
         # with force, an image marked deleted must be re-downloaded
         write_manifest(tmp_path, {
-            "1": {"fichier": "a.jpg", "taille": 100,
-                  "supprime": "2026-01-01T00:00:00"},
+            "1": {"filename": "a.jpg", "size": 100,
+                  "deleted": "2026-01-01T00:00:00"},
         })
         moteur = _moteur(tmp_path, sort_mode="date", force=True)
         el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
                       month="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)) as tel:
             res = moteur.run()
         assert res.downloaded == 1
@@ -773,7 +854,7 @@ class TestCircuitBreaker:
     no real waiting on backoffs.
     """
 
-    _OK = ("ok", {"taille": 1, "etag": "", "modifie": "", "url": "u"},
+    _OK = ("ok", {"size": 1, "etag": "", "modified": "", "url": "u"},
            None, None)
 
     @staticmethod
@@ -969,7 +1050,7 @@ class TestEnginePlumbing:
 
 class TestLoadManifest:
     def test_force_clears_in_memory_manifest(self, tmp_path):
-        write_manifest(tmp_path, {"1": {"fichier": "a.jpg"}})
+        write_manifest(tmp_path, {"1": {"filename": "a.jpg"}})
         m = _moteur(tmp_path, force=True)
         assert m.load_manifest() == {}
 
@@ -1004,13 +1085,13 @@ class TestRunExtra:
         f = tmp_path / "ok.jpg"
         f.write_bytes(b"12345")
         write_manifest(tmp_path, {
-            "1": {"fichier": "ok.jpg", "taille": 5, "etag": "e"},
+            "1": {"filename": "ok.jpg", "size": 5, "etag": "e"},
         })
         moteur = _moteur(tmp_path, verify=True)
         with _patch_inventaire(moteur, [_element(1, size=5)]), \
              patch.object(moteur, "download",
                           return_value=("unchanged",
-                                        {"fichier": "ok.jpg", "taille": 5,
+                                        {"filename": "ok.jpg", "size": 5,
                                          "etag": "e"}, None, None)):
             res = moteur.run()
         assert res.unchanged == 1
@@ -1022,15 +1103,15 @@ class TestRunExtra:
              patch.object(moteur.source, "resolve_groups",
                           return_value={"42": "match-42"}) as res_parents, \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             res = moteur.run()
         assert res.downloaded == 1
         res_parents.assert_called_once()
         # the file was placed in the "match-42" directory
         m = read_manifest(tmp_path)
-        assert m["1"]["fichier"].replace("\\", "/").startswith("match-42/")
+        assert m["1"]["filename"].replace("\\", "/").startswith("match-42/")
 
     def test_resolve_groups_skipped_when_source_does_not_support(self, tmp_path):
         # Djangoplicity does not have "gallery" in its sort modes. Even if
@@ -1043,8 +1124,8 @@ class TestRunExtra:
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur.source, "resolve_groups") as res_g, \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             moteur.run()
         res_g.assert_not_called()
@@ -1091,8 +1172,8 @@ class TestRunExtra:
         ]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)), \
              patch.object(moteur, "save_manifest") as sauver:
             moteur.run()
@@ -1109,8 +1190,8 @@ class TestRunExtra:
                       extra={"credit": "ESO/T. Preibisch"})
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             moteur.run()
         stocke = read_manifest(tmp_path)["7"]
@@ -1214,8 +1295,8 @@ class TestCacheAPI:
         ]
         with _patch_inventaire(m, elements), \
              patch.object(m, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             m.run()
         cache = read_cache(tmp_path)
@@ -1230,8 +1311,8 @@ class TestCacheAPI:
              patch.object(m.source, "resolve_groups",
                           return_value={"42": "match-a"}) as res_p, \
              patch.object(m, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             m.run()
         assert read_cache(tmp_path)["titres_parents"] == {"42": "match-a"}
@@ -1261,14 +1342,14 @@ class TestCacheAPI:
         with _patch_inventaire(m, [el]), \
              patch.object(m.source, "resolve_groups", side_effect=faux_resoudre), \
              patch.object(m, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)):
             m.run()
         # the adapter received the cache: it's up to it to short-circuit.
         assert appels and appels[0][1] == {"42": "match-cache"}
         # the file was placed in "match-cache"
-        assert read_manifest(tmp_path)["1"]["fichier"].replace("\\", "/") \
+        assert read_manifest(tmp_path)["1"]["filename"].replace("\\", "/") \
             .startswith("match-cache/")
 
     def test_interruption_does_not_save_cache(self, tmp_path):
@@ -1323,97 +1404,97 @@ class TestSaveManifestMerge:
     def test_ui_deleted_mark_survives_engine_save(self, tmp_path):
         """A `supprime` mark set by the UI during a run survives the engine's `finally`."""
         # Disk state at run start; engine loads it into memory.
-        write_manifest(tmp_path, {"1": {"fichier": "a.jpg", "taille": 42}})
+        write_manifest(tmp_path, {"1": {"filename": "a.jpg", "size": 42}})
         # File must exist for delete_image to succeed.
         (tmp_path / "a.jpg").write_bytes(b"x" * 42)
         moteur = _moteur(tmp_path)
         # In-memory version the engine will flush in its finally.
-        manifeste = {"1": {"fichier": "a.jpg", "taille": 42}}
+        manifeste = {"1": {"filename": "a.jpg", "size": 42}}
         # UI deletion happens mid-run: writes `supprime` directly to disk.
         assert delete_image(tmp_path, tmp_path / "a.jpg") is True
         # The engine's finally now flushes its in-memory copy, without the
         # `supprime` mark; the fusion must re-inject the disk mark.
         moteur.save_manifest(manifeste)
-        assert "supprime" in read_manifest(tmp_path)["1"]
+        assert "deleted" in read_manifest(tmp_path)["1"]
 
     def test_ui_restored_mark_survives_engine_save(self, tmp_path):
         """A `restaure` mark set by the UI during a run survives the engine's `finally`."""
         # Disk starts with a `supprime` mark; engine loads it into memory.
         write_manifest(tmp_path, {
-            "1": {"fichier": "a.jpg", "taille": 42,
-                  "supprime": "2026-01-01T00:00:00"},
+            "1": {"filename": "a.jpg", "size": 42,
+                  "deleted": "2026-01-01T00:00:00"},
         })
         moteur = _moteur(tmp_path)
         # Engine's in-memory copy carries the same `supprime`.
-        manifeste = {"1": {"fichier": "a.jpg", "taille": 42,
-                           "supprime": "2026-01-01T00:00:00"}}
+        manifeste = {"1": {"filename": "a.jpg", "size": 42,
+                           "deleted": "2026-01-01T00:00:00"}}
         # UI restore happens mid-run: replaces `supprime` with `restaure` on disk.
         assert restore(tmp_path, ["1"]) == 1
         # Engine's finally flushes memory (which still has `supprime`, no `restaure`);
         # fusion must let the UI's `restaure` win.
         moteur.save_manifest(manifeste)
         stocke = read_manifest(tmp_path)["1"]
-        assert stocke.get("restaure") is True
-        assert "supprime" not in stocke
+        assert stocke.get("restored") is True
+        assert "deleted" not in stocke
 
     def test_out_of_scope_disk_entry_is_preserved(self, tmp_path):
         """An entry present only on disk is not wiped by the merge."""
         # Ident "2" is on disk with a `supprime` mark but not in the engine's
         # inventory this run (e.g. filtered out); the fusion must keep it.
         write_manifest(tmp_path, {
-            "1": {"fichier": "a.jpg"},
-            "2": {"fichier": "b.jpg", "supprime": "2026-01-01"},
+            "1": {"filename": "a.jpg"},
+            "2": {"filename": "b.jpg", "deleted": "2026-01-01"},
         })
         moteur = _moteur(tmp_path)
-        moteur.save_manifest({"1": {"fichier": "a.jpg"}})
+        moteur.save_manifest({"1": {"filename": "a.jpg"}})
         m = read_manifest(tmp_path)
         assert "2" in m
-        assert m["2"].get("supprime") == "2026-01-01"
-        assert m["2"].get("fichier") == "b.jpg"
+        assert m["2"].get("deleted") == "2026-01-01"
+        assert m["2"].get("filename") == "b.jpg"
 
     def test_new_engine_entry_is_written(self, tmp_path):
         """An entry the engine just added in memory is persisted correctly."""
-        write_manifest(tmp_path, {"1": {"fichier": "a.jpg"}})
+        write_manifest(tmp_path, {"1": {"filename": "a.jpg"}})
         moteur = _moteur(tmp_path)
         moteur.save_manifest({
-            "1": {"fichier": "a.jpg"},
-            "3": {"fichier": "c.jpg", "taille": 10},
+            "1": {"filename": "a.jpg"},
+            "3": {"filename": "c.jpg", "size": 10},
         })
         m = read_manifest(tmp_path)
         assert "3" in m
-        assert m["3"]["fichier"] == "c.jpg"
-        assert m["3"]["taille"] == 10
+        assert m["3"]["filename"] == "c.jpg"
+        assert m["3"]["size"] == 10
 
     def test_ui_deletion_during_engine_reset(self, tmp_path):
         """UI deletion concurrent with a re-download: `supprime` wins, fresh fields preserved."""
         # Disk: user deleted the image just before the engine finished
         # re-downloading it (fresh size/etag in memory, no `supprime`).
         write_manifest(tmp_path, {
-            "1": {"fichier": "a.jpg", "taille": 5, "supprime": "2026-01-01"},
+            "1": {"filename": "a.jpg", "size": 5, "deleted": "2026-01-01"},
         })
         moteur = _moteur(tmp_path)
-        manifeste = {"1": {"fichier": "a.jpg", "taille": 42, "etag": "neuf"}}
+        manifeste = {"1": {"filename": "a.jpg", "size": 42, "etag": "neuf"}}
         moteur.save_manifest(manifeste)
         stocke = read_manifest(tmp_path)["1"]
         # Last user gesture wins for the mark.
-        assert "supprime" in stocke
+        assert "deleted" in stocke
         # Memory wins for every field that is not `supprime`/`restaure`.
-        assert stocke["taille"] == 42
+        assert stocke["size"] == 42
         assert stocke["etag"] == "neuf"
 
     def test_in_memory_deleted_field_overwrites_disk(self, tmp_path):
         """A `supprime` mark set by the engine in memory is written normally (asymmetric merge rule)."""
         # Engine set `supprime` itself (case "file disappeared during run",
         # engine.py branch around line 750-755). Disk has no `supprime`.
-        write_manifest(tmp_path, {"1": {"fichier": "a.jpg"}})
+        write_manifest(tmp_path, {"1": {"filename": "a.jpg"}})
         moteur = _moteur(tmp_path)
-        manifeste = {"1": {"fichier": "a.jpg",
-                           "supprime": "2026-01-05T00:00:00"}}
+        manifeste = {"1": {"filename": "a.jpg",
+                           "deleted": "2026-01-05T00:00:00"}}
         moteur.save_manifest(manifeste)
         stocke = read_manifest(tmp_path)["1"]
         # The fusion rule only reinjects a mark when it is on disk AND absent
         # in memory; here it is the other way around, so memory wins.
-        assert stocke.get("supprime") == "2026-01-05T00:00:00"
+        assert stocke.get("deleted") == "2026-01-05T00:00:00"
 
     def test_periodic_save_not_regressed(self, tmp_path):
         """The merge does not miss the 25-tick: ``save_manifest`` is still called >= 2 times with 26 items."""
@@ -1427,8 +1508,8 @@ class TestSaveManifestMerge:
         ]
         with _patch_inventaire(moteur, elements), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 1, "etag": "",
-                                               "modifie": "", "url": "u"},
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
                                         None, None)), \
              patch.object(moteur, "save_manifest") as sauver:
             moteur.run()

@@ -169,7 +169,7 @@ class Engine:
         taille = dest.stat().st_size
         if taille == 0:
             return False
-        attendue = (etat or {}).get("taille") or taille_api
+        attendue = (etat or {}).get("size") or taille_api
         return not (attendue and taille != attendue)
 
     # -- API cache ---------------------------------------------------------- #
@@ -313,8 +313,8 @@ class Engine:
         if dest.exists() and self.o.verify and etat:
             if etat.get("etag"):
                 entetes["If-None-Match"] = etat["etag"]
-            elif etat.get("modifie"):
-                entetes["If-Modified-Since"] = etat["modifie"]
+            elif etat.get("modified"):
+                entetes["If-Modified-Since"] = etat["modified"]
         elif tmp.exists():
             depuis = tmp.stat().st_size
             if depuis > 0:
@@ -342,9 +342,9 @@ class Engine:
             tmp.replace(dest)
 
             infos = {
-                "taille": dest.stat().st_size,
+                "size": dest.stat().st_size,
                 "etag": r.headers.get("ETag", ""),
-                "modifie": r.headers.get("Last-Modified", ""),
+                "modified": r.headers.get("Last-Modified", ""),
                 "url": url,
             }
             self._pause(self.o.delay)
@@ -474,29 +474,29 @@ class Engine:
                 return res
 
             # names already assigned, so an image does not overwrite another
-            pris = {e["fichier"] for e in manifeste.values() if e.get("fichier")}
+            pris = {e["filename"] for e in manifeste.values() if e.get("filename")}
 
             # sort: already on disk vs to be processed
             a_faire: list[tuple[Element, Path | None]] = []
             for e in elements:
                 etat = manifeste.get(e.ident)
-                connu = self.o.target_dir / etat["fichier"] if etat and etat.get("fichier") else None
+                connu = self.o.target_dir / etat["filename"] if etat and etat.get("filename") else None
 
-                if etat and etat.get("supprime"):
+                if etat and etat.get("deleted"):
                     res.skipped += 1
                     continue
                 if e.url is None:
                     # The source did not find any usable resource.
                     res.skipped += 1
                     continue
-                if (connu is not None and etat.get("taille") and not connu.exists()
-                        and not etat.get("restaure")):
+                if (connu is not None and etat.get("size") and not connu.exists()
+                        and not etat.get("restored")):
                     # already downloaded then gone: the user erased it
-                    etat["supprime"] = datetime.now().isoformat(timespec="seconds")
+                    etat["deleted"] = datetime.now().isoformat(timespec="seconds")
                     res.deleted += 1
                     continue
                 if connu and self.file_complete(connu, etat, e.size) and not self.o.verify:
-                    etat.pop("restaure", None)
+                    etat.pop("restored", None)
                     res.already_present += 1
                     continue
                 a_faire.append((e, connu))
@@ -547,7 +547,7 @@ class Engine:
                     url, file_path, etat)
 
                 if infos:
-                    infos["fichier"] = str(file_path.relative_to(self.o.target_dir))
+                    infos["filename"] = str(file_path.relative_to(self.o.target_dir))
                     # Source metadata (credit, checksum...): copied into the
                     # manifest for the upcoming catalog export, without the
                     # engine interpreting them.
@@ -556,11 +556,11 @@ class Engine:
                     manifeste[e.ident] = infos
                 if statut == "ok":
                     res.downloaded += 1
-                    res.bytes += infos["taille"]
+                    res.bytes += infos["size"]
                     echecs_consecutifs = 0
                 elif statut == "resumed":
                     res.resumed += 1
-                    res.bytes += infos["taille"]
+                    res.bytes += infos["size"]
                     echecs_consecutifs = 0
                 elif statut == "unchanged":
                     res.unchanged += 1

@@ -9,120 +9,116 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**US-EN-04 — Internal dispatch values → English.**
+**US-EN-05 — Manifest keys → English with a one-way read shim.**
 
-Fourth story of the sprint
+Fifth story of the sprint
 `docs/sprints/2026-09-french-to-english-complete.md`. Depends on
-US-EN-03 (identifier renames landed in `62f6b52`).
-
-Rename dispatch value string literals. No persistence shim per sprint
-decision, except a small legacy sort-mode value alias in
-`Config.load` so a user's `config.json` written before this US does
-not silently reset to default when their sort_mode was
-`"galerie"`/`"plat"`.
+US-EN-04 (dispatch values landed in `cb6b68b`).
 
 ### Rename table
 
-| Old value | New value | Where |
-|---|---|---|
-| `"transitoire"` | `"transient"` | `ErrorClassification.category` — sources/base.py + engine/core.py + tests |
-| `"coupure"` | `"cut"` | same |
-| `"definitif"` | `"definitive"` | same |
-| `"galerie"` | `"gallery"` | sort mode — config.py, options.py, sources/*, engine/core.py, cli.py, app.py, tests |
-| `"plat"` | `"flat"` | sort mode — same set of files |
-| `"date"` | (unchanged) | — |
-| `"repris"` | `"resumed"` | engine status — engine/core.py + tests |
-| `"inchangé"` | `"unchanged"` | same |
-| `"introuvable"` | `"not-found"` | same |
-| `"erreur"` | `"error"` | same |
+| Old key | New key |
+|---|---|
+| `"taille"` | `"size"` |
+| `"fichier"` | `"filename"` |
+| `"modifie"` | `"modified"` |
+| `"supprime"` | `"deleted"` |
+| `"restaure"` | `"restored"` |
+
+Unchanged: `"etag"`, `"url"`, `"extra"`.
+
+### Read shim contract
+
+`read_manifest.py` gains `_MANIFEST_KEY_ALIASES` and translates every
+per-entry key found in the JSON before returning. A single pre-US-EN-05
+manifest keeps loading forever, and the next `write_manifest` call
+emits English keys. Only reads translate — writes stay literal.
 
 ## Directly modified
 
-- `Glaneur/sources/base.py` — `Literal["transitoire", "coupure", "definitif"]`
-  in the `ErrorClassification` dataclass; every `ErrorClassification(...)`
-  constructor in `classify_error`; the `if classification.category == "definitif"`
-  branch. Docstring examples.
-- `Glaneur/sources/wordpress.py` — `sort_modes = frozenset({"galerie", ...})`.
-- `Glaneur/sources/djangoplicity.py` — `sort_modes = frozenset({"date", "plat"})`
-  and its comment.
-- `Glaneur/sources/__init__.py` — docstring `sort_modes_for` example.
-- `Glaneur/engine/core.py` — `if self.o.sort_mode == "plat"`,
-  `if self.o.sort_mode == "galerie"`, `"galerie" in self.source.sort_modes`;
-  the `download()` return-tuple statuses `"inchangé"`, `"introuvable"`,
-  `"repris"`, `"ok"`, `"erreur"` and the run-loop dispatch on them;
-  the `ErrorClassification("definitif", ...)` construction; docstring
-  in `Engine.download` listing status codes.
-- `Glaneur/engine/options.py` — default `sort_mode: str = "galerie"`.
-- `Glaneur/config.py` — `SORT_MODES` values `"galerie"`/`"plat"`;
-  default `sort_mode: str = "galerie"`; validation default in
-  `validate()`; the `sort_mode_label` fallback default. Add a
-  `_LEGACY_SORT_MODE_ALIASES = {"galerie": "gallery", "plat": "flat"}`
-  applied in `load()` before `validate()`, so a legacy config keeps
-  its user choice.
-- `cli.py` — `--classement` choices list `["galerie", "date", "plat"]`.
-- `app.py` — `SORT_MODES.get(..., "galerie")` fallback default (line 540).
-- `tests/test_*.py` — every test that constructs
-  `ErrorClassification(...)` with FR categories, tuples returned by
-  `download()` mocks, `sort_mode="galerie"`/`"plat"` in `_moteur(...)`
-  helpers, or asserts `.category == "transitoire"` etc.
+- `Glaneur/engine/read_manifest.py` — add `_MANIFEST_KEY_ALIASES`
+  and translation loop over every entry.
+- `Glaneur/engine/write_manifest.py` — no change (writes what's in
+  memory, which is now English keys).
+- `Glaneur/engine/_merge.py` — `"supprime"` → `"deleted"`,
+  `"restaure"` → `"restored"` in the mark-merging logic and its
+  docstring.
+- `Glaneur/engine/core.py` — every `etat["fichier"]`, `etat.get("taille")`,
+  `etat.get("modifie")`, `etat.get("supprime")`, `etat.get("restaure")`,
+  `etat["supprime"] = ...`, `etat.pop("restaure", ...)`, `e["fichier"]`,
+  and every `infos["fichier"]`, `infos["taille"]`, `infos["modifie"]`.
+  Also the docstring in `Engine.download` that lists ``infos`` keys.
+- `Glaneur/engine/delete_image.py` — `etat.get("fichier")`,
+  `entree["supprime"] = ...`, `entree.pop("restaure", ...)`.
+- `Glaneur/engine/list_deleted.py` — `etat.get("supprime")` filter,
+  the two sort keys, and the docstring naming `supprime`.
+- `Glaneur/engine/restore.py` — `etat.pop("supprime", ...)`,
+  `etat["restaure"] = True` and its docstring.
+- `app.py` — `DialogueSupprimees` reads `e.get("fichier", ...)` and
+  `e.get("supprime", ...)`. Rename to `filename` and `deleted`. Qt
+  translation placeholders (`{fichier}`) stay French (US-EN-07).
+- `cli.py` — nothing beyond `list_deleted` still returns `e["id"]`
+  (already English). Verify.
+- `tests/test_*.py` — every fixture and assertion that constructs
+  `write_manifest(..., {"1": {"fichier": ..., "taille": ...}})` or
+  reads `m["1"]["fichier"]` / `.get("supprime")` etc. Batch replace.
 
 ## Direct dependencies
 
-- Config load path: legacy value shim added (single dict, no new
-  module).
-- `_render_ui` / `render_en` engine event templates — not touched.
-  Engine events do NOT surface these status strings; the run loop
-  emits structured events with their own codes.
+- `Options`, `Element`, engine events: unchanged.
+- Cache format (`derniere_date_media`, `titres_parents`): unchanged
+  — US-EN-05 is manifest only. A cache-key rename is a separate US.
+- Config format: unchanged.
 
 ## Explicitly out of scope
 
-- **CLI flag `--classement`** name — US-EN-06.
-- **Qt UI labels** ("Par galerie", "Tout dans un dossier", etc.) —
-  US-EN-07. Only the SORT_MODES *values* change; the display labels
-  (keys) stay French.
-- **Manifest keys** (`"fichier"`, `"taille"`, `"modifie"`,
-  `"supprime"`, `"restaure"`) — US-EN-05.
-- **`Element` field renames** — landed in US-EN-03.
-- **`Transport.get_json` params `essais`, `fin_si`** — deferred.
+- **Cache keys** (`derniere_date_media`, `titres_parents`) — separate
+  US, not part of US-EN-05.
+- **Config keys** — already renamed in an earlier batch; sort_mode
+  values were handled by US-EN-04.
+- **CLI flags** — US-EN-06.
+- **Qt UI translation placeholders** (`{fichier}`, `{taille}`
+  strings inside `tr(...)`) — US-EN-07.
 - **`__version__`** — unchanged.
 
 ## Tests
 
-Every test constructing `ErrorClassification("transitoire"/"coupure"/"definitif", ...)`
-or asserting `.category ==` on those literals, every
-`download()` mock returning a status tuple with `"repris"`,
-`"inchangé"`, `"introuvable"`, `"erreur"`, every `sort_mode="galerie"`
-or `sort_mode="plat"` in `_moteur(...)`, and every CLI test that
-passes `--classement galerie` gets the value rewritten.
+Every test that seeds a manifest with FR keys or asserts on FR keys
+gets the keys rewritten. A **new integration test** covers the read
+shim end-to-end: seed a manifest file on disk with FR keys → call
+`read_manifest` → assert the returned dict uses EN keys → run the
+engine or `_merge_ui_marks` → assert the written file has EN keys.
 
 Verification:
 
-- `pytest -q` → still 495 passed, 2 skipped.
+- `pytest -q` → passes with 500+ tests (from 499, at least one new
+  migration test).
 - `python tools/check_coverage.py` → floors still met.
 - `ruff check` on touched files: no new warnings.
-- One new focused test: a legacy `config.json` with
-  `"sort_mode": "galerie"` loads to `"gallery"` (not default-reset).
+- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` if
+  the docstring changes affect the API pages (Engine.download's
+  `infos` list of keys).
 
 ## Invariants
 
 - `__version__` unchanged.
-- Manifest, cache, and config schema unchanged — only sort-mode
-  *values* in config translate through the legacy alias on load,
-  and are rewritten in English on next `Config.save`.
-- No CLI flag renamed (only its value choices change).
-- Engine event codes unchanged.
-- Coverage floors (`sources/*` 98.0, `scheduler.py` 95.0,
-  `config.py` 97.0, `engine/*` 98.5) held.
+- No cache or config key touched.
+- No dispatch value literal touched.
+- No CLI flag renamed.
+- Read shim is strictly one-way (old → new). No new shim reads
+  English → French. No English → French key emitted on write.
+- After one round-trip (load an FR manifest, save without changes),
+  the on-disk file uses EN keys — this is the intended migration
+  path.
+- Coverage floors held.
 
 ## Validation
 
-Level `subsystem`. Widespread cascade across engine, sources, config,
-UI, CLI, and tests. Persisted-format touched only through the
-one-way legacy sort-mode value alias in config load, which is a
-strict superset of the old behaviour (never emits FR values on save).
+Level `full` — persisted format touched.
 
 - `pytest -q --cov=Glaneur --cov-branch` green.
 - `python tools/check_coverage.py` green.
-- `ruff check` clean on touched files (baseline preserved).
-- `invariant-reviewer` — dispatch-value boundary (source/engine
-  contract) and the config-load legacy shim.
+- Full `ruff check` no new warnings.
+- `sphinx-build -W` green if docstrings changed.
+- `invariant-reviewer` — persisted-format boundary, read shim
+  correctness, backwards-compatibility guarantee.
