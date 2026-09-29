@@ -9,101 +9,113 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 5.0 E1 (part 2) — Preferences in tabs.**
+**Lot 5.0 E2 — One-row profile list.**
 
-Follows the just-landed `PROFILE_FIELDS` (part 1). Refactors
-`DialoguePreferences.__init__` from a stack of QGroupBoxes into a
-`QTabWidget` with four tabs, keyed off `Glaneur.config.PROFILE_FIELDS`
-per `docs/design/evolution-multi-sources.md` §3.2 and
-`docs/design/roadmap.md` §5.0.
+Replaces the "Site / Folder" banner of the main window with a
+`QTableView` fed by a small `QAbstractTableModel`. Columns: name,
+type, site, folder, last run, status. With a single implicit
+profile there is one row; the user sees no functional difference,
+but the table is the shape lot 5.1 (profiles) will slot into.
 
-### Tab layout
+The status column is built from the engine's structured events
+(landed in US-VERIF-04) — "Idle" when the engine is quiet,
+"Running…" while a `Travailleur` runs, then a summary derived from
+`RunResult` when it finishes (`Done — N downloaded`,
+`Deferred until <date>`, `Interrupted`, `Failed`).
 
-| Tab | Contents | Visibility |
+### Model
+
+Kept in `app.py` for now (no new module). Later, when `Profile`
+lands (E3 / lot 5.1), the same model gains a real list of profiles
+and the migration replaces the "row-from-config" helper with a
+"row-per-profile" iterator.
+
+- `ProfileRow` — plain dataclass, six string fields matching the
+  columns.
+- `ProfileTableModel(QAbstractTableModel)` — read-only, exposes a
+  `set_row(row: ProfileRow)` mutator that emits `dataChanged` and
+  replaces the sole row today. Kept intentionally minimal — future
+  edits (multiple rows, editable cells, sort) come with lot 5.1/5.3.
+
+### Columns
+
+| # | Header (en) | Source |
 |---|---|---|
-| **General** | interval, autostart (Windows), slideshow (Windows), close-to-tray, updates-at-startup, language | visible |
-| **Site** | type, URL, format, target_dir, sort, min_width, verify_integrity — every field in `PROFILE_FIELDS` | visible |
-| **Filters** | placeholder — the fields land in E5 (lot 11.2) | hidden via `setTabVisible(idx, False)` |
-| **Images** | placeholder — the fields land in E6 (lot 11.5, resizing) | hidden via `setTabVisible(idx, False)` |
-
-Wording: the visible group titles (`Site`, `Options`, ...) go away —
-tab labels replace them. The English tab labels are wrapped in
-`tr()` so they translate.
-
-### Rebuilding
-
-`__init__` now delegates each tab to a `_build_<name>_tab()` helper
-returning a `QWidget`. Nothing else about the dialog changes:
-
-- widget names and public attributes stay identical (`combo_type`,
-  `combo_classement`, `champ_dossier`, ...), so `appliquer` and
-  `_sur_changement_type` still work verbatim;
-- OK / Cancel buttons stay at the bottom, outside the tabs;
-- default focus stays on the first field of the first visible tab
-  (the "General" tab), which matches typical UX for a settings
-  dialog.
+| 0 | Name | derived from `cfg.site` netloc, or `Config.default` |
+| 1 | Type | `cfg.source_type` via `SOURCE_TYPES` reverse lookup |
+| 2 | Site | `cfg.site` |
+| 3 | Folder | `cfg.target_dir` |
+| 4 | Last run | `cfg.last_run` truncated to `YYYY-MM-DD HH:MM` |
+| 5 | Status | in-memory, updated by `Fenetre` |
 
 ## Directly modified
 
-- `app.py::DialoguePreferences.__init__` — replaced the QVBoxLayout of
-  groupboxes with a `QTabWidget`, and four `_build_*_tab()` helpers.
-- `tests/test_app_preferences.py` — new file, pytest-qt based:
-  - dialog opens with four tabs, first two visible, last two hidden;
-  - the widget attributes callers rely on
-    (`combo_type`, `champ_site`, `combo_format`, `champ_dossier`,
-    `combo_intervalle`, `combo_classement`, `spin_largeur`,
-    `case_verifier`, `case_diaporama`, `case_barre`,
-    `case_demarrage`, `case_maj_demarrage`, `combo_langue`) all
-    exist and hold the seeded values;
-  - **byte-for-byte guard**: `Config.save()` → open dialog →
-    `dialog.appliquer()` (OK without edits, on Linux where autostart
-    and slideshow are no-ops) → `Path(config.json).read_bytes()` is
-    unchanged.
+- `app.py`:
+  - New `ProfileRow` dataclass and `ProfileTableModel` at module top,
+    just after `_render_ui`.
+  - `Fenetre._construire` builds a `QTableView` in place of
+    `label_site` / `label_dossier`.
+  - `Fenetre._rafraichir_bandeau` becomes
+    `_rafraichir_table_profils` — pushes a fresh `ProfileRow` into
+    the model. Preserves the old name as an alias (single-line
+    forwarder) so no callers break.
+  - `_lancer` sets status to "Running…" before starting the worker.
+  - `_terminer(res)` sets the terminal status from the `RunResult`.
+- `tests/test_app_profile_table.py` — new pytest-qt module covering
+  the model contract and the status pipeline.
 
 ## Direct dependencies
 
-- `Glaneur/config.py::PROFILE_FIELDS` — used only conceptually here
-  (the tab split matches the tuple). The migration test in
-  `tests/test_config.py::TestProfileFields` already locks the tuple.
-- No engine, source, cache, or manifest touched.
+- `Glaneur.config.PROFILE_FIELDS` — not used yet at runtime, but the
+  column list mirrors the app-level / profile-level split so lot
+  5.1's migration slots in cleanly.
+- `Glaneur.engine.RunResult` — read only, for status construction.
 
 ## Explicitly out of scope
 
-- Actually placing widgets under the Filters / Images tabs —
-  E5 (lot 11.2) and E6 (lot 11.5).
-- The v1 → v2 config migration — E3 / lot 5.1.
-- `Glaneur/system.py` extraction — already done in an earlier lot.
+- Multiple rows / real `Profile` list — E3 / lot 5.1.
+- Editable cells or in-place profile editing — E3.
+- Sort / filter / context menu on the table — lot 5.3.
+- `label_site` / `label_dossier` removal — they stay on the class
+  (as `None`) to keep `_rafraichir_bandeau` a legal single-line
+  forwarder. A follow-up commit will delete them once no caller
+  references them.
 - `__version__` — unchanged.
 
 ## Tests
 
-Existing tests unaffected. Three focused new tests in
-`tests/test_app_preferences.py` cover the tabbed layout, the widget
-attribute contract, and the byte-for-byte config-preservation
-invariant.
+New pytest-qt module `tests/test_app_profile_table.py`:
+
+- `TestProfileRowFromConfig`: `_profile_row(cfg)` populates every
+  column from the seeded config; unknown source_type falls back to
+  the raw value; empty site/target_dir/last_run display an em dash.
+- `TestModelContract`: `rowCount == 1`, `columnCount == 6`, header
+  labels match the design, `data(role=DisplayRole)` returns the row
+  fields, editing/other roles return `None`.
+- `TestStatusPipeline`: `Fenetre._status_from_result(res)` maps
+  `RunResult` to the expected short status string across success,
+  defer, interrupted, failure branches.
 
 Verification:
 
-- `pytest -q` → 519 + 3 new tests.
+- `pytest -q` → still passing; +new tests.
 - `python tools/check_coverage.py` → floors held.
-- `ruff check app.py tests/test_app_preferences.py` clean on
+- `ruff check app.py tests/test_app_profile_table.py` clean on
   baseline.
 
 ## Invariants
 
 - `__version__` unchanged.
-- `Config` load/save behaviour unchanged.
-- `PROFILE_FIELDS` unchanged.
-- Public API of `DialoguePreferences` unchanged: attribute names of
-  every widget survive, and `appliquer()` behaves the same as before.
-- Filters/Images tabs stay hidden until E5/E6 place widgets in them.
+- No engine, source, cache, manifest, or config format change.
+- Widget attribute names of every existing widget survive.
+- The old `_rafraichir_bandeau` name still exists (as a
+  single-line forwarder), so `_ouvrir_preferences` and any other
+  caller keeps working.
 - Coverage floors held.
 
 ## Validation
 
-Level `module` (single-file UI refactor plus a dedicated test
-module).
+Level `module` — UI-only refactor, self-contained test module.
 
 - `pytest -q --cov=Glaneur --cov-branch` green.
-- `python tools/check_coverage.py` green.
 - `ruff check` clean on touched files.

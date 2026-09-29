@@ -16,10 +16,22 @@ from __future__ import annotations
 import os
 import sys
 import threading
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
-from PySide6.QtCore import QCoreApplication, QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QCoreApplication,
+    QModelIndex,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -52,6 +64,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSystemTrayIcon,
+    QTableView,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -199,6 +212,141 @@ def _render_ui(event: EngineEvent) -> str:
             )
         case _:
             return f"{event.code} {dict(p)}"
+
+
+# --------------------------------------------------------------------------- #
+# Profile list (lot 5.0 E2)
+#
+# The main window's "Site / Folder" banner used to be two QLabels. It is
+# now a one-row QTableView fed by ``ProfileTableModel``. With a single
+# implicit profile, the user sees the same information laid out in a
+# table; the model is the shape lot 5.1 (multiple profiles) will
+# populate.
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class ProfileRow:
+    """One row of the profile list: what the user sees at a glance."""
+
+    name: str
+    source_type: str
+    site: str
+    folder: str
+    last_run: str
+    status: str
+
+
+def _profile_row(cfg: Config, status: str = "") -> ProfileRow:
+    """Build the display row for the single implicit profile.
+
+    Args:
+        cfg: The current :class:`Glaneur.config.Config`.
+        status: The status string to show in the last column. Empty by
+            default so an idle app shows an em dash.
+
+    Returns:
+        A frozen :class:`ProfileRow`. Empty ``cfg`` fields become an
+        em dash so the table looks intentional even before the user
+        has entered anything.
+    """
+    tiret = "—"
+    site = cfg.site or ""
+    nom = urlparse(site).netloc or site or tiret
+    # Reverse lookup of the display label for the source type.
+    type_label = next(
+        (label for label, val in SOURCE_TYPES.items() if val == cfg.source_type),
+        cfg.source_type or tiret,
+    )
+    # `last_run` is an ISO 8601 string with second precision; keep the
+    # minute for display and drop seconds/timezone.
+    dernier = (cfg.last_run or "")[:16].replace("T", " ") or tiret
+    return ProfileRow(
+        name=nom,
+        source_type=type_label,
+        site=site or tiret,
+        folder=cfg.target_dir or tiret,
+        last_run=dernier,
+        status=status or tiret,
+    )
+
+
+class ProfileTableModel(QAbstractTableModel):
+    """Read-only model for the profile list.
+
+    Six columns matching :class:`ProfileRow` (name, type, site, folder,
+    last run, status) and one row today. When lot 5.1 lands, the
+    single-row hardcoding is replaced by a real ``list[Profile]``.
+    """
+
+    #: Column order matches ``ProfileRow`` field order.
+    _COLONNES: tuple[str, ...] = (
+        "name", "source_type", "site", "folder", "last_run", "status",
+    )
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._rows: list[ProfileRow] = []
+
+    # -- Qt read API --------------------------------------------------------
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
+        return 0 if parent.isValid() else len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: ARG002, B008
+        return len(self._COLONNES)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+        if not index.isValid() or role != Qt.DisplayRole:
+            return None
+        if not 0 <= index.row() < len(self._rows):
+            return None
+        row = self._rows[index.row()]
+        return getattr(row, self._COLONNES[index.column()])
+
+    def headerData(self, section: int, orientation: Qt.Orientation,
+                   role: int = Qt.DisplayRole):
+        if role != Qt.DisplayRole or orientation != Qt.Horizontal:
+            return None
+        # Translation happens at display time via QCoreApplication so
+        # lupdate picks up the literals. Same "UiTable" context is used
+        # for every header of this model.
+        libelles = {
+            "name": QCoreApplication.translate("UiTable", "Name"),
+            "source_type": QCoreApplication.translate("UiTable", "Type"),
+            "site": QCoreApplication.translate("UiTable", "Site"),
+            "folder": QCoreApplication.translate("UiTable", "Folder"),
+            "last_run": QCoreApplication.translate("UiTable", "Last run"),
+            "status": QCoreApplication.translate("UiTable", "Status"),
+        }
+        return libelles.get(self._COLONNES[section])
+
+    # -- mutators -----------------------------------------------------------
+
+    def set_single_row(self, row: ProfileRow) -> None:
+        """Replace the (single) row with ``row``.
+
+        Emits ``layoutChanged`` when the row is added for the first
+        time; otherwise ``dataChanged`` across every column so the view
+        repaints in place.
+        """
+        if not self._rows:
+            self.beginResetModel()
+            self._rows = [row]
+            self.endResetModel()
+            return
+        self._rows[0] = row
+        haut = self.index(0, 0)
+        bas = self.index(0, self.columnCount() - 1)
+        self.dataChanged.emit(haut, bas, [Qt.DisplayRole])
+
+    def set_status(self, status: str) -> None:
+        """Update the status column of the single row without rebuilding
+        the rest — used while a run is in flight."""
+        if not self._rows:
+            return
+        self._rows[0] = replace(self._rows[0], status=status)
+        cell = self.index(0, self.columnCount() - 1)
+        self.dataChanged.emit(cell, cell, [Qt.DisplayRole])
 
 
 # --------------------------------------------------------------------------- #
@@ -928,15 +1076,28 @@ class Fenetre(QMainWindow):
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
-        self.label_site = QLabel()
-        self.label_site.setStyleSheet("color: #666;")
-        self.label_site.setToolTip(self.tr("Editable via Configuration → Preferences…"))
-        racine.addWidget(self.label_site)
+        # Profile list (lot 5.0 E2): one row today, keyed off the flat
+        # `Config`. Lot 5.1 promotes it to a real per-profile list.
+        self.profils_model = ProfileTableModel(self)
+        self.table_profils = QTableView()
+        self.table_profils.setModel(self.profils_model)
+        self.table_profils.setToolTip(self.tr("Editable via Configuration → Preferences…"))
+        self.table_profils.setSelectionMode(QTableView.SingleSelection)
+        self.table_profils.setSelectionBehavior(QTableView.SelectRows)
+        self.table_profils.setEditTriggers(QTableView.NoEditTriggers)
+        self.table_profils.verticalHeader().setVisible(False)
+        self.table_profils.horizontalHeader().setStretchLastSection(True)
+        # One row today — cap the height so the table does not eat the
+        # journal area.
+        self.table_profils.setFixedHeight(60)
+        racine.addWidget(self.table_profils)
 
-        self.label_dossier = QLabel()
-        self.label_dossier.setStyleSheet("color: #666;")
-        self.label_dossier.setToolTip(self.tr("Editable via Configuration → Preferences…"))
-        racine.addWidget(self.label_dossier)
+        # Legacy aliases kept as None so any stray reference to the old
+        # labels raises AttributeError instead of silently going through
+        # a leftover widget. (`_rafraichir_bandeau` alias still routes
+        # updates to the model.)
+        self.label_site = None
+        self.label_dossier = None
 
         # --- actions -------------------------------------------------------
         ligne = QHBoxLayout()
@@ -1039,11 +1200,50 @@ class Fenetre(QMainWindow):
         self.tray.activated.connect(self._clic_barre)
         self.tray.show()
 
+    def _rafraichir_table_profils(self, status: str | None = None) -> None:
+        """Push a fresh :class:`ProfileRow` into the profile table.
+
+        Args:
+            status: Optional status override. When ``None`` (default),
+                the current status column is preserved so a background
+                refresh does not clobber an in-flight run label.
+        """
+        if status is None and self.profils_model.rowCount() > 0:
+            current = self.profils_model.data(
+                self.profils_model.index(0, 5), Qt.DisplayRole)
+            status = current if current and current != "—" else ""
+        self.profils_model.set_single_row(
+            _profile_row(self.cfg, status or ""))
+
     def _rafraichir_bandeau(self) -> None:
-        """Refresh the site and folder display labels."""
-        self.label_site.setText(self.tr("Site: {site}").format(site=self.cfg.site or "—"))
-        self.label_dossier.setText(self.tr("Folder: {folder}").format(
-            folder=self.cfg.target_dir or "—"))
+        """Kept as a single-line forwarder so existing callers
+        (``_ouvrir_preferences``) do not have to know about the table
+        rename. Will be dropped once every caller uses the new name."""
+        self._rafraichir_table_profils()
+
+    @staticmethod
+    def _status_from_result(res: RunResult) -> str:
+        """Terminal status derived from a :class:`RunResult`.
+
+        Args:
+            res: The result the engine emitted.
+
+        Returns:
+            A short translated string ready for the ``Status`` column of
+            the profile list.
+        """
+        if res.deferred:
+            if res.retry_after:
+                return QCoreApplication.translate(
+                    "UiTable", "Deferred until {until}").format(
+                    until=res.retry_after[:16].replace("T", " "))
+            return QCoreApplication.translate("UiTable", "Deferred")
+        if res.interrupted:
+            return QCoreApplication.translate("UiTable", "Interrupted")
+        if res.failures and not res.downloaded:
+            return QCoreApplication.translate("UiTable", "Failed")
+        return QCoreApplication.translate(
+            "UiTable", "Done — {n} downloaded").format(n=res.downloaded)
 
     def _appliquer_diaporama_au_demarrage(self) -> None:
         """Reconfigure the slideshow on every launch when the option is on
@@ -1285,6 +1485,8 @@ class Fenetre(QMainWindow):
         self.travailleur.journal_event.connect(self._journal_evenement)
         self.travailleur.progres.connect(self._progres)
         self.travailleur.fini.connect(self._terminer)
+        self.profils_model.set_status(
+            QCoreApplication.translate("UiTable", "Running…"))
         self.travailleur.start()
 
     def _journal_evenement(self, event: EngineEvent) -> None:
@@ -1332,6 +1534,7 @@ class Fenetre(QMainWindow):
         rendu = _render_ui(res.message_event) if res.message_event else res.message
         self.label_statut.setText(rendu)
         self._ecrire(rendu)
+        self.profils_model.set_status(self._status_from_result(res))
         if res.already_present:
             self._ecrire(self.tr("{n} image(s) already present, not re-downloaded.").format(
                 n=res.already_present))
