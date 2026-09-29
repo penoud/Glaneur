@@ -240,31 +240,37 @@ def _profile_row(cfg: Config, status: str = "") -> ProfileRow:
     """Build the display row for the single implicit profile.
 
     Args:
-        cfg: The current :class:`Glaneur.config.Config`.
+        cfg: The current :class:`Glaneur.config.Config`. Read through
+            :meth:`Glaneur.config.Config.default_profile` so this
+            function keeps working verbatim when Config storage flips
+            to a real ``list[Profile]`` in E3 part B step 2 — the
+            profile shape does not change, only where it lives.
         status: The status string to show in the last column. Empty by
             default so an idle app shows an em dash.
 
     Returns:
-        A frozen :class:`ProfileRow`. Empty ``cfg`` fields become an
-        em dash so the table looks intentional even before the user
-        has entered anything.
+        A frozen :class:`ProfileRow`. Empty fields become an em dash so
+        the table looks intentional even before the user has entered
+        anything.
     """
+    profile = cfg.default_profile()
     tiret = "—"
-    site = cfg.site or ""
+    site = profile.site or ""
     nom = urlparse(site).netloc or site or tiret
     # Reverse lookup of the display label for the source type.
     type_label = next(
-        (label for label, val in SOURCE_TYPES.items() if val == cfg.source_type),
-        cfg.source_type or tiret,
+        (label for label, val in SOURCE_TYPES.items()
+         if val == profile.source_type),
+        profile.source_type or tiret,
     )
     # `last_run` is an ISO 8601 string with second precision; keep the
     # minute for display and drop seconds/timezone.
-    dernier = (cfg.last_run or "")[:16].replace("T", " ") or tiret
+    dernier = (profile.last_run or "")[:16].replace("T", " ") or tiret
     return ProfileRow(
         name=nom,
         source_type=type_label,
         site=site or tiret,
-        folder=cfg.target_dir or tiret,
+        folder=profile.target_dir or tiret,
         last_run=dernier,
         status=status or tiret,
     )
