@@ -400,3 +400,110 @@ class TestProgress:
         # The 200 xs got clipped to 60.
         assert "x" * 60 in out
         assert "x" * 61 not in out
+
+
+# --------------------------------------------------------------------------- #
+# Multi-profile picker (lot 5.1 E3 part B step 6)
+# --------------------------------------------------------------------------- #
+
+
+def _seed_extra_profile(monkeypatch, tmp_path, *, name="eso",
+                        site="https://eso.example", source_type="djangoplicity",
+                        target_dir=None):
+    """Create a config file with one extra profile alongside the default.
+
+    Returns the (chemin, added_profile_id) pair. The chemin is a real
+    file that `_run` can point Config.load at through config_chemin.
+    """
+    chemin = tmp_path / "c.json"
+    cfg = cli.Config.load(chemin)
+    added = cfg.add_profile(name, site=site, source_type=source_type,
+                            target_dir=str(target_dir or tmp_path / name))
+    cfg.save()
+    return chemin, added.id
+
+
+class TestProfilePicker:
+    """`--profile <name|id>` chooses which profile the engine runs."""
+
+    def test_default_is_first_profile_when_flag_absent(
+            self, monkeypatch, tmp_path):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path)
+        rc = _run(monkeypatch, [], config_chemin=chemin)
+        assert rc == 0
+        # No --profile: the first (default) profile runs.
+        assert _FauxEngine.dernier.options.source_type == "wordpress"
+
+    def test_profile_selected_by_exact_name(self, monkeypatch, tmp_path):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path, name="eso")
+        rc = _run(monkeypatch, ["--profile", "eso"], config_chemin=chemin)
+        assert rc == 0
+        o = _FauxEngine.dernier.options
+        assert o.source_type == "djangoplicity"
+        assert o.site == "https://eso.example"
+
+    def test_profile_selected_by_id_prefix(self, monkeypatch, tmp_path):
+        chemin, ident = _seed_extra_profile(monkeypatch, tmp_path)
+        rc = _run(monkeypatch, ["--profile", ident[:8]], config_chemin=chemin)
+        assert rc == 0
+        assert _FauxEngine.dernier.options.source_type == "djangoplicity"
+
+    def test_unknown_profile_exits_2_with_message(
+            self, monkeypatch, tmp_path, capsys):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path, name="eso")
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--profile", "nope"], config_chemin=chemin)
+        assert exc.value.code == 2
+        assert "No profile" in capsys.readouterr().err
+
+    def test_ambiguous_name_exits_2(self, monkeypatch, tmp_path, capsys):
+        """Two profiles sharing a name — the user has to disambiguate
+        with the id."""
+        chemin = tmp_path / "c.json"
+        cfg = cli.Config.load(chemin)
+        cfg.add_profile("dup", site="https://a.example")
+        cfg.add_profile("dup", site="https://b.example")
+        cfg.save()
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--profile", "dup"], config_chemin=chemin)
+        assert exc.value.code == 2
+        assert "Ambiguous" in capsys.readouterr().err
+
+    def test_ambiguous_id_prefix_exits_2(
+            self, monkeypatch, tmp_path, capsys):
+        """Two profile ids starting with the same prefix — refuse."""
+        chemin = tmp_path / "c.json"
+        cfg = cli.Config.load(chemin)
+        # Bypass add_profile's uuid generation so we can pin two shared
+        # prefixes without relying on chance collisions.
+        from Glaneur.config import Profile
+        cfg._extra_profiles.append(Profile(id="deadbeef01", name="a"))
+        cfg._extra_profiles.append(Profile(id="deadbeef02", name="b"))
+        cfg.save()
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--profile", "deadbee"], config_chemin=chemin)
+        assert exc.value.code == 2
+        assert "Ambiguous" in capsys.readouterr().err
+
+
+class TestListProfiles:
+    def test_list_profiles_prints_rows_and_exits_zero(
+            self, monkeypatch, tmp_path, capsys):
+        chemin, ident = _seed_extra_profile(monkeypatch, tmp_path, name="eso")
+        rc = _run(monkeypatch, ["--list-profiles"], config_chemin=chemin)
+        assert rc == 0
+        out = capsys.readouterr().out
+        # One line for the default, one for the extra.
+        lines = out.strip().splitlines()
+        assert len(lines) == 2
+        assert "default" in lines[0]
+        assert "eso" in lines[1]
+        assert ident in lines[1]
+
+    def test_list_profiles_does_not_start_the_engine(
+            self, monkeypatch, tmp_path):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path)
+        _FauxEngine.dernier = None
+        _run(monkeypatch, ["--list-profiles"], config_chemin=chemin)
+        # No Engine instance was created.
+        assert _FauxEngine.dernier is None

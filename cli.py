@@ -29,7 +29,7 @@ from Glaneur.scheduler import Scheduler
 from Glaneur.scheduler_labels import next_run_text
 
 
-def _build_parser(c: Config) -> argparse.ArgumentParser:
+def _build_parser(c: Config, profile=None) -> argparse.ArgumentParser:
     """Build the argparse parser, exposing English flags and hidden FR aliases.
 
     Every French flag from the pre-US-EN-06 CLI is preserved as a
@@ -38,18 +38,25 @@ def _build_parser(c: Config) -> argparse.ArgumentParser:
     keeping existing scripts working.
 
     Args:
-        c: Persisted config, used only to seed the flag defaults.
+        c: Persisted config; per-profile defaults come from ``profile``
+            (see below), application-level ones (``request_delay``)
+            stay on ``c``.
+        profile: The profile whose settings seed the per-profile
+            defaults. When ``None``, the config's default profile
+            (``c.default_profile()``) is used — the behaviour every
+            pre-multi-profile script keeps depending on.
 
     Returns:
         A configured ``argparse.ArgumentParser``.
     """
     p = argparse.ArgumentParser(
         description="Download images from a site (WordPress or Djangoplicity).")
-    # Per-profile defaults come through the forward-compat builder so
-    # this call site keeps working verbatim when E3 part B step 2
-    # flips Config storage to a real list[Profile] (roadmap §5.1).
-    # `request_delay` is application-level and stays on `c`.
-    profile = c.default_profile()
+    # Per-profile defaults come through the profile passed in (or the
+    # default one if `--profile` was not on the command line). Same
+    # None-inheritance rule as the runtime: `min_width` /
+    # `verify_integrity` resolve against `c.defaults()`.
+    if profile is None:
+        profile = c.default_profile()
     defaults = c.defaults()
 
     p.add_argument("-d", "--folder", dest="target_dir",
@@ -115,7 +122,61 @@ def _build_parser(c: Config) -> argparse.ArgumentParser:
                         " (all of them if no ID is given)")
     p.add_argument("--restaurer", dest="restore", nargs="*", metavar="ID",
                    help=argparse.SUPPRESS)
+
+    # Multi-profile picker (lot 5.1 E3 part B step 6). Without
+    # ``--profile``, the default profile (index 0) runs — every
+    # pre-multi-profile script keeps working verbatim.
+    p.add_argument("--profile", dest="profile", metavar="NAME|ID",
+                   help="run against a specific profile"
+                        " (name or full id; default: the first profile)")
+    p.add_argument("--list-profiles", dest="list_profiles",
+                   action="store_true",
+                   help="print the configured profiles and exit")
     return p
+
+
+def _pick_profile(c: Config, wanted: str | None):
+    """Resolve ``wanted`` to one of the configured profiles.
+
+    Match order is name-first, then id-prefix (so a user can type a
+    short prefix of the uuid). Ambiguity — multiple profiles matching
+    the same name or id-prefix — raises ``SystemExit`` with exit code 2.
+
+    Args:
+        c: The persisted config.
+        wanted: The ``--profile`` argument value, or ``None`` (return
+            the default profile).
+
+    Returns:
+        The chosen :class:`Glaneur.config.Profile`.
+    """
+    profiles = c.profiles()
+    if wanted is None:
+        return profiles[0]
+    # Name match first (exact).
+    par_nom = [p for p in profiles if p.name == wanted]
+    if len(par_nom) == 1:
+        return par_nom[0]
+    if len(par_nom) > 1:
+        print(f"Ambiguous profile name {wanted!r}: {len(par_nom)} profiles"
+              " share this name; use the full id instead.", file=sys.stderr)
+        raise SystemExit(2)
+    # Id-prefix match next.
+    par_id = [p for p in profiles if p.id.startswith(wanted)]
+    if len(par_id) == 1:
+        return par_id[0]
+    if len(par_id) > 1:
+        print(f"Ambiguous profile id-prefix {wanted!r}: {len(par_id)}"
+              " profiles match; use a longer prefix.", file=sys.stderr)
+        raise SystemExit(2)
+    print(f"No profile named or starting with {wanted!r}.", file=sys.stderr)
+    raise SystemExit(2)
+
+
+def _print_profiles(c: Config) -> None:
+    """Print one line per profile (name — id — site) on stdout."""
+    for p in c.profiles():
+        print(f"{p.name}\t{p.id}\t{p.site or '—'}")
 
 
 def main() -> int:
@@ -136,7 +197,23 @@ def main() -> int:
         keyboard interrupt (shell convention).
     """
     c = Config.load()
-    args = _build_parser(c).parse_args()
+
+    # Two-pass parsing so `--profile` can steer the defaults of every
+    # per-profile flag: pass 1 uses a minimal parser to pick out
+    # `--profile` / `--list-profiles`; pass 2 rebuilds the real parser
+    # seeded with the picked profile's fields.
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--profile", dest="profile")
+    pre.add_argument("--list-profiles", dest="list_profiles",
+                     action="store_true")
+    pre_args, _ = pre.parse_known_args()
+
+    if pre_args.list_profiles:
+        _print_profiles(c)
+        return 0
+
+    profile = _pick_profile(c, pre_args.profile)
+    args = _build_parser(c, profile).parse_args()
 
     if args.restore is not None:
         dossier = Path(args.target_dir).expanduser()
@@ -145,7 +222,7 @@ def main() -> int:
 
     options = Options(
         target_dir=Path(args.target_dir).expanduser(),
-        site=c.default_profile().site,
+        site=profile.site,
         sort_mode=args.sort_mode,
         min_width=args.min_width,
         delay=args.delay,
