@@ -18,27 +18,27 @@ def _cfg(tmp_path, **kw):
     return c
 
 
-class TestDerniere:
-    def test_vide(self, tmp_path):
+class TestLastRun:
+    def test_empty(self, tmp_path):
         p = Scheduler(_cfg(tmp_path, last_run=""))
         assert p.last_run() is None
 
-    def test_invalide(self, tmp_path):
+    def test_invalid(self, tmp_path):
         p = Scheduler(_cfg(tmp_path, last_run="pas une date"))
         assert p.last_run() is None
 
-    def test_valide(self, tmp_path):
+    def test_valid(self, tmp_path):
         t = "2026-01-15T12:30:00"
         p = Scheduler(_cfg(tmp_path, last_run=t))
         assert p.last_run() == datetime.fromisoformat(t)
 
 
-class TestProchaine:
-    def test_mode_manuel(self, tmp_path):
+class TestNextRun:
+    def test_manual_mode(self, tmp_path):
         p = Scheduler(_cfg(tmp_path, interval_hours=0))
         assert p.next_run() is None
 
-    def test_jamais_execute_declanche_immediat(self, tmp_path):
+    def test_never_ran_triggers_immediate(self, tmp_path):
         p = Scheduler(_cfg(tmp_path, interval_hours=24,
                                last_run=""))
         avant = datetime.now()
@@ -46,7 +46,7 @@ class TestProchaine:
         apres = datetime.now()
         assert avant <= r <= apres
 
-    def test_calcul_normal(self, tmp_path):
+    def test_normal_computation(self, tmp_path):
         t0 = datetime.now() - timedelta(hours=1)
         p = Scheduler(_cfg(tmp_path,
                                interval_hours=6,
@@ -54,26 +54,26 @@ class TestProchaine:
         assert p.next_run() == p.last_run() + timedelta(hours=6)
 
 
-class TestEcheanceAtteinte:
-    def test_manuel_jamais(self, tmp_path):
+class TestDeadlineReached:
+    def test_manual_never(self, tmp_path):
         p = Scheduler(_cfg(tmp_path, interval_hours=0))
         assert p.is_due() is False
 
-    def test_echeance_passee(self, tmp_path):
+    def test_deadline_past(self, tmp_path):
         t0 = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
         p = Scheduler(_cfg(tmp_path, interval_hours=24,
                                last_run=t0))
         assert p.is_due() is True
 
-    def test_echeance_future(self, tmp_path):
+    def test_deadline_future(self, tmp_path):
         t0 = datetime.now().isoformat(timespec="seconds")
         p = Scheduler(_cfg(tmp_path, interval_hours=24,
                                last_run=t0))
         assert p.is_due() is False
 
 
-class TestMarquerExecution:
-    def test_ecrit_horodatage_et_persiste(self, tmp_path):
+class TestMarkRun:
+    def test_writes_timestamp_and_persists(self, tmp_path):
         cfg = _cfg(tmp_path, interval_hours=24, last_run="")
         p = Scheduler(cfg)
         p.mark_run()
@@ -84,18 +84,18 @@ class TestMarquerExecution:
         datetime.fromisoformat(cfg2.last_run)
 
 
-class TestTextePresentable:
-    def test_mode_manuel(self, tmp_path):
+class TestDisplayText:
+    def test_manual_mode(self, tmp_path):
         p = Scheduler(_cfg(tmp_path, interval_hours=0))
         assert "désactivée" in next_run_text(p)
 
-    def test_imminente(self, tmp_path):
+    def test_imminent(self, tmp_path):
         t0 = (datetime.now() - timedelta(hours=25)).isoformat(timespec="seconds")
         p = Scheduler(_cfg(tmp_path, interval_hours=24,
                                last_run=t0))
         assert "imminente" in next_run_text(p)
 
-    def test_reste_en_minutes(self, tmp_path):
+    def test_remaining_in_minutes(self, tmp_path):
         # due time in ~30 min: derniere = now - 23h30
         t0 = (datetime.now() - timedelta(hours=23, minutes=30)).isoformat(
             timespec="seconds")
@@ -106,7 +106,7 @@ class TestTextePresentable:
         # < 1h → no "h" field
         assert " h " not in r
 
-    def test_reste_en_heures(self, tmp_path):
+    def test_remaining_in_hours(self, tmp_path):
         # due time in ~3h30: derniere = now - 20h30
         t0 = (datetime.now() - timedelta(hours=20, minutes=30)).isoformat(
             timespec="seconds")
@@ -114,7 +114,7 @@ class TestTextePresentable:
                                last_run=t0))
         assert " h " in next_run_text(p)
 
-    def test_reste_en_jours(self, tmp_path):
+    def test_remaining_in_days(self, tmp_path):
         # due time in 5 days: interval 7 days, derniere = 2 days ago
         t0 = (datetime.now() - timedelta(days=2)).isoformat(timespec="seconds")
         p = Scheduler(_cfg(tmp_path, interval_hours=168,
@@ -126,8 +126,8 @@ class TestTextePresentable:
 # Deferred retry (lot 3): circuit-breaker/backoff persistence
 # --------------------------------------------------------------------------- #
 
-class TestDifferer:
-    def test_differer_sans_hint_utilise_backoff_1h(self, tmp_path):
+class TestDefer:
+    def test_defer_without_hint_uses_backoff_1h(self, tmp_path):
         """Level 0 with no server hint schedules retry ~1h out and bumps level to 1."""
         cfg = _cfg(tmp_path, backoff_level=0)
         p = Scheduler(cfg)
@@ -137,7 +137,7 @@ class TestDifferer:
         assert abs((parsed - (avant + timedelta(hours=1))).total_seconds()) < 60
         assert cfg.backoff_level == 1
 
-    def test_differer_incremente_le_niveau_1_a_2(self, tmp_path):
+    def test_defer_increments_level_1_to_2(self, tmp_path):
         """Level 1 with no hint schedules retry ~2h out and moves to level 2."""
         cfg = _cfg(tmp_path, backoff_level=1)
         p = Scheduler(cfg)
@@ -147,7 +147,7 @@ class TestDifferer:
         assert abs((parsed - (avant + timedelta(hours=2))).total_seconds()) < 60
         assert cfg.backoff_level == 2
 
-    def test_differer_plafonne_le_niveau_a_2(self, tmp_path):
+    def test_defer_caps_level_at_2(self, tmp_path):
         """Level 2 caps at 2 and applies the 4h backoff without going further."""
         cfg = _cfg(tmp_path, backoff_level=2)
         p = Scheduler(cfg)
@@ -157,7 +157,7 @@ class TestDifferer:
         assert abs((parsed - (avant + timedelta(hours=4))).total_seconds()) < 60
         assert cfg.backoff_level == 2
 
-    def test_differer_avec_hint_serveur(self, tmp_path):
+    def test_defer_with_server_hint(self, tmp_path):
         """A server Retry-After sets retenter_apres verbatim and leaves the level intact."""
         cfg = _cfg(tmp_path, backoff_level=1)
         p = Scheduler(cfg)
@@ -169,7 +169,7 @@ class TestDifferer:
         assert abs((parsed - expected_local).total_seconds()) < 2
         assert cfg.backoff_level == 1
 
-    def test_differer_persiste(self, tmp_path):
+    def test_defer_persists(self, tmp_path):
         """Fields written by defer survive a fresh charger() round-trip."""
         cfg = _cfg(tmp_path, backoff_level=0)
         p = Scheduler(cfg)
@@ -180,8 +180,8 @@ class TestDifferer:
         assert cfg2.backoff_level == cfg.backoff_level
 
 
-class TestProchaineAvecReport:
-    def test_prochaine_respecte_retenter_apres(self, tmp_path):
+class TestNextRunWithDefer:
+    def test_next_respects_retry_after(self, tmp_path):
         """When the deferral date is later than the nominal deadline, prochaine returns it."""
         derniere = datetime.now() - timedelta(hours=1)
         report = datetime.now() + timedelta(hours=26)
@@ -194,7 +194,7 @@ class TestProchaineAvecReport:
         r = p.next_run()
         assert abs((r - report.replace(microsecond=0)).total_seconds()) < 2
 
-    def test_prochaine_ignore_retenter_apres_depasse(self, tmp_path):
+    def test_next_ignores_past_retry_after(self, tmp_path):
         """A stale deferral must not drag the nominal deadline back into the past."""
         derniere = datetime.now() - timedelta(hours=1)
         report = datetime.now() - timedelta(hours=5)
@@ -209,7 +209,7 @@ class TestProchaineAvecReport:
             derniere.isoformat(timespec="seconds")) + timedelta(hours=24)
         assert r == nominal
 
-    def test_prochaine_retenter_apres_invalide_ignore(self, tmp_path):
+    def test_next_ignores_invalid_retry_after(self, tmp_path):
         """A malformed retenter_apres is silently ignored, prochaine still returns nominal."""
         derniere = datetime.now() - timedelta(hours=1)
         p = Scheduler(_cfg(
@@ -224,8 +224,8 @@ class TestProchaineAvecReport:
         assert r == nominal
 
 
-class TestMarquerExecutionReinitialise:
-    def test_reset_apres_marquer_execution(self, tmp_path):
+class TestMarkRunResets:
+    def test_reset_after_mark_run(self, tmp_path):
         """mark_run clears any pending deferral (retenter_apres + backoff)."""
         report = (datetime.now() + timedelta(hours=1)).isoformat(timespec="seconds")
         cfg = _cfg(tmp_path,
@@ -238,8 +238,8 @@ class TestMarquerExecutionReinitialise:
         assert cfg.backoff_level == 0
 
 
-class TestTextePresentableAvecReport:
-    def test_libelle_report_actif(self, tmp_path):
+class TestDisplayTextWithDefer:
+    def test_defer_label_active(self, tmp_path):
         """A defer that pushes past the nominal time → label mentions "report"."""
         # Recent last run: nominal time ≈ now + 24 h; we set a defer that
         # goes past that nominal time so it is actually the decisive one.
@@ -253,7 +253,7 @@ class TestTextePresentableAvecReport:
         p = Scheduler(cfg)
         assert "report" in next_run_text(p).lower()
 
-    def test_libelle_report_avant_nominale_ignore(self, tmp_path):
+    def test_defer_label_before_nominal_ignored(self, tmp_path):
         """Defer earlier than the nominal time → no misleading "report" label.
 
         Concrete case: the server replied with a short `Retry-After` (1 h)
@@ -271,7 +271,7 @@ class TestTextePresentableAvecReport:
         p = Scheduler(cfg)
         assert "report" not in next_run_text(p).lower()
 
-    def test_libelle_report_passe_ignore(self, tmp_path):
+    def test_defer_label_past_ignored(self, tmp_path):
         """`retenter_apres` in the past → nominal label (no "report" mention)."""
         past = (datetime.now() - timedelta(hours=2)).isoformat(timespec="seconds")
         derniere = (datetime.now() - timedelta(hours=20, minutes=30)).isoformat(

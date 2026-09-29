@@ -9,105 +9,114 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**US-EN-01 — Comments, docstrings, sprint docs, impact-map template,
-`CLAUDE.md` → English.**
+**US-EN-02 — Rename French test names and test classes to English.**
 
-First story of the sprint
+Second story of the sprint
 `docs/sprints/2026-09-french-to-english-complete.md`.
 
-The whole codebase already reached English for identifiers, module
-docstrings, and configuration keys in earlier sprints. What is still
-French, per `CLAUDE.md` "Écarts connus", is a scattered set of
-comments, a few docstrings, plus every text-only artefact under
-`docs/sprints/`, `.claude/state/impact-map.md`, and `CLAUDE.md` itself.
-This US pulls all of them to English. **README.md keeps its dual
-French/English layout.** Sphinx `docs/sphinx/**` is already English.
+The test suite has 445 test functions; 219 of them use French words in
+their names (`test_erreur_reseau`, `test_deux_processus_second_leve_folder_busy`,
+`test_aucune_image`, …), and a handful of test classes are French too
+(`TestExecuter`, `TestChargerManifeste`, `TestTelecharger`,
+`TestCoupeCircuit`, `TestSauverManifesteFusion`, `TestExecuterExtra`).
 
-Nothing in this US touches production code semantics, tests, or
-persisted formats. The commit is text-only.
+Objective: rewrite these names in English, preserving test bodies,
+docstrings, fixtures, parametrize IDs, class ordering, and file
+structure. Zero behaviour change; the test suite output must remain
+identical.
 
 ## Directly modified
 
-- `CLAUDE.md` — rewritten in English, matching the current project
-  structure. The "Écarts connus" section is updated to remove the
-  entries this sprint resolves, and to name the follow-up US that
-  will resolve the rest.
-- `.claude/state/impact-map.md` — the template comment (top of file)
-  translated. The body of the map for the *current* US is already
-  English (this document itself).
-- `docs/sprints/*.md` — the four existing sprint docs
-  (`2026-09-preparation-publication.md`,
-  `2026-09-documentation-sphinx.md`,
-  `sprint-ci-validation-avant-tag.md`,
-  `sprint-ci-workflows.md`) and the current sprint doc
-  (`2026-09-verifier-lots-1-4-avant-lot-5.md`) translated to English.
-  Filenames are kept for `git blame` continuity.
-- French **comments** in `.py` files across the tree — translated
-  where they exist, kept on the same line.
-- French **docstrings** in `.py` files — kept rare per the September
-  "docstrings-en" sprint, but any that survived get translated.
+Every `tests/test_*.py` file with a French test name or test class:
 
-Runtime French strings (`print`, `raise RuntimeError(...)`, `journal`
-calls with literal FR, argparse `help=` text) are **out of scope** for
-this US: changing them affects user-visible behaviour, and each of
-their categories has its own US later in the sprint.
+- `tests/test_bug_report.py` (7 FR names)
+- `tests/test_cli.py` (9)
+- `tests/test_config.py` (17)
+- `tests/test_core.py` (55, plus FR classes)
+- `tests/test_folder_lock.py` (5)
+- `tests/test_i18n.py` (10)
+- `tests/test_logsetup.py` (2)
+- `tests/test_scheduler.py` (10)
+- `tests/test_source_base.py` (15)
+- `tests/test_source_djangoplicity.py` (11)
+- `tests/test_sources_edges.py` (25)
+- `tests/test_source_wordpress.py` (13)
+- `tests/test_system.py` (12)
+- `tests/test_updater_downloader.py` (10)
+- `tests/test_updater_threads.py` (3)
+- `tests/test_updater_threads_run.py` (3)
+- `tests/test_updater_version.py` (12)
+
+Class renames (case by case):
+
+- `TestExecuter` → `TestRun`
+- `TestExecuterExtra` → `TestRunExtra`
+- `TestChargerManifeste` → `TestLoadManifest`
+- `TestSauverManifesteFusion` → `TestSaveManifestMerge`
+- `TestTelecharger` → `TestDownload`
+- `TestCoupeCircuit` → `TestCircuitBreaker`
+
+Any other French class name discovered during the pass gets the same
+treatment; the naming above is the pattern (English noun clause,
+`Test` + PascalCase behaviour tested).
 
 ## Direct dependencies
 
-- `README.md` — **not modified**. It stays dual per the sprint
-  contract.
-- `docs/design/*.md` (`roadmap.md`, `evolution-multi-sources.md`) —
-  **already English** since the September design-docs sprint.
-- `docs/sphinx/**` — **already English** (its README, `conf.py`
-  comments, and `.rst` files were translated in the Sphinx sprint).
-- Production code identifiers, dispatch values, manifest keys,
-  `Element` fields, CLI flags — **not touched here**. Their US come
-  next in the sprint.
-- Qt translation source strings and `.ts` files — **not touched
-  here**. Their US (US-EN-07) is the last big one.
+- `conftest.py` and `tests/conftest.py`: **read only**. If any fixture
+  is referenced by name in a docstring, it stays; fixture names
+  themselves are not French.
+- Production code: **not modified**. This US is test-file names only.
+- `tools/check_coverage.py`: **read only**. Coverage floors do not
+  change; renaming test functions cannot change coverage.
 
 ## Explicitly out of scope
 
-- **README.md** stays dual per the sprint decision.
-- **Persisted manifest format** — US-EN-05.
-- **Dispatch values, engine statuses, sort modes** — US-EN-04.
-- **`Element` dataclass fields, `Transport.arret`, method names** —
-  US-EN-03.
-- **CLI flags** — US-EN-06.
-- **Qt translations** — US-EN-07.
-- **AppStream metainfo** — US-EN-08.
-- **Test names** — US-EN-02.
-- **`__version__`** — unchanged.
-- **Any code semantics** — this US is text only. The test suite is
-  expected to pass without a single change to any test.
+- **Test bodies**: assertions, fixtures, mocks, parametrize values —
+  untouched. Only the `def test_xxx` line (and its docstring `noun`
+  where the docstring restates the French test name) may change.
+- **Docstrings**: kept as is if already English. If a French docstring
+  literally repeats the test name in French, translate it inline; do
+  not otherwise translate docstrings (that was US-EN-01's job and is
+  already done for the load-bearing docs).
+- **Test files' module docstring**: untouched (already English).
+- **Fixture names**: no renames.
+- **Parametrize `id=` values**: no renames.
+- **Class attributes** and helper functions inside test modules:
+  untouched.
+- **Production code identifiers**: US-EN-03.
+- **Dispatch values referenced in tests**: US-EN-04.
+- **Manifest keys in fixtures**: US-EN-05.
+- **`__version__`**: unchanged.
 
 ## Tests
 
-No new tests. No test rewritten. The full suite must remain green
-because nothing about behaviour changes.
+No test added or removed. Nothing structural changes. The full suite
+must remain green with the same 495 passed / 2 skipped counts.
 
-Two commands verify:
+Verification steps:
 
-- `pytest -q` — 495 passed, 2 skipped (unchanged from US-VERIF-04).
-- `python tools/check_coverage.py` — coverage floors unchanged.
+- `pytest -q` → 495 passed, 2 skipped (identical to US-VERIF-04 and
+  US-EN-01 baseline).
+- `pytest --collect-only -q | wc -l` — collected-test count must be
+  stable across the rename.
+- `ruff check tests/` on the touched files.
 
 ## Invariants
 
 - `__version__` unchanged.
-- No production code semantics touched.
-- No test file modified (US-EN-02 owns that).
-- Coverage floors (from US-VERIF-01) remain at or above their current
-  baseline; strictly, this US moves no line so no floor moves.
-- README.md stays dual.
+- Zero production line modified.
+- Number of collected tests unchanged (445 test functions plus
+  parametrization).
+- Test outputs unchanged (no assertion touched, no fixture reordered).
+- Coverage floors held (renaming has no effect on line/branch
+  coverage of the production package).
 
 ## Validation
 
-Level `local`. Text-only change, no test suite dependency, no invariant
-reviewer.
+Level `local`. Test-file text-only rename.
 
 - `pytest -q` green.
-- `ruff check` on any touched `.py` file (only affects comments and
-  docstrings — no functional lines).
-- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
-  green — docstrings changed, so autodoc/napoleon must still produce
-  a warning-free build.
+- `pytest --collect-only -q` yields the same test count.
+- `ruff check tests/` clean on the touched files (pre-existing
+  warnings unchanged).
+- No `invariant-reviewer` (no invariant touched).

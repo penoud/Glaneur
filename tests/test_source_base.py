@@ -43,8 +43,8 @@ def _reponse(status: int, retry_after: str | None = None) -> requests.Response:
 # --------------------------------------------------------------------------- #
 
 
-class TestCoupure:
-    def test_dns_name_resolution_error_est_une_coupure(self):
+class TestCut:
+    def test_dns_name_resolution_error_is_a_cut(self):
         """A DNS blackhole (NameResolutionError) is classified as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "HTTPSConnectionPool(host='www.eso.org', port=443): "
@@ -56,21 +56,21 @@ class TestCoupure:
         c = classify_error(exc)
         assert c.category == "coupure"
 
-    def test_dns_failed_to_resolve_est_une_coupure(self):
+    def test_dns_failed_to_resolve_is_a_cut(self):
         """A lone 'Failed to resolve' message is enough to classify as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "Failed to resolve 'example.invalid'"
         )
         assert classify_error(exc).category == "coupure"
 
-    def test_dns_getaddrinfo_failed_est_une_coupure(self):
+    def test_dns_getaddrinfo_failed_is_a_cut(self):
         """A 'getaddrinfo failed' message is classified as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "socket.gaierror: [Errno -2] getaddrinfo failed"
         )
         assert classify_error(exc).category == "coupure"
 
-    def test_max_retries_exceeded_est_une_coupure(self):
+    def test_max_retries_exceeded_is_a_cut(self):
         """ConnectionError 'Max retries exceeded' is classified as `coupure`."""
         exc = requests.exceptions.ConnectionError(
             "HTTPSConnectionPool(host='x', port=443): "
@@ -79,7 +79,7 @@ class TestCoupure:
         assert classify_error(exc).category == "coupure"
 
     @pytest.mark.parametrize("status", [429, 502, 503, 504])
-    def test_status_amont_est_une_coupure(self, status):
+    def test_upstream_status_is_a_cut(self, status):
         """429 and upstream 5xx (502/503/504) are classified as `coupure`."""
         c = classify_error(None, _reponse(status))
         assert c.category == "coupure"
@@ -90,13 +90,13 @@ class TestCoupure:
 # --------------------------------------------------------------------------- #
 
 
-class TestTransitoire:
-    def test_timeout_seul_est_transitoire(self):
+class TestTransient:
+    def test_lone_timeout_is_transient(self):
         """`requests.exceptions.Timeout` alone is `transitoire`."""
         exc = requests.exceptions.Timeout("Read timed out.")
         assert classify_error(exc).category == "transitoire"
 
-    def test_500_isole_est_transitoire(self):
+    def test_isolated_500_is_transient(self):
         """An isolated 500 is not a cut: it stays `transitoire`."""
         assert classify_error(None, _reponse(500)).category == "transitoire"
 
@@ -106,13 +106,13 @@ class TestTransitoire:
 # --------------------------------------------------------------------------- #
 
 
-class TestDefinitif:
+class TestDefinitive:
     @pytest.mark.parametrize("status", [401, 403, 404])
-    def test_erreurs_client_sont_definitives(self, status):
+    def test_client_errors_are_definitive(self, status):
         """401/403/404 are classified as `definitif` (nothing to retry)."""
         assert classify_error(None, _reponse(status)).category == "definitif"
 
-    def test_missing_schema_est_definitif(self):
+    def test_missing_schema_is_definitive(self):
         """A malformed URL (`MissingSchema`) is `definitif`."""
         exc = requests.exceptions.MissingSchema("Invalid URL 'foo'")
         assert classify_error(exc).category == "definitif"
@@ -124,13 +124,13 @@ class TestDefinitif:
 
 
 class TestRetryAfter:
-    def test_retry_after_en_secondes_entieres(self):
+    def test_retry_after_in_whole_seconds(self):
         """`Retry-After: 120` is exposed as `float(120.0)`."""
         c = classify_error(None, _reponse(429, retry_after="120"))
         assert c.retry_after == 120.0
         assert isinstance(c.retry_after, float)
 
-    def test_retry_after_http_date_positif(self):
+    def test_retry_after_http_date_positive(self):
         """`Retry-After` as an HTTP-date yields a positive delta in seconds."""
         futur = datetime.now(timezone.utc) + timedelta(seconds=90)
         entete = format_datetime(futur, usegmt=True)
@@ -139,12 +139,12 @@ class TestRetryAfter:
         # a few seconds of tolerance around 90s
         assert 80.0 <= c.retry_after <= 100.0
 
-    def test_retry_after_absent_donne_none(self):
+    def test_retry_after_absent_yields_none(self):
         """Without a `Retry-After` header, `retry_after` is `None`."""
         c = classify_error(None, _reponse(503))
         assert c.retry_after is None
 
-    def test_dns_error_pas_de_retry_after(self):
+    def test_dns_error_no_retry_after(self):
         """A DNS `coupure` exposes no `retry_after` by default."""
         exc = requests.exceptions.ConnectionError(
             "Failed to resolve 'example.invalid'"
@@ -160,13 +160,13 @@ class TestRetryAfter:
 
 
 class TestClassificationDataclass:
-    def test_classification_est_gelee(self):
+    def test_classification_is_frozen(self):
         """`ErrorClassification` is immutable (frozen dataclass)."""
         c = classify_error(None, _reponse(429, retry_after="1"))
         with pytest.raises((AttributeError, Exception)):
             c.category = "definitif"  # type: ignore[misc]
 
-    def test_classification_expose_categorie_et_retry_after(self):
+    def test_classification_exposes_category_and_retry_after(self):
         """The returned object exposes at least `categorie` and `retry_after`."""
         c = classify_error(None, _reponse(500))
         assert isinstance(c, ErrorClassification)
@@ -189,7 +189,7 @@ class TestTransportGetJson:
     """
 
     @pytest.mark.parametrize("status", [401, 403, 404])
-    def test_erreurs_client_hors_fin_si_levent_sans_reessayer(self, status):
+    def test_client_errors_outside_fin_si_raise_without_retry(self, status):
         """A definitive client error (401/403/404) raises at once, no retry, no sleep."""
         t = Transport(delay=0)
         t.session = MagicMock()
@@ -204,7 +204,7 @@ class TestTransportGetJson:
         assert t.session.get.call_count == 1
         fake_sleep.assert_not_called()
 
-    def test_retry_after_court_est_respecte(self):
+    def test_short_retry_after_is_respected(self):
         """A short `Retry-After` (below 120s) is used as the pause between retries."""
         t = Transport(delay=0)
         t.session = MagicMock()
@@ -222,7 +222,7 @@ class TestTransportGetJson:
         assert fake_sleep.call_count == 1
         assert fake_sleep.call_args.args[0] == 3.0
 
-    def test_retry_after_long_est_plafonne_a_120s(self):
+    def test_long_retry_after_is_capped_at_120s(self):
         """A `Retry-After` above 120s is capped at 120s before sleeping."""
         t = Transport(delay=0)
         t.session = MagicMock()
@@ -240,7 +240,7 @@ class TestTransportGetJson:
         assert fake_sleep.call_count == 1
         assert fake_sleep.call_args.args[0] == 120.0
 
-    def test_trois_echecs_500_donnent_deux_pauses_2_puis_4(self):
+    def test_three_500_failures_yield_two_pauses_2_then_4(self):
         """Three 500 attempts pause 2s then 4s only — no third `sleep(6)`."""
         t = Transport(delay=0)
         t.session = MagicMock()

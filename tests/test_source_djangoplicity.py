@@ -88,17 +88,17 @@ class FauxServeur:
 # --------------------------------------------------------------------------- #
 
 class TestBase:
-    def test_type_et_classements(self):
+    def test_type_and_sort_modes(self):
         assert Djangoplicity.type == "djangoplicity"
         # doc §3: "galerie" has no natural equivalent
         assert "galerie" not in Djangoplicity.sort_modes
         assert {"date", "plat"} <= Djangoplicity.sort_modes
 
-    def test_endpoint_derive_de_la_base(self):
+    def test_endpoint_derived_from_base(self):
         s = _source(base="https://www.eso.org/public/")
         assert s.endpoint == "https://www.eso.org/public/images/d2d/"
 
-    def test_convertir_depuis(self):
+    def test_convert_from(self):
         s = _source()
         assert s.convert_from("2026-06-15T12:00:00") == "20260615120000"
         # tolerant: YYYY-MM-DD is enough, the time is zero-padded
@@ -111,7 +111,7 @@ class TestBase:
 # --------------------------------------------------------------------------- #
 
 class TestToElement:
-    def test_format_par_defaut_large(self):
+    def test_default_format_is_large(self):
         s = _source()
         e = s._to_element(_entree("eso1907a"))
         assert e.ident == "eso1907a:Large"
@@ -120,7 +120,7 @@ class TestToElement:
         assert e.mois == "2026-06"
         assert e.taille == 3_500_000
 
-    def test_repli_sur_small_si_large_absent(self):
+    def test_falls_back_to_small_when_large_absent(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[
             _ressource("Original", "https://cdn.eso.org/original/eso1907a.tif"),
@@ -134,7 +134,7 @@ class TestToElement:
         # float `Dimensions` → int
         assert e.largeur == 1280
 
-    def test_aucun_format_disponible_url_none(self):
+    def test_no_format_available_url_is_none(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[
             _ressource("Thumbnail", "https://cdn.eso.org/thumb/eso1907a.jpg"),
@@ -145,20 +145,20 @@ class TestToElement:
         # the ident keeps the requested format (not the effective one)
         assert e.ident.endswith(":Large")
 
-    def test_original_choisi_si_configure(self):
+    def test_original_chosen_when_configured(self):
         s = _source(format_image="Original")
         e = s._to_element(_entree("eso1907a"))
         assert e.ident == "eso1907a:Original"
         assert e.url.endswith(".tif")
 
-    def test_credit_et_rights_dans_extra(self):
+    def test_credit_and_rights_in_extra(self):
         s = _source()
         e = s._to_element(_entree("eso1907a", credit="ESO/T. Preibisch",
                                   rights="CC BY 4.0"))
         assert e.extra["credit"] == "ESO/T. Preibisch"
         assert e.extra["rights"] == "CC BY 4.0"
 
-    def test_checksum_reporte_dans_extra_si_present(self):
+    def test_checksum_carried_into_extra_when_present(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[
             _ressource("Large", "https://cdn.eso.org/large/eso1907a.jpg"),
@@ -167,7 +167,7 @@ class TestToElement:
         e = s._to_element(entree)
         assert e.extra["checksum"] == "a" * 64
 
-    def test_dimensions_manquantes_largeur_none(self):
+    def test_missing_dimensions_width_none(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[{
             "ResourceType": "Large",
@@ -185,7 +185,7 @@ class TestToElement:
         e = s._to_element(_entree("eso1907a", credit="b'ESO/T. Preibisch'"))
         assert e.extra["credit"] == "ESO/T. Preibisch"
 
-    def test_sanitizer_sur_id(self):
+    def test_sanitizer_on_id(self):
         # same bug applied to the ID: the name must come out intact.
         s = _source()
         entree = _entree("eso1907a")
@@ -198,8 +198,8 @@ class TestToElement:
 # Inventory (pagination via Next)
 # --------------------------------------------------------------------------- #
 
-class TestInventaire:
-    def test_pagination_suit_next(self):
+class TestInventory:
+    def test_pagination_follows_next(self):
         s = _source(base="https://x.example")
         page1 = _reponse([_entree("a"), _entree("b")],
                          next_url="https://x.example/images/d2d/?page=2",
@@ -215,7 +215,7 @@ class TestInventaire:
         # exactly two requests, not three
         assert len(faux.appels) == 2
 
-    def test_arret_sur_absence_de_next_meme_page_courte(self):
+    def test_stop_on_missing_next_even_short_page(self):
         # page returning fewer entries than `count` but no `Next`:
         # the adapter must stop (doc §7).
         s = _source(base="https://x.example")
@@ -225,7 +225,7 @@ class TestInventaire:
             r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["a:Large"]
 
-    def test_deduplication_par_id(self):
+    def test_deduplication_by_id(self):
         # cross-page duplicate: silently ignored
         s = _source(base="https://x.example")
         page1 = _reponse([_entree("a"), _entree("b")],
@@ -239,7 +239,7 @@ class TestInventaire:
             r = list(s.inventory(None, None))
         assert sorted(e.ident for e in r) == ["a:Large", "b:Large", "c:Large"]
 
-    def test_after_est_transmis_en_params(self):
+    def test_after_is_passed_via_params(self):
         s = _source(base="https://x.example")
         capture = {}
 
@@ -257,8 +257,8 @@ class TestInventaire:
 # downloads by the engine; the manifest flags it as "already up to date".
 # --------------------------------------------------------------------------- #
 
-class TestAfterInclusif:
-    def test_element_frontiere_non_retelecharge(self, tmp_path):
+class TestAfterInclusive:
+    def test_boundary_element_not_redownloaded(self, tmp_path):
         # Simulate: a previous run downloaded `a` (id "a:Large"). A second
         # run with inclusive `after` returns `a` first, then a new `b`.
         # The manifest must report `a` → already up to date (1 deja_presentes),
@@ -310,8 +310,8 @@ class TestAfterInclusif:
 # Missing resource → ignored by the engine
 # --------------------------------------------------------------------------- #
 
-class TestRessourceManquante:
-    def test_element_sans_url_est_ignoree(self, tmp_path):
+class TestMissingResource:
+    def test_element_without_url_is_ignored(self, tmp_path):
         options = Options(
             target_dir=tmp_path, site="https://x.example", delay=0,
             sort_mode="date", source_type="djangoplicity",

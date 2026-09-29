@@ -104,8 +104,8 @@ def _run(monkeypatch, argv, *, resultat=None, leve=None, config_kw=None,
 # --------------------------------------------------------------------------- #
 
 
-class TestArgumentsVersOptions:
-    def test_defaults_viennent_de_config(self, monkeypatch, tmp_path):
+class TestArgumentsToOptions:
+    def test_defaults_come_from_config(self, monkeypatch, tmp_path):
         rc = _run(
             monkeypatch,
             [],
@@ -165,15 +165,15 @@ class TestArgumentsVersOptions:
         assert o.since == "2026-01-01"
         assert o.until == "2026-06-30"
 
-    def test_choix_type_source_invalide(self, monkeypatch):
+    def test_invalid_source_type_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
             _run(monkeypatch, ["--type", "flickr"])
 
-    def test_choix_format_invalide(self, monkeypatch):
+    def test_invalid_format_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
             _run(monkeypatch, ["--format", "Huge"])
 
-    def test_choix_classement_invalide(self, monkeypatch):
+    def test_invalid_sort_mode_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
             _run(monkeypatch, ["--classement", "aleatoire"])
 
@@ -183,24 +183,24 @@ class TestArgumentsVersOptions:
 # --------------------------------------------------------------------------- #
 
 
-class TestCodesRetour:
-    def test_succes_renvoie_zero(self, monkeypatch):
+class TestReturnCodes:
+    def test_success_returns_zero(self, monkeypatch):
         rc = _run(monkeypatch, [], resultat=RunResult(downloaded=3, message="OK"))
         assert rc == 0
 
-    def test_zero_si_aucun_echec_meme_sans_telechargement(self, monkeypatch):
+    def test_zero_if_no_failure_even_without_download(self, monkeypatch):
         # Nothing new but nothing failed either: still success.
         rc = _run(monkeypatch, [], resultat=RunResult(already_present=10, message="OK"))
         assert rc == 0
 
-    def test_un_si_tout_a_echoue(self, monkeypatch):
+    def test_one_if_everything_failed(self, monkeypatch):
         rc = _run(
             monkeypatch, [],
             resultat=RunResult(failures=5, downloaded=0, message="KO"),
         )
         assert rc == 1
 
-    def test_zero_si_echecs_mais_au_moins_un_telechargement(self, monkeypatch):
+    def test_zero_if_failures_but_at_least_one_download(self, monkeypatch):
         # Partial failure: not the "everything failed" branch.
         rc = _run(
             monkeypatch, [],
@@ -208,7 +208,7 @@ class TestCodesRetour:
         )
         assert rc == 0
 
-    def test_deux_si_run_reporte(self, monkeypatch, tmp_path, capsys):
+    def test_two_if_run_deferred(self, monkeypatch, tmp_path, capsys):
         # `Scheduler.defer` persists a defer via `Config.sauvegarder`,
         # so the config path has to be writable.
         rc = _run(
@@ -221,7 +221,7 @@ class TestCodesRetour:
         # next_run_text goes to stderr as a next-run hint.
         assert err.strip() != ""
 
-    def test_130_sur_keyboard_interrupt(self, monkeypatch, capsys):
+    def test_130_on_keyboard_interrupt(self, monkeypatch, capsys):
         rc = _run(monkeypatch, [], leve=KeyboardInterrupt())
         assert rc == 130
         # The stub engine's `arret` event was signalled cooperatively.
@@ -234,8 +234,8 @@ class TestCodesRetour:
 # --------------------------------------------------------------------------- #
 
 
-class TestSortieStdout:
-    def test_resume_contient_les_compteurs(self, monkeypatch, capsys):
+class TestStdoutOutput:
+    def test_summary_contains_the_counters(self, monkeypatch, capsys):
         _run(
             monkeypatch,
             [],
@@ -264,8 +264,8 @@ class TestSortieStdout:
 # --------------------------------------------------------------------------- #
 
 
-class TestRestaurer:
-    def test_restaurer_avec_ids_explicites(self, monkeypatch, tmp_path, capsys):
+class TestRestore:
+    def test_restore_with_explicit_ids(self, monkeypatch, tmp_path, capsys):
         appels = {}
 
         def faux_restaurer(dossier, ids):
@@ -289,7 +289,7 @@ class TestRestaurer:
         assert appels["ids"] == ["12", "34", "56"]
         assert "3 image(s) remise(s)" in capsys.readouterr().out
 
-    def test_restaurer_sans_ids_prend_toutes_les_supprimees(
+    def test_restore_without_ids_takes_all_deleted(
         self, monkeypatch, tmp_path, capsys,
     ):
         def faux_lister(dossier):
@@ -316,8 +316,8 @@ class TestRestaurer:
 # --------------------------------------------------------------------------- #
 
 
-class TestProgression:
-    def test_ecrit_seulement_quand_la_ligne_change(self, monkeypatch, capsys):
+class TestProgress:
+    def test_writes_only_when_the_line_changes(self, monkeypatch, capsys):
         """The progression callback rewrites a single line on stdout and
         skips writes when the formatted output would be identical.
         """
@@ -333,7 +333,7 @@ class TestProgression:
         assert out.count("photo-1") == 1
         assert "photo-2" in out
 
-    def test_tronque_l_etiquette_a_60_caracteres(self, monkeypatch, capsys):
+    def test_truncates_the_label_to_60_characters(self, monkeypatch, capsys):
         _run(monkeypatch, [])
         prog = _FauxEngine.dernier.progression
         prog(1, 2, "x" * 200)

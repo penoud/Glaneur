@@ -69,14 +69,14 @@ def _child_try_lock(target_dir_str: str, go_queue, result_queue) -> None:
 class TestFolderLock:
     """Direct tests of the ``folder_lock`` context manager contract."""
 
-    def test_double_acquisition_intraprocess_leve_folder_busy(self, tmp_path):
+    def test_double_acquisition_intraprocess_raises_folder_busy(self, tmp_path):
         """A second acquisition on the same folder raises FolderBusy."""
         with folder_lock(tmp_path), pytest.raises(FolderBusy), folder_lock(
             tmp_path,
         ):
             pass  # pragma: no cover - the inner enter must raise
 
-    def test_acquisition_sequentielle_reussit(self, tmp_path):
+    def test_sequential_acquisition_succeeds(self, tmp_path):
         """Releasing then re-acquiring the same folder is allowed."""
         with folder_lock(tmp_path):
             pass
@@ -87,7 +87,7 @@ class TestFolderLock:
         with folder_lock(tmp_path):
             pass
 
-    def test_suppression_manuelle_du_fichier_ne_casse_pas_l_acquisition_suivante(
+    def test_manual_deletion_of_file_does_not_break_next_acquisition(
         self, tmp_path,
     ):
         """Deleting the lock sentinel between two runs stays safe."""
@@ -98,7 +98,7 @@ class TestFolderLock:
         with folder_lock(tmp_path):
             assert (tmp_path / LOCK_NAME).exists()
 
-    def test_deux_processus_second_leve_folder_busy(self, tmp_path):
+    def test_two_processes_second_raises_folder_busy(self, tmp_path):
         """A second process trying to enter a locked folder gets FolderBusy."""
         ctx = multiprocessing.get_context("spawn")
         go_queue = ctx.Queue()
@@ -130,7 +130,7 @@ class TestFolderLock:
 class TestEngineRunBusy:
     """Integration: Engine.run under a held folder lock returns busy."""
 
-    def test_engine_run_renvoie_busy_true_si_dossier_verrouille(self, tmp_path):
+    def test_engine_run_returns_busy_true_when_folder_locked(self, tmp_path):
         """Engine.run bails out with RunResult(busy=True) on a locked folder."""
         options = Options(
             target_dir=tmp_path,
@@ -184,7 +184,7 @@ class _FauxBusyEngine:
 class TestCliBusyExitCode:
     """cli.main translates RunResult(busy=True) into exit code 3."""
 
-    def test_cli_sort_code_3_si_engine_renvoie_busy(
+    def test_cli_exits_code_3_when_engine_returns_busy(
         self, monkeypatch, tmp_path, capsys,
     ):
         """A busy engine result yields exit code 3 and a stderr hint."""
