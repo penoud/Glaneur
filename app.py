@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSystemTrayIcon,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -348,96 +349,53 @@ class DialoguePreferences(QDialog):
         colonne.setContentsMargins(14, 14, 14, 14)
         colonne.setSpacing(10)
 
-        # --- site ---------------------------------------------------------
-        boite = QGroupBox(self.tr("Site"))
-        forme_site = QFormLayout(boite)
-        forme_site.setLabelAlignment(Qt.AlignLeft)
+        # Tabbed layout, keyed off `Glaneur.config.PROFILE_FIELDS`. The
+        # "General" tab holds application-level preferences; the "Site"
+        # tab holds every field listed in PROFILE_FIELDS. "Filters" and
+        # "Images" are created hidden — they get their widgets in E5
+        # (lot 11.2) and E6 (lot 11.5). See design docs
+        # `evolution-multi-sources.md` §3.2 and `roadmap.md` §5.0.
+        self.onglets = QTabWidget(self)
+        self.onglets.addTab(self._build_general_tab(), self.tr("General"))
+        self.onglets.addTab(self._build_site_tab(), self.tr("Site"))
+        self._idx_filters = self.onglets.addTab(
+            self._build_filters_tab(), self.tr("Filters"))
+        self._idx_images = self.onglets.addTab(
+            self._build_images_tab(), self.tr("Images"))
+        self.onglets.setTabVisible(self._idx_filters, False)
+        self.onglets.setTabVisible(self._idx_images, False)
+        colonne.addWidget(self.onglets, 1)
 
-        self.combo_type = QComboBox()
-        self.combo_type.addItems(list(SOURCE_TYPES))
-        libelle_type_courant = next(
-            (libelle for libelle, val in SOURCE_TYPES.items()
-             if val == cfg.source_type),
-            next(iter(SOURCE_TYPES)),
-        )
-        self.combo_type.setCurrentText(libelle_type_courant)
-        self.combo_type.setToolTip(self.tr(
-            "Site type to query. WordPress reads the /wp-json REST API,\n"
-            "Djangoplicity reads the /images/d2d/ JSON feed (ESO, ESA/Hubble…)."))
-        forme_site.addRow(self.tr("Type:"), self.combo_type)
+        # `_sur_changement_type` needs both combos in place; run it once
+        # now that every widget has been created.
+        self._sur_changement_type(self.combo_type.currentText())
 
-        self.champ_site = QLineEdit(cfg.site)
-        self.champ_site.setPlaceholderText(self.tr("https://example.com"))
-        self.champ_site.setToolTip(self.tr(
-            "Base URL of the site (without /wp-json or /images/d2d depending on the type)."))
-        forme_site.addRow(self.tr("URL:"), self.champ_site)
+        # --- buttons ------------------------------------------------------
+        boutons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        colonne.addWidget(boutons)
 
-        # Format visible only for Djangoplicity: `Original` files are
-        # TIFFs of several hundred MB, the warning lives in the option
-        # label.
-        self.combo_format = QComboBox()
-        self.combo_format.addItems(list(DJANGOPLICITY_FORMATS))
-        libelle_format_courant = next(
-            (libelle for libelle, val in DJANGOPLICITY_FORMATS.items()
-             if val == cfg.image_format),
-            next(iter(DJANGOPLICITY_FORMATS)),
-        )
-        self.combo_format.setCurrentText(libelle_format_courant)
-        self.combo_format.setToolTip(self.tr(
-            "Resolution downloaded from Djangoplicity. Original = TIFF (often >100 MB)."))
-        self.label_format = QLabel(self.tr("Format:"))
-        forme_site.addRow(self.label_format, self.combo_format)
+    # -- tabs ---------------------------------------------------------------
 
-        self.combo_type.currentTextChanged.connect(self._sur_changement_type)
-        colonne.addWidget(boite)
+    def _build_general_tab(self) -> QWidget:
+        """Application-level preferences: cadence, system integration,
+        notification-area behaviour, updates check, language.
 
-        # --- destination --------------------------------------------------
-        boite = QGroupBox(self.tr("Destination"))
-        ligne = QHBoxLayout(boite)
-        self.champ_dossier = QLineEdit(cfg.target_dir)
-        ligne.addWidget(self.champ_dossier, 1)
-        bouton = QPushButton(self.tr("Browse…"))
-        bouton.clicked.connect(self._choisir_dossier)
-        ligne.addWidget(bouton)
-        colonne.addWidget(boite)
-
-        # --- options ------------------------------------------------------
-        boite = QGroupBox(self.tr("Options"))
-        form = QFormLayout(boite)
+        Every field in this tab lives outside :data:`Glaneur.config.PROFILE_FIELDS`,
+        so it survives the v1 → v2 migration (roadmap §5.1) as an
+        application-level key.
+        """
+        cfg = self.cfg
+        page = QWidget()
+        form = QFormLayout(page)
         form.setLabelAlignment(Qt.AlignLeft)
 
         self.combo_intervalle = QComboBox()
         self.combo_intervalle.addItems(list(INTERVALS))
         self.combo_intervalle.setCurrentText(cfg.interval_label)
         form.addRow(self.tr("Update:"), self.combo_intervalle)
-
-        self.combo_classement = QComboBox()
-        self.combo_classement.addItems(list(SORT_MODES))
-        self.combo_classement.setCurrentText(cfg.sort_mode_label)
-        self.combo_classement.setToolTip(self.tr(
-            "Changes the destination of new images. Images already\n"
-            "downloaded stay where they are."))
-        form.addRow(self.tr("Sort:"), self.combo_classement)
-
-        # Adjusts the format's visibility and the sort mode's greying
-        # according to the initial type.
-        self._sur_changement_type(self.combo_type.currentText())
-
-        self.spin_largeur = QSpinBox()
-        self.spin_largeur.setRange(0, 10000)
-        self.spin_largeur.setSingleStep(100)
-        self.spin_largeur.setSuffix(self.tr(" px"))
-        self.spin_largeur.setValue(cfg.min_width)
-        self.spin_largeur.setToolTip(self.tr(
-            "Discard logos and thumbnails below this width. 0 to keep everything."))
-        form.addRow(self.tr("Minimum width:"), self.spin_largeur)
-
-        self.case_verifier = QCheckBox(self.tr("Verify integrity of existing files"))
-        self.case_verifier.setChecked(cfg.verify_integrity)
-        self.case_verifier.setToolTip(self.tr(
-            "Queries the server for each known file (304 response if identical).\n"
-            "Slower, reserve for a one-off check."))
-        form.addRow("", self.case_verifier)
 
         self.case_diaporama = QCheckBox(self.tr(
             "Use this folder for the Windows slideshow"))
@@ -465,7 +423,6 @@ class DialoguePreferences(QDialog):
             "to offer the latest stable version if it is newer."))
         form.addRow("", self.case_maj_demarrage)
 
-        # --- language -----------------------------------------------------
         from Glaneur.i18n import AVAILABLE_LANGUAGES
         self.combo_langue = QComboBox()
         self.combo_langue.addItem(self.tr("System language"), "")
@@ -479,15 +436,109 @@ class DialoguePreferences(QDialog):
             "Language change takes effect at the next launch."))
         form.addRow(self.tr("Language:"), self.combo_langue)
 
-        colonne.addWidget(boite)
-        colonne.addStretch(1)
+        return page
 
-        # --- buttons ------------------------------------------------------
-        boutons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
-        boutons.accepted.connect(self.accept)
-        boutons.rejected.connect(self.reject)
-        colonne.addWidget(boutons)
+    def _build_site_tab(self) -> QWidget:
+        """Per-profile preferences — the fields in
+        :data:`Glaneur.config.PROFILE_FIELDS`.
+
+        Today one implicit profile is stored flat on :class:`Config`.
+        When the v1 → v2 migration lands (roadmap §5.1), everything in
+        this tab moves into a `Profile` entry.
+        """
+        cfg = self.cfg
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setLabelAlignment(Qt.AlignLeft)
+
+        self.combo_type = QComboBox()
+        self.combo_type.addItems(list(SOURCE_TYPES))
+        libelle_type_courant = next(
+            (libelle for libelle, val in SOURCE_TYPES.items()
+             if val == cfg.source_type),
+            next(iter(SOURCE_TYPES)),
+        )
+        self.combo_type.setCurrentText(libelle_type_courant)
+        self.combo_type.setToolTip(self.tr(
+            "Site type to query. WordPress reads the /wp-json REST API,\n"
+            "Djangoplicity reads the /images/d2d/ JSON feed (ESO, ESA/Hubble…)."))
+        form.addRow(self.tr("Type:"), self.combo_type)
+
+        self.champ_site = QLineEdit(cfg.site)
+        self.champ_site.setPlaceholderText(self.tr("https://example.com"))
+        self.champ_site.setToolTip(self.tr(
+            "Base URL of the site (without /wp-json or /images/d2d depending on the type)."))
+        form.addRow(self.tr("URL:"), self.champ_site)
+
+        # Format visible only for Djangoplicity: `Original` files are
+        # TIFFs of several hundred MB, the warning lives in the option
+        # label.
+        self.combo_format = QComboBox()
+        self.combo_format.addItems(list(DJANGOPLICITY_FORMATS))
+        libelle_format_courant = next(
+            (libelle for libelle, val in DJANGOPLICITY_FORMATS.items()
+             if val == cfg.image_format),
+            next(iter(DJANGOPLICITY_FORMATS)),
+        )
+        self.combo_format.setCurrentText(libelle_format_courant)
+        self.combo_format.setToolTip(self.tr(
+            "Resolution downloaded from Djangoplicity. Original = TIFF (often >100 MB)."))
+        self.label_format = QLabel(self.tr("Format:"))
+        form.addRow(self.label_format, self.combo_format)
+
+        self.combo_type.currentTextChanged.connect(self._sur_changement_type)
+
+        # --- destination (inline row, not a group) -------------------------
+        ligne_dest = QHBoxLayout()
+        self.champ_dossier = QLineEdit(cfg.target_dir)
+        ligne_dest.addWidget(self.champ_dossier, 1)
+        bouton = QPushButton(self.tr("Browse…"))
+        bouton.clicked.connect(self._choisir_dossier)
+        ligne_dest.addWidget(bouton)
+        form.addRow(self.tr("Destination:"), ligne_dest)
+
+        self.combo_classement = QComboBox()
+        self.combo_classement.addItems(list(SORT_MODES))
+        self.combo_classement.setCurrentText(cfg.sort_mode_label)
+        self.combo_classement.setToolTip(self.tr(
+            "Changes the destination of new images. Images already\n"
+            "downloaded stay where they are."))
+        form.addRow(self.tr("Sort:"), self.combo_classement)
+
+        self.spin_largeur = QSpinBox()
+        self.spin_largeur.setRange(0, 10000)
+        self.spin_largeur.setSingleStep(100)
+        self.spin_largeur.setSuffix(self.tr(" px"))
+        self.spin_largeur.setValue(cfg.min_width)
+        self.spin_largeur.setToolTip(self.tr(
+            "Discard logos and thumbnails below this width. 0 to keep everything."))
+        form.addRow(self.tr("Minimum width:"), self.spin_largeur)
+
+        self.case_verifier = QCheckBox(self.tr("Verify integrity of existing files"))
+        self.case_verifier.setChecked(cfg.verify_integrity)
+        self.case_verifier.setToolTip(self.tr(
+            "Queries the server for each known file (304 response if identical).\n"
+            "Slower, reserve for a one-off check."))
+        form.addRow("", self.case_verifier)
+
+        return page
+
+    def _build_filters_tab(self) -> QWidget:
+        """Placeholder for the filter fields introduced by E5 / lot 11.2.
+
+        Created hidden today so the migration to the widgets landing
+        there does not need to touch the outer :class:`QTabWidget`.
+        """
+        return QWidget()
+
+    def _build_images_tab(self) -> QWidget:
+        """Placeholder for the image-resizing fields introduced by E6 /
+        lot 11.5.
+
+        Created hidden today for the same reason as
+        :meth:`_build_filters_tab`.
+        """
+        return QWidget()
 
     def _choisir_dossier(self) -> None:
         choix = QFileDialog.getExistingDirectory(

@@ -9,80 +9,101 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 5.0 E1 (part 1) — `PROFILE_FIELDS` in `config.py`.**
+**Lot 5.0 E1 (part 2) — Preferences in tabs.**
 
-Preparatory step for the tabbed Preferences dialog and the v1 → v2
-config migration described in `docs/design/roadmap.md` §5.0/§5.1 and
-`docs/design/evolution-multi-sources.md` §3.1.
+Follows the just-landed `PROFILE_FIELDS` (part 1). Refactors
+`DialoguePreferences.__init__` from a stack of QGroupBoxes into a
+`QTabWidget` with four tabs, keyed off `Glaneur.config.PROFILE_FIELDS`
+per `docs/design/evolution-multi-sources.md` §3.2 and
+`docs/design/roadmap.md` §5.0.
 
-`PROFILE_FIELDS` is the single source of truth for the split
-between "application" preferences and "per-profile" preferences.
-Today, one profile is baked into the flat `Config` dataclass. Later,
-E3/lot 5.1 promotes each per-profile field into a `Profile` entry;
-this constant drives both the "Site" tab (the fields it holds) and
-the migration (the fields it moves from `Config` into a profile).
+### Tab layout
 
-### Fields
+| Tab | Contents | Visibility |
+|---|---|---|
+| **General** | interval, autostart (Windows), slideshow (Windows), close-to-tray, updates-at-startup, language | visible |
+| **Site** | type, URL, format, target_dir, sort, min_width, verify_integrity — every field in `PROFILE_FIELDS` | visible |
+| **Filters** | placeholder — the fields land in E5 (lot 11.2) | hidden via `setTabVisible(idx, False)` |
+| **Images** | placeholder — the fields land in E6 (lot 11.5, resizing) | hidden via `setTabVisible(idx, False)` |
 
-Per `evolution-multi-sources.md` §3.1 and roadmap §5.0:
+Wording: the visible group titles (`Site`, `Options`, ...) go away —
+tab labels replace them. The English tab labels are wrapped in
+`tr()` so they translate.
 
-```python
-PROFILE_FIELDS: tuple[str, ...] = (
-    "source_type", "site", "image_format", "target_dir",
-    "sort_mode", "min_width", "verify_integrity",
-)
-```
+### Rebuilding
+
+`__init__` now delegates each tab to a `_build_<name>_tab()` helper
+returning a `QWidget`. Nothing else about the dialog changes:
+
+- widget names and public attributes stay identical (`combo_type`,
+  `combo_classement`, `champ_dossier`, ...), so `appliquer` and
+  `_sur_changement_type` still work verbatim;
+- OK / Cancel buttons stay at the bottom, outside the tabs;
+- default focus stays on the first field of the first visible tab
+  (the "General" tab), which matches typical UX for a settings
+  dialog.
 
 ## Directly modified
 
-- `Glaneur/config.py` — add `PROFILE_FIELDS` next to the existing
-  registries (`SORT_MODES`, `SOURCE_TYPES`, `DJANGOPLICITY_FORMATS`).
-- `tests/test_config.py` — new focused test class
-  `TestProfileFields` locking:
-  - every value listed in `PROFILE_FIELDS` is a real
-    :class:`Config` dataclass field;
-  - the split has no overlap with private/underscore fields;
-  - the tuple contents match the design doc's list, so a rename or
-    reorder is a deliberate change.
+- `app.py::DialoguePreferences.__init__` — replaced the QVBoxLayout of
+  groupboxes with a `QTabWidget`, and four `_build_*_tab()` helpers.
+- `tests/test_app_preferences.py` — new file, pytest-qt based:
+  - dialog opens with four tabs, first two visible, last two hidden;
+  - the widget attributes callers rely on
+    (`combo_type`, `champ_site`, `combo_format`, `champ_dossier`,
+    `combo_intervalle`, `combo_classement`, `spin_largeur`,
+    `case_verifier`, `case_diaporama`, `case_barre`,
+    `case_demarrage`, `case_maj_demarrage`, `combo_langue`) all
+    exist and hold the seeded values;
+  - **byte-for-byte guard**: `Config.save()` → open dialog →
+    `dialog.appliquer()` (OK without edits, on Linux where autostart
+    and slideshow are no-ops) → `Path(config.json).read_bytes()` is
+    unchanged.
 
 ## Direct dependencies
 
-- No caller yet; `PROFILE_FIELDS` is a public constant for the next
-  commit (DialoguePreferences tabs) and the future v2 migration to
-  key off.
+- `Glaneur/config.py::PROFILE_FIELDS` — used only conceptually here
+  (the tab split matches the tuple). The migration test in
+  `tests/test_config.py::TestProfileFields` already locks the tuple.
+- No engine, source, cache, or manifest touched.
 
 ## Explicitly out of scope
 
-- The tabbed Preferences dialog itself — part 2 of this US, next
-  commit.
-- `Glaneur/system.py` — the extraction called for in the roadmap is
-  already done in an earlier lot; nothing to move here.
-- The v2 migration (roadmap §5.1) — bigger, later commit.
+- Actually placing widgets under the Filters / Images tabs —
+  E5 (lot 11.2) and E6 (lot 11.5).
+- The v1 → v2 config migration — E3 / lot 5.1.
+- `Glaneur/system.py` extraction — already done in an earlier lot.
 - `__version__` — unchanged.
 
 ## Tests
 
-- `TestProfileFields` — new, three focused assertions above.
+Existing tests unaffected. Three focused new tests in
+`tests/test_app_preferences.py` cover the tabbed layout, the widget
+attribute contract, and the byte-for-byte config-preservation
+invariant.
 
 Verification:
 
-- `pytest -q` → 516 + new tests.
+- `pytest -q` → 519 + 3 new tests.
 - `python tools/check_coverage.py` → floors held.
-- `ruff check Glaneur/config.py tests/test_config.py` clean on
+- `ruff check app.py tests/test_app_preferences.py` clean on
   baseline.
 
 ## Invariants
 
 - `__version__` unchanged.
-- `Config` dataclass fields, defaults, load/save, and
-  `_LEGACY_FIELD_ALIASES` unchanged.
-- `PROFILE_FIELDS` is a `tuple[str, ...]` — order matters for later
-  migration.
-- Every name in `PROFILE_FIELDS` is a real field on `Config`.
+- `Config` load/save behaviour unchanged.
+- `PROFILE_FIELDS` unchanged.
+- Public API of `DialoguePreferences` unchanged: attribute names of
+  every widget survive, and `appliquer()` behaves the same as before.
+- Filters/Images tabs stay hidden until E5/E6 place widgets in them.
+- Coverage floors held.
 
 ## Validation
 
-Level `local` per E1's roadmap footprint.
+Level `module` (single-file UI refactor plus a dedicated test
+module).
 
-- `pytest -q` green.
+- `pytest -q --cov=Glaneur --cov-branch` green.
+- `python tools/check_coverage.py` green.
 - `ruff check` clean on touched files.
