@@ -18,6 +18,64 @@ unless it gets worse.
 Update this list whenever a story resolves a gap or you discover a new
 one.
 
+## Multi-source invariants
+
+These come from ``docs/design/evolution-multi-sources.md`` §5 and
+``docs/design/roadmap.md``. The first four already have code and
+tests behind them and are documented here so a caller does not
+accidentally break them; the rest sit ahead of us on the roadmap
+and are noted so a future change is designed against them from the
+start rather than after the fact.
+
+**Currently enforced**
+
+- **None-inheritance rule.** A profile field set to ``None``
+  inherits the value from the ``defaults`` block; a default is
+  **never** copied into a profile. Implemented on
+  :meth:`Glaneur.config.Profile.effective_min_width` and
+  :meth:`Profile.effective_verify_integrity`; every caller of a
+  per-profile field goes through
+  :meth:`Glaneur.config.Config.default_profile` +
+  :meth:`Glaneur.config.Config.defaults`. Test:
+  ``tests/test_config.py::TestProfileInheritance``.
+- **v1 → v2 config migration is one-way.**
+  :meth:`Config.save` writes only v2; :meth:`Config.load` reads
+  both, and a v1 read triggers an atomic ``config.v<n>.json``
+  snapshot on next save. A schema newer than
+  :data:`Glaneur.config.SCHEMA_VERSION` is refused rather than
+  misread as v1. Tests: ``tests/test_config.py::TestSchemaVersion``.
+- **The Config runtime API is stable across the shape change.**
+  ``cfg.site``, ``cfg.min_width``, ``cfg.last_run`` etc. keep
+  returning the effective value regardless of whether Config
+  stores its state flat (today) or as a real ``list[Profile]``
+  (E3 part B step 2). Every caller migrated onto
+  :meth:`default_profile` must keep working verbatim.
+- **Djangoplicity ``Next`` URL stays on the configured origin.**
+  A ``Next`` link whose scheme or netloc differs from the base is
+  refused with a ``RuntimeError``. Tests:
+  ``tests/test_source_djangoplicity.py::TestNextOriginCheck``.
+
+**Ahead on the roadmap (respect if your change touches the area)**
+
+- **The cache fingerprint includes the source type, the site AND
+  the filter fingerprint.** Otherwise loosening a filter never
+  recovers old images. (Arrives with lot 11.2.)
+- **Changing a filter or a size setting moves, replaces or
+  deletes no file.** Same rule as the sort mode. (Filters:
+  lot 11.2. Resize: lot 11.5.)
+- **``remote_missing_since`` only applies to entries that meet
+  the current filter.** A filter is not a server-side deletion.
+  (Lot 6 introduces the mark; lot 11.2 introduces the filter.)
+- **Only the "Reapply to folder" action replaces an existing
+  file.** The new version is validated and in the manifest
+  **before** the old one is deleted — the only engine-initiated
+  deletion. (Lot 11.6.)
+- **Header reading goes through the ``Transport`` and reads at
+  most 64 KiB.** Delay floor and server load. (Lot 11.2.)
+- **A profile is never restarted automatically less than I/2
+  after its last run.** Adding, removing or reordering profiles
+  must not cause a double run. (Lot 5.2.)
+
 ## Multi-agent work
 
 - The main conversation frames, implements, and decides. It does not
