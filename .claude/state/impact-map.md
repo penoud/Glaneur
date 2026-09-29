@@ -9,65 +9,62 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 5.1 E3/E4 — `Profile.effective(defaults)` and helpers.**
+**Lot 5.1 E3 part B (step 1) — `Config.default_profile()` builder.**
 
-Small step between E3 part A (v2 schema landed) and E3 part B (real
-per-profile list at runtime). Formalises the None-inheritance rule
-from `docs/design/evolution-multi-sources.md` §3.2 and roadmap §5.1
-as explicit API on the `Profile` dataclass, so when E3 part B moves
-per-profile state off `Config` and into a `list[Profile]`, the
-resolver is already tested and named.
+Forward-compat step between the just-landed
+`Profile.effective_*(defaults)` resolvers and the real per-profile
+list at runtime described in
+`docs/design/evolution-multi-sources.md` §3.1/§3.2.
 
-### Rule (unchanged in scope)
+Adds two builders on :class:`Config`:
 
-> A profile field set to ``None`` inherits the default; a default is
-> never copied into a profile.
+- `Config.default_profile() -> Profile` builds a :class:`Profile`
+  from the current flat state — the same single implicit profile the
+  UI already shows in its one-row table.
+- `Config.defaults() -> dict` returns the ``defaults`` block —
+  today, the current effective values of the inheritable settings
+  (`min_width`, `verify_integrity`), matching what
+  `Config.save()` writes on disk.
 
-### API added
-
-- `Profile.effective_min_width(defaults)` — returns the profile's
-  ``min_width`` when non-null, otherwise ``defaults.get("min_width")``,
-  otherwise the Config default (800).
-- `Profile.effective_verify_integrity(defaults)` — same rule.
-- Module-level `_resolve(override, defaults, key, fallback)` helper
-  covering the general case.
+Callers can start reading `cfg.default_profile().effective_min_width(cfg.defaults())`
+now; the answer matches `cfg.min_width` under the current single-
+profile layout, but the API is stable across E3 part B step 2,
+which will flip `Config`'s storage from flat per-profile fields to
+a real `list[Profile]`.
 
 ## Directly modified
 
 - `Glaneur/config.py`:
-  - New private `_resolve(override, defaults, key, fallback)` helper.
-  - `Profile` gains two thin instance methods:
-    `effective_min_width(defaults)` and
-    `effective_verify_integrity(defaults)`.
+  - New `Config.default_profile()` instance method.
+  - New `Config.defaults()` instance method.
 - `tests/test_config.py`:
-  - `TestProfileInheritance` — new class covering both methods
-    across override + defaults + fallback branches.
+  - `TestConfigDefaultProfile` — new class covering both builders.
 
 ## Direct dependencies
 
-- Uses `_DEFAULT_FIELDS` implicitly through the semantic — order
-  matters only in the way `_to_v2_dict` already lays them out.
-- No touch to `Config`'s load/save behaviour.
+- Uses `Profile`, `_DEFAULT_FIELDS`, and `_PROFILE_STATE_FIELDS`.
+- No touch to `Config.load` / `Config.save`.
+- No caller migrated yet — this commit only exposes the API.
 
 ## Explicitly out of scope
 
-- Real per-profile list at runtime — E3 part B.
-- Unique/non-nested folder validation — E3 part B.
-- `slideshow_profile` (id) — E3 part B.
-- CLAUDE.md invariants pointer — separate small commit.
+- Migrating `app.py`, `cli.py`, `engine`, `sources` to consume
+  `default_profile()` / `defaults()` — E3 part B step 2.
+- Storing `list[Profile]` on Config — E3 part B step 2.
+- Multi-profile UI — E3 part B step 3.
 - `__version__` — unchanged.
 
 ## Tests
 
-- `TestProfileInheritance`:
-  - `test_override_wins_over_defaults`
-  - `test_defaults_used_when_override_is_none`
-  - `test_fallback_used_when_both_missing`
-  - `test_verify_integrity_semantics_mirror_min_width`
+- `TestConfigDefaultProfile`:
+  - `test_default_profile_reflects_flat_state`
+  - `test_default_profile_id_matches_stored_uuid`
+  - `test_defaults_returns_inheritable_settings`
+  - `test_effective_min_width_via_resolver_matches_flat`
 
 Verification:
 
-- `pytest -q` → 570 + 4 new tests.
+- `pytest -q` → 574 + 4 new tests.
 - `python tools/check_coverage.py` → floors held.
 - `ruff check Glaneur/config.py tests/test_config.py` clean.
 
@@ -77,13 +74,11 @@ Verification:
 - No engine, source, cache, manifest, or on-disk config format
   change.
 - `Config` load/save behaviour unchanged.
-- `Profile` field list unchanged; only two new instance methods are
-  added.
+- `Profile` field list unchanged.
 
 ## Validation
 
-Level `local` — pure additions on the `Profile` dataclass with
-targeted tests.
+Level `local` — pure additions on `Config`, no caller touched.
 
 - `pytest -q` green.
 - `ruff check` clean on touched files.

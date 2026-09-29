@@ -1049,3 +1049,60 @@ class TestProfileInheritance:
         # Same edge for min_width: 0 is a legal explicit override.
         p_zero = Profile(min_width=0)
         assert p_zero.effective_min_width({"min_width": 800}) == 0
+
+
+class TestConfigDefaultProfile:
+    """Forward-compat builders on :class:`Config` — the shape callers
+    will start migrating to before E3 part B step 2 flips storage to
+    a real ``list[Profile]``.
+    """
+
+    def test_default_profile_reflects_flat_state(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg.site = "https://x.example"
+        cfg.target_dir = "/tmp/x"
+        cfg.source_type = "djangoplicity"
+        cfg.image_format = "Small"
+        cfg.sort_mode = "date"
+        cfg.last_run = "2026-09-30T10:00:00"
+        cfg.backoff_level = 1
+        prof = cfg.default_profile()
+        assert prof.site == "https://x.example"
+        assert prof.target_dir == "/tmp/x"
+        assert prof.source_type == "djangoplicity"
+        assert prof.image_format == "Small"
+        assert prof.sort_mode == "date"
+        assert prof.last_run == "2026-09-30T10:00:00"
+        assert prof.backoff_level == 1
+        assert prof.name == "default"
+        # Overrides null: effective value flows through `defaults()`,
+        # matching what save() writes.
+        assert prof.min_width is None
+        assert prof.verify_integrity is None
+
+    def test_default_profile_id_matches_stored_uuid(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        assert cfg.default_profile().id == cfg._profile_id
+        assert len(cfg._profile_id) == 32
+
+    def test_defaults_returns_inheritable_settings(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg.min_width = 1500
+        cfg.verify_integrity = True
+        assert cfg.defaults() == {"min_width": 1500, "verify_integrity": True}
+        # Fresh dict each call — the caller cannot silently mutate
+        # Config through the return value.
+        cfg.defaults()["min_width"] = 9999
+        assert cfg.min_width == 1500
+
+    def test_effective_min_width_via_resolver_matches_flat(self, tmp_path):
+        """Under the single-profile layout, going through the resolver
+        yields the same value as the flat ``cfg.min_width``. That
+        equivalence is what makes the migration to
+        ``default_profile().effective_min_width(defaults())`` safe:
+        every existing caller keeps computing the same number."""
+        cfg = Config.load(tmp_path / "c.json")
+        for candidat in (0, 800, 1500):
+            cfg.min_width = candidat
+            resolved = cfg.default_profile().effective_min_width(cfg.defaults())
+            assert resolved == cfg.min_width == candidat

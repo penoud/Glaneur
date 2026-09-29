@@ -586,6 +586,46 @@ class Config:
             "profiles": [profile],
         }
 
+    # -- Forward-compat helpers: profile builders --------------------------
+
+    def default_profile(self) -> Profile:
+        """Return a :class:`Profile` reflecting the single implicit profile.
+
+        Today :class:`Config` stores per-profile state flat on itself;
+        this method reconstructs the equivalent :class:`Profile` on
+        demand so callers can migrate to
+        ``cfg.default_profile().effective_min_width(cfg.defaults())``
+        before E3 part B step 2 flips storage to a real
+        ``list[Profile]``.
+
+        Overrides are ``None`` so the effective value flows through the
+        ``defaults`` block, matching what :meth:`save` writes.
+        """
+        return Profile(
+            id=self._profile_id,
+            name="default",
+            source_type=self.source_type,
+            site=self.site,
+            target_dir=self.target_dir,
+            image_format=self.image_format,
+            sort_mode=self.sort_mode,
+            min_width=None,
+            verify_integrity=None,
+            last_run=self.last_run,
+            retry_after=self.retry_after,
+            backoff_level=self.backoff_level,
+        )
+
+    def defaults(self) -> dict:
+        """Return the inheritable settings block as a fresh dict.
+
+        Matches the ``defaults`` key emitted by :meth:`save`. Callers
+        pair this with :meth:`default_profile` to invoke the resolvers
+        (:meth:`Profile.effective_min_width`,
+        :meth:`Profile.effective_verify_integrity`).
+        """
+        return {cle: getattr(self, cle) for cle in _DEFAULT_FIELDS}
+
     def _snapshot_older(self, chemin: Path, current_version: int | None) -> None:
         """Copy an older on-disk config to ``config.v<n>.json`` before overwriting.
 
