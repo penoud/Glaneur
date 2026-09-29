@@ -127,7 +127,7 @@ class Djangoplicity(Source):
         publication = _sanitized(entree.get("PublicationDate") or "")
         # Typical `PublicationDate`: "2026-09-21T13:00:00"; we extract
         # "YYYY-MM" from it for the by-date sort.
-        mois = publication[:7] if len(publication) >= 7 else None
+        month = publication[:7] if len(publication) >= 7 else None
 
         extra: dict = {}
         if entree.get("Credit"):
@@ -141,30 +141,30 @@ class Djangoplicity(Source):
             return Element(
                 ident=f"{ident_brut}:{self.format_image}",
                 url=None,
-                nom_fichier="",
+                filename="",
                 date=publication or None,
-                mois=mois,
-                largeur=None,
-                taille=None,
-                groupe=None,
+                month=month,
+                width=None,
+                size=None,
+                group=None,
                 extra=extra,
             )
 
         url = _sanitized(ressource.get("URL") or "")
-        nom_fichier = urlparse(url).path.rsplit("/", 1)[-1] if url else ""
+        filename = urlparse(url).path.rsplit("/", 1)[-1] if url else ""
 
         dims = ressource.get("Dimensions") or []
-        largeur: int | None = None
+        width: int | None = None
         if dims:
             try:
-                largeur = int(dims[0])
+                width = int(dims[0])
             except (TypeError, ValueError):
-                largeur = None
+                width = None
 
         try:
-            taille = int(ressource.get("FileSize")) if ressource.get("FileSize") is not None else None
+            size = int(ressource.get("FileSize")) if ressource.get("FileSize") is not None else None
         except (TypeError, ValueError):
-            taille = None
+            size = None
 
         if ressource.get("Checksum"):
             extra["checksum"] = _sanitized(ressource.get("Checksum"))
@@ -172,12 +172,12 @@ class Djangoplicity(Source):
         return Element(
             ident=f"{ident_brut}:{format_effectif}",
             url=url,
-            nom_fichier=nom_fichier,
+            filename=filename,
             date=publication or None,
-            mois=mois,
-            largeur=largeur,
-            taille=taille,
-            groupe=None,
+            month=month,
+            width=width,
+            size=size,
+            group=None,
             extra=extra,
         )
 

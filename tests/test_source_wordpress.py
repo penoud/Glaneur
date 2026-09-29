@@ -22,7 +22,7 @@ from Glaneur.sources.wordpress import WordPress
 
 def _wp(**kw):
     """Builds a WordPress source with a zero-delay transport."""
-    transport = Transport(delay=0, arret=threading.Event())
+    transport = Transport(delay=0, stop_event=threading.Event())
     return WordPress(
         base=kw.pop("base", "https://x.example"),
         transport=transport,
@@ -72,35 +72,35 @@ class TestToElement:
     def test_mois_extrait_du_chemin_uploads(self):
         s = _wp()
         e = s._to_element(_media(1, url="https://x/wp-content/uploads/2025/03/img.jpg"))
-        assert e.mois == "2025-03"
+        assert e.month == "2025-03"
 
     def test_month_none_without_pattern(self):
         s = _wp()
         e = s._to_element(_media(1, url="https://x/autre-chemin.jpg"))
-        assert e.mois is None
+        assert e.month is None
 
     def test_groupe_pris_du_champ_post(self):
         s = _wp()
         e = s._to_element(_media(1, post=17))
-        assert e.groupe == "17"
+        assert e.group == "17"
 
     def test_group_none_without_post(self):
         s = _wp()
         e = s._to_element(_media(1, post=None))
-        assert e.groupe is None
+        assert e.group is None
 
     def test_largeur_et_taille_lues(self):
         s = _wp()
         media = _media(1, width=1234)
         media["media_details"]["filesize"] = 4242
         e = s._to_element(media)
-        assert e.largeur == 1234
-        assert e.taille == 4242
+        assert e.width == 1234
+        assert e.size == 4242
 
     def test_filename_is_last_url_segment(self):
         s = _wp()
         e = s._to_element(_media(1, url="https://x/wp-content/uploads/2026/01/match.jpg"))
-        assert e.nom_fichier == "match.jpg"
+        assert e.filename == "match.jpg"
 
 
 # --------------------------------------------------------------------------- #

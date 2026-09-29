@@ -22,16 +22,16 @@ from Glaneur.sources.djangoplicity import Djangoplicity
 def _source(*, format_image="Large", base="https://www.eso.org/public"):
     return Djangoplicity(
         base=base,
-        transport=Transport(delay=0, arret=threading.Event()),
+        transport=Transport(delay=0, stop_event=threading.Event()),
         settings={"format_image": format_image},
     )
 
 
-def _ressource(rtype, url, taille=1234, dims=(1600, 900)):
+def _ressource(rtype, url, size=1234, dims=(1600, 900)):
     return {
         "ResourceType": rtype,
         "URL": url,
-        "FileSize": taille,
+        "FileSize": size,
         "Dimensions": list(dims),
     }
 
@@ -42,11 +42,11 @@ def _entree(ident, pubdate="2026-06-15T12:00:00",
     if ressources is None:
         ressources = [
             _ressource("Original", f"https://cdn.eso.org/original/{ident}.tif",
-                       taille=50_000_000, dims=(4096, 2160)),
+                       size=50_000_000, dims=(4096, 2160)),
             _ressource("Large", f"https://cdn.eso.org/large/{ident}.jpg",
-                       taille=3_500_000, dims=(1600, 900)),
+                       size=3_500_000, dims=(1600, 900)),
             _ressource("Small", f"https://cdn.eso.org/small/{ident}.jpg",
-                       taille=200_000, dims=(1280.0, 720.0)),
+                       size=200_000, dims=(1280.0, 720.0)),
         ]
     entree = {
         "ID": ident,
@@ -116,23 +116,23 @@ class TestToElement:
         e = s._to_element(_entree("eso1907a"))
         assert e.ident == "eso1907a:Large"
         assert e.url == "https://cdn.eso.org/large/eso1907a.jpg"
-        assert e.nom_fichier == "eso1907a.jpg"
-        assert e.mois == "2026-06"
-        assert e.taille == 3_500_000
+        assert e.filename == "eso1907a.jpg"
+        assert e.month == "2026-06"
+        assert e.size == 3_500_000
 
     def test_falls_back_to_small_when_large_absent(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[
             _ressource("Original", "https://cdn.eso.org/original/eso1907a.tif"),
             _ressource("Small", "https://cdn.eso.org/small/eso1907a.jpg",
-                       taille=200_000, dims=(1280.0, 720.0)),
+                       size=200_000, dims=(1280.0, 720.0)),
         ])
         e = s._to_element(entree)
         # the ident keeps the format actually downloaded
         assert e.ident == "eso1907a:Small"
         assert e.url == "https://cdn.eso.org/small/eso1907a.jpg"
         # float `Dimensions` → int
-        assert e.largeur == 1280
+        assert e.width == 1280
 
     def test_no_format_available_url_is_none(self):
         s = _source()
@@ -176,7 +176,7 @@ class TestToElement:
             "Dimensions": [],
         }])
         e = s._to_element(entree)
-        assert e.largeur is None
+        assert e.width is None
 
     def test_sanitizer_byte_repr(self):
         # Known bug (djangoplicity issue #147): Credit rendered as
@@ -281,11 +281,11 @@ class TestAfterInclusive:
         # Build the entries as the fake server would supply them.
         entree_a = _entree("a", ressources=[
             _ressource("Large", "https://cdn.eso.org/large/a.jpg",
-                       taille=len(b"contenu-a-attendu")),
+                       size=len(b"contenu-a-attendu")),
         ])
         entree_b = _entree("b", ressources=[
             _ressource("Large", "https://cdn.eso.org/large/b.jpg",
-                       taille=42),
+                       size=42),
         ])
         page = _reponse([entree_a, entree_b], next_url=None)
         faux = FauxServeur({"https://x.example/images/d2d/": page})

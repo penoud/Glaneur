@@ -31,7 +31,7 @@ def main() -> int:
     Parses the command line, applies the arguments on top of the
     persisted configuration, runs the :class:`Glaneur.engine.Engine`
     once and prints a readable summary on stdout. A keyboard interrupt
-    (``Ctrl+C``) propagates a cooperative ``arret`` to the engine before
+    (``Ctrl+C``) propagates a cooperative ``stop_event`` to the engine before
     exiting.
 
     Returns:
@@ -112,7 +112,7 @@ def main() -> int:
     try:
         res = moteur.run()
     except KeyboardInterrupt:
-        moteur.arret.set()
+        moteur.stop_event.set()
         print("\nInterrompu.")
         return 130
 

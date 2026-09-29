@@ -127,9 +127,9 @@ class TestClassifyError:
 
 class TestTransport:
     def test_check_stop_raises_when_stop_signalled(self):
-        arret = threading.Event()
-        t = Transport(delay=0, arret=arret)
-        arret.set()
+        stop_event = threading.Event()
+        t = Transport(delay=0, stop_event=stop_event)
+        stop_event.set()
         with pytest.raises(Interrupted):
             t.check_stop()
 
@@ -142,9 +142,9 @@ class TestTransport:
         assert time.monotonic() - debut >= 0.15
 
     def test_interrupted_pause_raises_interrupted(self):
-        arret = threading.Event()
-        t = Transport(delay=0, arret=arret)
-        arret.set()
+        stop_event = threading.Event()
+        t = Transport(delay=0, stop_event=stop_event)
+        stop_event.set()
         with pytest.raises(Interrupted):
             t.sleep(1.0)
 
@@ -239,11 +239,11 @@ def _entree(dimensions=None, filesize=None):
 class TestDjangoplicityConversion:
     def test_non_numeric_dimensions_yield_width_none(self):
         el = _dj()._to_element(_entree(dimensions=["pas-un-int"]))
-        assert el.largeur is None
+        assert el.width is None
 
     def test_non_numeric_filesize_yields_size_none(self):
         el = _dj()._to_element(_entree(filesize="not-a-number"))
-        assert el.taille is None
+        assert el.size is None
 
     def test_inventory_bounded_by_until(self):
         # The `before` parameter is only added when `jusqua` is set;

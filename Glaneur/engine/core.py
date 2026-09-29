@@ -55,7 +55,7 @@ class Engine:
         options: Options,
         journal: Callable[[EngineEvent], None] | None = None,
         progression: Callable[[int, int, str], None] | None = None,
-        arret: threading.Event | None = None,
+        stop_event: threading.Event | None = None,
     ) -> None:
         """Instantiate the engine with its callbacks.
 
@@ -70,8 +70,8 @@ class Engine:
                 Receives ``(done, total, label)`` — the label stays a
                 plain string (English by default) so a Qt progress bar
                 can display it directly. May be ``None``.
-            arret: Shared event that cuts the run when set. Created on
-                demand if not provided; the caller may reuse it to
+            stop_event: Shared event that cuts the run when set. Created
+                on demand if not provided; the caller may reuse it to
                 synchronise several engines.
         """
         self.o = options
@@ -79,8 +79,8 @@ class Engine:
         self._journal: Callable[[EngineEvent], None] = journal or (
             lambda _event: None)
         self._progression = progression or (lambda _fait, _total, _etiquette: None)
-        self.arret = arret or threading.Event()
-        self.transport = Transport(delay=options.delay, arret=self.arret)
+        self.stop_event = stop_event or threading.Event()
+        self.transport = Transport(delay=options.delay, stop_event=self.stop_event)
         # The download session goes through the shared transport: a single
         # user-agent, a single pause floor.
         self.session = self.transport.session
@@ -104,12 +104,12 @@ class Engine:
     # -- plumbing ----------------------------------------------------------- #
 
     def _check_stop(self) -> None:
-        if self.arret.is_set():
+        if self.stop_event.is_set():
             raise Interrupted()
 
-    def _pause(self, secondes: float) -> None:
+    def _pause(self, seconds: float) -> None:
         """Fragmented wait so we can react quickly to a stop request."""
-        self.transport.sleep(secondes)
+        self.transport.sleep(seconds)
 
     # -- manifest ----------------------------------------------------------- #
 
@@ -218,7 +218,7 @@ class Engine:
 
     # -- paths -------------------------------------------------------------- #
 
-    def dossier_pour(self, element: Element, titres: dict[str, str]) -> str:
+    def folder_for(self, element: Element, titres: dict[str, str]) -> str:
         """Relative sub-folder where ``element`` should land under the chosen sort.
 
         Args:
@@ -232,9 +232,9 @@ class Engine:
         """
         if self.o.sort_mode == "plat":
             return ""
-        if self.o.sort_mode == "date" or not element.groupe:
-            return element.mois or "divers"
-        return titres.get(element.groupe) or f"contenu-{element.groupe}"
+        if self.o.sort_mode == "date" or not element.group:
+            return element.month or "divers"
+        return titres.get(element.group) or f"contenu-{element.group}"
 
     def free_path(self, dest: Path, ident: str, pris: set[str]) -> Path:
         """Pick a destination path that does not overwrite another element.
@@ -302,8 +302,8 @@ class Engine:
               per-file journal line.
 
         Raises:
-            Interrupted: Propagated if ``self.arret`` is set while the
-                stream is being written.
+            Interrupted: Propagated if ``self.stop_event`` is set while
+                the stream is being written.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".part")
@@ -335,7 +335,7 @@ class Engine:
             reprise = depuis > 0 and r.status_code == 206
             with open(tmp, "ab" if reprise else "wb") as f:
                 for bloc in r.iter_content(65536):
-                    if self.arret.is_set():
+                    if self.stop_event.is_set():
                         f.flush()
                         raise Interrupted()   # the .part is kept for resume
                     f.write(bloc)
@@ -457,7 +457,7 @@ class Engine:
                 avant = len(elements)
                 elements = [
                     e for e in elements
-                    if e.largeur is None or e.largeur >= self.o.min_width
+                    if e.width is None or e.width >= self.o.min_width
                 ]
                 # An `Element` without a URL (source that did not find the
                 # requested resource) can no longer be downloaded: goes to `skipped`.
@@ -495,7 +495,7 @@ class Engine:
                     etat["supprime"] = datetime.now().isoformat(timespec="seconds")
                     res.deleted += 1
                     continue
-                if connu and self.file_complete(connu, etat, e.taille) and not self.o.verify:
+                if connu and self.file_complete(connu, etat, e.size) and not self.o.verify:
                     etat.pop("restaure", None)
                     res.already_present += 1
                     continue
@@ -517,8 +517,8 @@ class Engine:
             titres: dict[str, str] = {}
             titres_caches = {str(k): v
                              for k, v in (cache.get("titres_parents") or {}).items()}
-            inconnus = {e.groupe for e, connu in a_faire
-                        if e.groupe and connu is None}
+            inconnus = {e.group for e, connu in a_faire
+                        if e.group and connu is None}
             if (self.o.sort_mode == "galerie"
                     and "galerie" in self.source.sort_modes
                     and inconnus):
@@ -535,19 +535,19 @@ class Engine:
                 url = e.url
                 etat = manifeste.get(e.ident)
                 if connu is not None:
-                    fichier = connu
+                    file_path = connu
                 else:
-                    sous = self.dossier_pour(e, titres)
+                    sous = self.folder_for(e, titres)
                     # clean("") would return "divers" and create a phantom directory
                     dossier = (self.o.target_dir / clean(sous)) if sous else self.o.target_dir
-                    nom = e.nom_fichier or Path(urlparse(url).path).name
-                    fichier = self.free_path(dossier / nom, e.ident, pris)
+                    nom = e.filename or Path(urlparse(url).path).name
+                    file_path = self.free_path(dossier / nom, e.ident, pris)
 
                 statut, infos, classification, error_text = self.download(
-                    url, fichier, etat)
+                    url, file_path, etat)
 
                 if infos:
-                    infos["fichier"] = str(fichier.relative_to(self.o.target_dir))
+                    infos["fichier"] = str(file_path.relative_to(self.o.target_dir))
                     # Source metadata (credit, checksum...): copied into the
                     # manifest for the upcoming catalog export, without the
                     # engine interpreting them.
@@ -569,11 +569,11 @@ class Engine:
                     res.failures += 1
                     if statut == "introuvable":
                         self._journal(EngineEvent(
-                            "file-not-found", {"filename": fichier.name}))
+                            "file-not-found", {"filename": file_path.name}))
                     else:
                         self._journal(EngineEvent(
                             "file-failed",
-                            {"filename": fichier.name,
+                            {"filename": file_path.name,
                              "error": error_text or ""},
                         ))
 
@@ -589,7 +589,7 @@ class Engine:
                     else:  # "definitif" — a single 404/URL error stays local
                         echecs_consecutifs = 0
 
-                self._progression(i, len(a_faire), f"{fichier.parent.name}/{fichier.name}")
+                self._progression(i, len(a_faire), f"{file_path.parent.name}/{file_path.name}")
                 if i % 25 == 0:
                     self.save_manifest(manifeste)
 

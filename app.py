@@ -244,17 +244,17 @@ class Travailleur(QThread):
     progres = Signal(int, int, str)
     fini = Signal(object)
 
-    def __init__(self, options: Options, arret: threading.Event) -> None:
+    def __init__(self, options: Options, stop_event: threading.Event) -> None:
         """Prepare the thread with its ``options`` and shared stop event.
 
         Args:
             options: Engine parameters (folder, site, filters, ...).
-            arret: ``threading.Event`` set from the UI to interrupt the
-                run cooperatively.
+            stop_event: ``threading.Event`` set from the UI to interrupt
+                the run cooperatively.
         """
         super().__init__()
         self.options = options
-        self.arret = arret
+        self.stop_event = stop_event
 
     def run(self) -> None:
         """Instantiate the engine and start the run; emit ``fini(RunResult)`` on exit."""
@@ -262,7 +262,7 @@ class Travailleur(QThread):
             self.options,
             journal=self.journal_event.emit,
             progression=lambda fait, total, etq: self.progres.emit(fait, total, etq),
-            arret=self.arret,
+            stop_event=self.stop_event,
         )
         self.fini.emit(moteur.run())
 
@@ -761,7 +761,7 @@ class Fenetre(QMainWindow):
 
         self.cfg = Config.load()
         self.planificateur = Scheduler(self.cfg)
-        self.arret = threading.Event()
+        self.stop_event = threading.Event()
         self.travailleur: Travailleur | None = None
         self.auto_en_cours = False
         self._quitter_demande = False
@@ -1210,7 +1210,7 @@ class Fenetre(QMainWindow):
             return
 
         self.auto_en_cours = bool(auto)
-        self.arret.clear()
+        self.stop_event.clear()
         self.bouton_lancer.setEnabled(False)
         self.action_maj.setEnabled(False)
         self.action_maj_tray.setEnabled(False)
@@ -1230,7 +1230,7 @@ class Fenetre(QMainWindow):
             source_type=self.cfg.source_type,
             image_format=self.cfg.image_format,
         )
-        self.travailleur = Travailleur(options, self.arret)
+        self.travailleur = Travailleur(options, self.stop_event)
         self.travailleur.journal_event.connect(self._journal_evenement)
         self.travailleur.progres.connect(self._progres)
         self.travailleur.fini.connect(self._terminer)
@@ -1241,7 +1241,7 @@ class Fenetre(QMainWindow):
         self._ecrire(_render_ui(event))
 
     def _arreter(self) -> None:
-        self.arret.set()
+        self.stop_event.set()
         self.bouton_arreter.setEnabled(False)
         self.action_arreter_menu.setEnabled(False)
         self.label_statut.setText(self.tr("Arrêt en cours…"))
@@ -1382,7 +1382,7 @@ class Fenetre(QMainWindow):
                 self._quitter_demande = False
                 event.ignore()
                 return
-            self.arret.set()
+            self.stop_event.set()
             self.travailleur.wait(5000)
 
         if self.tray:

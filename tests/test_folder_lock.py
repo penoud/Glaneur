@@ -173,9 +173,9 @@ class _FauxBusyEngine:
     the busy branch: no configurable resultat, no captured options.
     """
 
-    def __init__(self, options, journal=None, progression=None, arret=None):
+    def __init__(self, options, journal=None, progression=None, stop_event=None):
         self.options = options
-        self.arret = MagicMock()
+        self.stop_event = MagicMock()
 
     def run(self) -> RunResult:
         return RunResult(busy=True)

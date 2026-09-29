@@ -175,21 +175,21 @@ class Element:
     #: the element in :attr:`Glaneur.engine.result.RunResult.skipped`.
     url: str | None
     #: File name to give the resource on disk, without directory.
-    nom_fichier: str
+    filename: str
     #: Publication date in ISO format, if known.
     date: str | None = None
     #: ``YYYY-MM`` month extracted from the date, used for the
     #: by-date sort.
-    mois: str | None = None
+    month: str | None = None
     #: Width in pixels, when the source provides it — used by the
     #: :attr:`Glaneur.engine.options.Options.min_width` filter.
-    largeur: int | None = None
+    width: int | None = None
     #: File size in bytes, if announced by the source (allows
     #: :meth:`Glaneur.engine.core.Engine.file_complete` to validate).
-    taille: int | None = None
+    size: int | None = None
     #: Parent identifier (WordPress gallery, Djangoplicity collection)
     #: for the ``galerie`` sort mode.
-    groupe: str | None = None
+    group: str | None = None
     #: Free-form metadata passed through to the manifest (credit,
     #: checksum, ...). The engine does not interpret them.
     extra: dict = field(default_factory=dict)
@@ -203,42 +203,42 @@ class Transport:
     stop apply to every source without an adapter being able to forget.
     """
 
-    def __init__(self, delay: float, arret: threading.Event | None = None) -> None:
+    def __init__(self, delay: float, stop_event: threading.Event | None = None) -> None:
         """Build the transport with its session and delay floor.
 
         Args:
             delay: Floor for the pause between two requests, in seconds.
-            arret: Shared event that cuts pending requests. Created on
+            stop_event: Shared event that cuts pending requests. Created on
                 demand if not provided.
         """
         self.delay = delay
-        self.arret = arret or threading.Event()
+        self.stop_event = stop_event or threading.Event()
         self.session = requests.Session()
         self.session.headers["User-Agent"] = UA
 
     def check_stop(self) -> None:
-        """Raise :class:`Interrupted` if ``self.arret`` was set.
+        """Raise :class:`Interrupted` if ``self.stop_event`` was set.
 
         Raises:
             Interrupted: If a cooperative stop was requested.
         """
-        if self.arret.is_set():
+        if self.stop_event.is_set():
             raise Interrupted()
 
-    def sleep(self, secondes: float | None = None) -> None:
+    def sleep(self, seconds: float | None = None) -> None:
         """Fragmented wait that reacts quickly to a stop request.
 
         Args:
-            secondes: Duration to wait. Uses ``self.delay`` when ``None``.
+            seconds: Duration to wait. Uses ``self.delay`` when ``None``.
 
         Raises:
             Interrupted: If a cooperative stop is requested during the
                 wait.
         """
-        fin = time.monotonic() + (self.delay if secondes is None else secondes)
-        while time.monotonic() < fin:
+        end = time.monotonic() + (self.delay if seconds is None else seconds)
+        while time.monotonic() < end:
             self.check_stop()
-            time.sleep(min(0.1, max(0.0, fin - time.monotonic())))
+            time.sleep(min(0.1, max(0.0, end - time.monotonic())))
 
     def get_json(
         self,
@@ -386,7 +386,7 @@ class Source(ABC):
 
         Returns:
             A ``{key -> cleaned title}`` table, ready to be passed to
-            :meth:`Glaneur.engine.core.Engine.dossier_pour`.
+            :meth:`Glaneur.engine.core.Engine.folder_for`.
         """
         return dict(connus or {})
 

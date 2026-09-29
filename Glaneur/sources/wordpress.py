@@ -126,19 +126,19 @@ class WordPress(Source):
         url = m.get("source_url") or ""
         details = m.get("media_details") or {}
         chemin = urlparse(url).path
-        mois: str | None = None
+        month: str | None = None
         match = re.search(r"/uploads/(\d{4})/(\d{2})/", chemin)
         if match:
-            mois = f"{match.group(1)}-{match.group(2)}"
+            month = f"{match.group(1)}-{match.group(2)}"
         return Element(
             ident=str(m["id"]),
             url=url,
-            nom_fichier=chemin.rsplit("/", 1)[-1] if chemin else "",
+            filename=chemin.rsplit("/", 1)[-1] if chemin else "",
             date=m.get("date"),
-            mois=mois,
-            largeur=details.get("width"),
-            taille=details.get("filesize"),
-            groupe=str(m["post"]) if m.get("post") else None,
+            month=month,
+            width=details.get("width"),
+            size=details.get("filesize"),
+            group=str(m["post"]) if m.get("post") else None,
         )
 
     # -- Grouping (gallery) ----------------------------------------------- #

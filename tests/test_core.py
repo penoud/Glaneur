@@ -338,9 +338,9 @@ def _moteur(tmp_path, **kw):
     return Engine(options)
 
 
-def _element(ident, url="https://x/img.jpg", *, largeur=1600,
-             groupe=None, mois="2026-01", date="2026-01-01T00:00:00",
-             taille=None, nom_fichier=None, extra=None):
+def _element(ident, url="https://x/img.jpg", *, width=1600,
+             group=None, month="2026-01", date="2026-01-01T00:00:00",
+             size=None, filename=None, extra=None):
     """Builds an Element for orchestration tests.
 
     Defaults chosen to represent the average WordPress case; Djangoplicity
@@ -349,13 +349,13 @@ def _element(ident, url="https://x/img.jpg", *, largeur=1600,
     return Element(
         ident=str(ident),
         url=url,
-        nom_fichier=nom_fichier if nom_fichier is not None
+        filename=filename if filename is not None
         else (url.rsplit("/", 1)[-1] if url else ""),
         date=date,
-        mois=mois,
-        largeur=largeur,
-        taille=taille,
-        groupe=str(groupe) if groupe is not None else None,
+        month=month,
+        width=width,
+        size=size,
+        group=str(group) if group is not None else None,
         extra=extra or {},
     )
 
@@ -394,35 +394,35 @@ class TestFileComplete:
 
 
 class TestFolderFor:
-    """`dossier_pour` is generic: it no longer speaks of WP URLs, it reads
-    `element.mois` and `element.groupe`."""
+    """`folder_for` is generic: it no longer speaks of WP URLs, it reads
+    `element.month` and `element.group`."""
 
     def test_flat(self, tmp_path):
         m = _moteur(tmp_path, sort_mode="plat")
-        assert m.dossier_pour(_element(1), {}) == ""
+        assert m.folder_for(_element(1), {}) == ""
 
     def test_date(self, tmp_path):
         m = _moteur(tmp_path, sort_mode="date")
-        assert m.dossier_pour(_element(1, mois="2025-03"), {}) == "2025-03"
+        assert m.folder_for(_element(1, month="2025-03"), {}) == "2025-03"
 
     def test_date_without_month(self, tmp_path):
         m = _moteur(tmp_path, sort_mode="date")
-        assert m.dossier_pour(_element(1, mois=None), {}) == "divers"
+        assert m.folder_for(_element(1, month=None), {}) == "divers"
 
     def test_gallery_with_title(self, tmp_path):
         m = _moteur(tmp_path, sort_mode="galerie")
-        element = _element(1, groupe=17)
-        assert m.dossier_pour(element, {"17": "match-du-siecle"}) == "match-du-siecle"
+        element = _element(1, group=17)
+        assert m.folder_for(element, {"17": "match-du-siecle"}) == "match-du-siecle"
 
     def test_gallery_without_title(self, tmp_path):
         m = _moteur(tmp_path, sort_mode="galerie")
-        element = _element(1, groupe=17)
-        assert m.dossier_pour(element, {}) == "contenu-17"
+        element = _element(1, group=17)
+        assert m.folder_for(element, {}) == "contenu-17"
 
     def test_gallery_without_group_falls_back_to_date(self, tmp_path):
         m = _moteur(tmp_path, sort_mode="galerie")
-        element = _element(1, groupe=None, mois="2025-03")
-        assert m.dossier_pour(element, {}) == "2025-03"
+        element = _element(1, group=None, month="2025-03")
+        assert m.folder_for(element, {}) == "2025-03"
 
 
 class TestFreePath:
@@ -563,7 +563,7 @@ class TestDownload:
     def test_interrupt_keeps_part(self, tmp_path):
         # the stop mid-read must leave the .part for the resume
         m = _moteur(tmp_path)
-        m.arret.set()   # cut off on the first block
+        m.stop_event.set()   # cut off on the first block
 
         class GrosseResponse(FakeResponse):
             def iter_content(self_, chunk_size):
@@ -611,7 +611,7 @@ class TestRun:
         # A source that did not find a resource at the requested format:
         # the engine must count it as ignoree, without crashing.
         moteur = _moteur(tmp_path, sort_mode="date")
-        sans_url = _element(1, url=None, nom_fichier="", mois="2026-01")
+        sans_url = _element(1, url=None, filename="", month="2026-01")
         with _patch_inventaire(moteur, [sans_url]), \
              patch.object(moteur, "download") as tel:
             res = moteur.run()
@@ -624,7 +624,7 @@ class TestRun:
             "8": {"fichier": "manquant.jpg", "taille": 10},
         })
         moteur = _moteur(tmp_path)
-        with _patch_inventaire(moteur, [_element(8, taille=10)]), \
+        with _patch_inventaire(moteur, [_element(8, size=10)]), \
              patch.object(moteur, "download") as tel:
             res = moteur.run()
         assert res.deleted == 1
@@ -638,7 +638,7 @@ class TestRun:
             "1": {"fichier": "ok.jpg", "taille": 10},
         })
         moteur = _moteur(tmp_path)
-        with _patch_inventaire(moteur, [_element(1, taille=10)]), \
+        with _patch_inventaire(moteur, [_element(1, size=10)]), \
              patch.object(moteur, "download") as tel:
             res = moteur.run()
         assert res.already_present == 1
@@ -647,7 +647,7 @@ class TestRun:
     def test_download(self, tmp_path):
         moteur = _moteur(tmp_path, sort_mode="date")
         el = _element(5, url="https://x/wp-content/uploads/2026/03/f.jpg",
-                      mois="2026-03")
+                      month="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 12, "etag": "e",
@@ -663,7 +663,7 @@ class TestRun:
     def test_incremental_resume(self, tmp_path):
         moteur = _moteur(tmp_path, sort_mode="date")
         el = _element(5, url="https://x/wp-content/uploads/2026/03/f.jpg",
-                      mois="2026-03")
+                      month="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
                           return_value=("repris", {"taille": 3, "etag": "",
@@ -677,7 +677,7 @@ class TestRun:
         """A failed download counts as a failure and emits ``file-failed``."""
         moteur = _moteur(tmp_path, sort_mode="date")
         el = _element(5, url="https://x/wp-content/uploads/2026/03/f.jpg",
-                      mois="2026-03")
+                      month="2026-03")
         journal: list[EngineEvent] = []
         moteur._journal = journal.append
         with _patch_inventaire(moteur, [el]), \
@@ -701,9 +701,9 @@ class TestRun:
 
     def test_min_width_filter(self, tmp_path):
         moteur = _moteur(tmp_path, sort_mode="date", min_width=1000)
-        petit = _element(1, largeur=200, mois="2026-04")
+        petit = _element(1, width=200, month="2026-04")
         grand = _element(2, url="https://x/wp-content/uploads/2026/04/big.jpg",
-                         largeur=2000, mois="2026-04")
+                         width=2000, month="2026-04")
         with _patch_inventaire(moteur, [petit, grand]), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
@@ -715,7 +715,7 @@ class TestRun:
     def test_interrupted(self, tmp_path):
         """An ``Interrupted`` mid-run surfaces as ``message_event.code == "interrupted"``."""
         moteur = _moteur(tmp_path)
-        moteur.arret.set()
+        moteur.stop_event.set()
 
         def leve(*_a, **_kw):
             raise Interrupted()
@@ -750,7 +750,7 @@ class TestRun:
         })
         moteur = _moteur(tmp_path, sort_mode="date", force=True)
         el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
-                      mois="2026-03")
+                      month="2026-03")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
                           return_value=("ok", {"taille": 1, "etag": "",
@@ -781,7 +781,7 @@ class TestCircuitBreaker:
         """Builds ``nombre`` Elements, all with a valid URL and month."""
         return [
             _element(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg",
-                     mois="2026-03", date=f"2026-03-{i:02d}T00:00:00")
+                     month="2026-03", date=f"2026-03-{i:02d}T00:00:00")
             for i in range(1, nombre + 1)
         ]
 
@@ -916,8 +916,8 @@ class TestEngineInit:
 
     def test_default_stop_event(self, tmp_path):
         m = Engine(Options(target_dir=tmp_path))
-        assert m.arret is not None
-        assert m.arret.is_set() is False
+        assert m.stop_event is not None
+        assert m.stop_event.is_set() is False
 
     def test_default_source_is_wordpress(self, tmp_path):
         # Default Options: source_type == "wordpress"
@@ -946,7 +946,7 @@ class TestEngineInit:
 class TestEnginePlumbing:
     def test_check_stop_raises_interrupted(self, tmp_path):
         m = _moteur(tmp_path)
-        m.arret.set()
+        m.stop_event.set()
         with pytest.raises(Interrupted):
             m._check_stop()
 
@@ -1007,7 +1007,7 @@ class TestRunExtra:
             "1": {"fichier": "ok.jpg", "taille": 5, "etag": "e"},
         })
         moteur = _moteur(tmp_path, verify=True)
-        with _patch_inventaire(moteur, [_element(1, taille=5)]), \
+        with _patch_inventaire(moteur, [_element(1, size=5)]), \
              patch.object(moteur, "download",
                           return_value=("inchangé",
                                         {"fichier": "ok.jpg", "taille": 5,
@@ -1017,7 +1017,7 @@ class TestRunExtra:
 
     def test_resolve_groups_called_in_gallery_mode(self, tmp_path):
         moteur = _moteur(tmp_path, sort_mode="galerie")
-        el = _element(1, groupe=42)
+        el = _element(1, group=42)
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur.source, "resolve_groups",
                           return_value={"42": "match-42"}) as res_parents, \
@@ -1038,7 +1038,7 @@ class TestRunExtra:
         # resoudre_groupes, and fall back to the by-date sort.
         moteur = _moteur(tmp_path, sort_mode="galerie",
                          source_type="djangoplicity")
-        el = _element(1, groupe="42", mois="2026-03",
+        el = _element(1, group="42", month="2026-03",
                       url="https://cdn.eso.org/large/potw.jpg")
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur.source, "resolve_groups") as res_g, \
@@ -1072,8 +1072,8 @@ class TestRunExtra:
         moteur = _moteur(tmp_path, sort_mode="date", min_width=1000)
         journal: list[EngineEvent] = []
         moteur._journal = journal.append
-        with _patch_inventaire(moteur, [_element(1, largeur=200),
-                                        _element(2, largeur=300)]):
+        with _patch_inventaire(moteur, [_element(1, width=200),
+                                        _element(2, width=300)]):
             moteur.run()
         events = [ev for ev in journal
                   if ev.code == "discarded-below-min-width"]
@@ -1086,7 +1086,7 @@ class TestRunExtra:
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = [
             _element(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg",
-                     mois="2026-03")
+                     month="2026-03")
             for i in range(1, 27)
         ]
         with _patch_inventaire(moteur, elements), \
@@ -1105,7 +1105,7 @@ class TestRunExtra:
         # without interpreting them — useful for the upcoming catalog export.
         moteur = _moteur(tmp_path, sort_mode="date")
         el = _element(7, url="https://cdn.eso.org/large/eso1907a.jpg",
-                      mois="2026-03",
+                      month="2026-03",
                       extra={"credit": "ESO/T. Preibisch"})
         with _patch_inventaire(moteur, [el]), \
              patch.object(moteur, "download",
@@ -1208,9 +1208,9 @@ class TestCacheAPI:
         m = _moteur(tmp_path, site="https://x", sort_mode="date")
         elements = [
             _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
-                     mois="2026-03", date="2026-03-10T08:00:00"),
+                     month="2026-03", date="2026-03-10T08:00:00"),
             _element(2, url="https://x/wp-content/uploads/2026/06/b.jpg",
-                     mois="2026-06", date="2026-06-20T09:30:00"),
+                     month="2026-06", date="2026-06-20T09:30:00"),
         ]
         with _patch_inventaire(m, elements), \
              patch.object(m, "download",
@@ -1225,7 +1225,7 @@ class TestCacheAPI:
     def test_run_caches_gallery_titles(self, tmp_path):
         m = _moteur(tmp_path, site="https://x", sort_mode="galerie")
         el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
-                      groupe=42, mois="2026-03")
+                      group=42, month="2026-03")
         with _patch_inventaire(m, [el]), \
              patch.object(m.source, "resolve_groups",
                           return_value={"42": "match-a"}) as res_p, \
@@ -1249,7 +1249,7 @@ class TestCacheAPI:
         })
         m = _moteur(tmp_path, site="https://x", sort_mode="galerie")
         el = _element(1, url="https://x/wp-content/uploads/2026/03/a.jpg",
-                      groupe=42, mois="2026-03")
+                      group=42, month="2026-03")
         appels = []
 
         def faux_resoudre(cles, connus=None):
@@ -1422,7 +1422,7 @@ class TestSaveManifestMerge:
         moteur = _moteur(tmp_path, sort_mode="date")
         elements = [
             _element(i, url=f"https://x/wp-content/uploads/2026/03/f{i}.jpg",
-                     mois="2026-03")
+                     month="2026-03")
             for i in range(1, 27)
         ]
         with _patch_inventaire(moteur, elements), \

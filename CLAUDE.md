@@ -14,11 +14,9 @@ unless it gets worse.
   which is obsolete (story 9).
 - The AppStream metadata in `packaging/linux/` still describes a
   WordPress-only application: on hold with Linux.
-- Everything else that used to live here (French identifiers, dispatch
-  values, manifest keys, CLI flags, `Element` fields, Qt contexts,
-  `.ts` source language, `Transport.arret`, `Engine._pause`,
-  `Engine.dossier_pour`, remaining French docstrings) is being closed
-  by the sprint
+- Everything else that used to live here (dispatch values, manifest
+  keys, CLI flags, Qt contexts, `.ts` source language, remaining
+  French docstrings) is being closed by the sprint
   `docs/sprints/2026-09-french-to-english-complete.md`. Update this
   section as each of that sprint's US lands.
 

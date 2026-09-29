@@ -36,11 +36,11 @@ class _FauxEngine:
 
     dernier: "_FauxEngine | None" = None
 
-    def __init__(self, options, journal=None, progression=None, arret=None):
+    def __init__(self, options, journal=None, progression=None, stop_event=None):
         self.options = options
         self.journal = journal
         self.progression = progression
-        self.arret = _FauxArret()
+        self.stop_event = _FauxArret()
         _FauxEngine.dernier = self
 
     # Filled by the test before `main()` is called.
@@ -224,8 +224,8 @@ class TestReturnCodes:
     def test_130_on_keyboard_interrupt(self, monkeypatch, capsys):
         rc = _run(monkeypatch, [], leve=KeyboardInterrupt())
         assert rc == 130
-        # The stub engine's `arret` event was signalled cooperatively.
-        assert _FauxEngine.dernier.arret.set_called is True
+        # The stub engine's `stop_event` was signalled cooperatively.
+        assert _FauxEngine.dernier.stop_event.set_called is True
         assert "Interrompu" in capsys.readouterr().out
 
 

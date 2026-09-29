@@ -9,114 +9,132 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**US-EN-02 — Rename French test names and test classes to English.**
+**US-EN-03 — Internal Python identifiers, `Element` fields, and
+`Transport.arret` → English.**
 
-Second story of the sprint
+Third story of the sprint
 `docs/sprints/2026-09-french-to-english-complete.md`.
 
-The test suite has 445 test functions; 219 of them use French words in
-their names (`test_erreur_reseau`, `test_deux_processus_second_leve_folder_busy`,
-`test_aucune_image`, …), and a handful of test classes are French too
-(`TestExecuter`, `TestChargerManifeste`, `TestTelecharger`,
-`TestCoupeCircuit`, `TestSauverManifesteFusion`, `TestExecuterExtra`).
+Rename the following identifiers (the explicit sprint-doc list). No
+change to persisted formats, dispatch-value string literals, or Qt
+translation sources.
 
-Objective: rewrite these names in English, preserving test bodies,
-docstrings, fixtures, parametrize IDs, class ordering, and file
-structure. Zero behaviour change; the test suite output must remain
-identical.
+### Rename table
+
+| Old identifier | New identifier | Where |
+|---|---|---|
+| `Element.nom_fichier` | `Element.filename` | `sources/base.py` dataclass + all constructors and accessors |
+| `Element.mois` | `Element.month` | same |
+| `Element.largeur` | `Element.width` | same |
+| `Element.taille` | `Element.size` | same (dataclass field only — manifest `"taille"` string keys are US-EN-05) |
+| `Element.groupe` | `Element.group` | same |
+| `Transport.__init__(arret=...)` and `self.arret` | `Transport.__init__(stop_event=...)` and `self.stop_event` | `sources/base.py` |
+| `Engine.__init__(arret=...)` and `self.arret` | `Engine.__init__(stop_event=...)` and `self.stop_event` | `engine/core.py` |
+| `Engine.dossier_pour` | `Engine.folder_for` | `engine/core.py` |
+| `Engine._pause(secondes: float)` param | `Engine._pause(seconds: float)` param | `engine/core.py` |
+| Local variable `fichier` (file-path) | `file_path` (or context-appropriate English name) | `engine/core.py` run loop |
 
 ## Directly modified
 
-Every `tests/test_*.py` file with a French test name or test class:
-
-- `tests/test_bug_report.py` (7 FR names)
-- `tests/test_cli.py` (9)
-- `tests/test_config.py` (17)
-- `tests/test_core.py` (55, plus FR classes)
-- `tests/test_folder_lock.py` (5)
-- `tests/test_i18n.py` (10)
-- `tests/test_logsetup.py` (2)
-- `tests/test_scheduler.py` (10)
-- `tests/test_source_base.py` (15)
-- `tests/test_source_djangoplicity.py` (11)
-- `tests/test_sources_edges.py` (25)
-- `tests/test_source_wordpress.py` (13)
-- `tests/test_system.py` (12)
-- `tests/test_updater_downloader.py` (10)
-- `tests/test_updater_threads.py` (3)
-- `tests/test_updater_threads_run.py` (3)
-- `tests/test_updater_version.py` (12)
-
-Class renames (case by case):
-
-- `TestExecuter` → `TestRun`
-- `TestExecuterExtra` → `TestRunExtra`
-- `TestChargerManifeste` → `TestLoadManifest`
-- `TestSauverManifesteFusion` → `TestSaveManifestMerge`
-- `TestTelecharger` → `TestDownload`
-- `TestCoupeCircuit` → `TestCircuitBreaker`
-
-Any other French class name discovered during the pass gets the same
-treatment; the naming above is the pattern (English noun clause,
-`Test` + PascalCase behaviour tested).
+- `Glaneur/sources/base.py` — `Element` fields; `Transport.arret` →
+  `Transport.stop_event`.
+- `Glaneur/sources/wordpress.py` — reads `Element` fields via
+  positional args in the constructor; if it uses keyword args
+  (`nom_fichier=`, `groupe=`, `mois=`, `largeur=`), rename.
+- `Glaneur/sources/djangoplicity.py` — same as wordpress.
+- `Glaneur/engine/core.py` — `Engine.arret` → `Engine.stop_event`;
+  `Engine.dossier_pour` → `Engine.folder_for`; `_pause(secondes)` →
+  `_pause(seconds)`; local `fichier` names; `element.nom_fichier`
+  reads become `element.filename`; `element.largeur` →
+  `element.width`; `element.mois` → `element.month`; etc.
+- `Glaneur/engine/_merge.py`, `Glaneur/engine/delete_image.py`,
+  `Glaneur/engine/restore.py`, `Glaneur/engine/list_deleted.py`,
+  `Glaneur/engine/sanitize.py` — if they access `Element` fields or
+  `arret`, cascade. (Unlikely for these, but the fork should verify.)
+- `cli.py` — passes `arret=` to `Engine` if it does; rename.
+- `app.py` — `Travailleur` reads `arret`; rename.
+- `tests/test_*.py` — every test that constructs `Element(...)` with
+  the FR kwargs, or accesses `.nom_fichier`, `.mois`, `.largeur`,
+  `.taille`, `.groupe`, or `.arret`, or calls `Engine.dossier_pour(...)`.
 
 ## Direct dependencies
 
-- `conftest.py` and `tests/conftest.py`: **read only**. If any fixture
-  is referenced by name in a docstring, it stays; fixture names
-  themselves are not French.
-- Production code: **not modified**. This US is test-file names only.
-- `tools/check_coverage.py`: **read only**. Coverage floors do not
-  change; renaming test functions cannot change coverage.
+- Manifest write path (`Engine.download`, `Engine._run_locked`): uses
+  string keys like `"taille"`, `"fichier"`, `"modifie"`. **Not renamed
+  here.** These are persisted keys, owned by US-EN-05.
+- Options dataclass: already English.
+- Scheduler, config, updater: **read only.** Do not use any of the
+  renamed identifiers.
+- Translations `.ts` files: **not touched.** The identifier renames
+  never appear as translation sources.
 
 ## Explicitly out of scope
 
-- **Test bodies**: assertions, fixtures, mocks, parametrize values —
-  untouched. Only the `def test_xxx` line (and its docstring `noun`
-  where the docstring restates the French test name) may change.
-- **Docstrings**: kept as is if already English. If a French docstring
-  literally repeats the test name in French, translate it inline; do
-  not otherwise translate docstrings (that was US-EN-01's job and is
-  already done for the load-bearing docs).
-- **Test files' module docstring**: untouched (already English).
-- **Fixture names**: no renames.
-- **Parametrize `id=` values**: no renames.
-- **Class attributes** and helper functions inside test modules:
-  untouched.
-- **Production code identifiers**: US-EN-03.
-- **Dispatch values referenced in tests**: US-EN-04.
-- **Manifest keys in fixtures**: US-EN-05.
-- **`__version__`**: unchanged.
+- **Manifest dict-key strings** (e.g. `infos["taille"] = dest.stat().st_size`,
+  `etat["fichier"]`, `etat["modifie"]`, `etat["supprime"]`,
+  `etat["restaure"]`) — US-EN-05, with a read shim.
+- **Dispatch values** in strings (`"transitoire"`, `"coupure"`,
+  `"definitif"`, `"galerie"`, `"date"`, `"plat"`, `"wordpress"`,
+  `"djangoplicity"`, engine statuses `"repris"`, `"inchangé"`,
+  `"introuvable"`, `"erreur"`, marks `"supprime"`/`"restaure"`) —
+  US-EN-04.
+- **CLI flags** (`--dossier`, `--classement`, …) — US-EN-06.
+- **Qt translation sources** — US-EN-07.
+- **Transport.get_json parameters `essais` and `fin_si`** — public API
+  parameters used by tests and adapters. A rename here would cascade
+  outside the sprint-doc's explicit US-EN-03 list; deferred to a
+  separate "public API rename" US, which we can plan after US-EN-08.
+- **Other FR local variables** (`dossier`, `derniere`, `entetes`,
+  `reponse`, `reprise`, `tentative`, `depuis`, `sous`, `nom`,
+  `pris`, etc.) — deferred to a "locals cleanup" follow-up US. This
+  US only touches `fichier` locals that hold a file path in the
+  engine run loop.
+- **`_journal` attribute** — the name is already English (from
+  "journal" = "log"). Not renamed.
+- **`_pause` method name** — "pause" is English. Only the parameter
+  `secondes` inside it gets renamed.
+- **`__version__`** — unchanged.
 
 ## Tests
 
-No test added or removed. Nothing structural changes. The full suite
-must remain green with the same 495 passed / 2 skipped counts.
+Every test that constructs `Element(nom_fichier=..., groupe=..., mois=..., largeur=...)`
+or reads `element.nom_fichier` / `.mois` / `.largeur` / `.taille` /
+`.groupe` must have those calls rewritten. Same for `arret=` and
+`.arret`. Same for `dossier_pour(...)` calls.
 
-Verification steps:
+The tests' behaviour is preserved; only the identifiers change.
 
-- `pytest -q` → 495 passed, 2 skipped (identical to US-VERIF-04 and
-  US-EN-01 baseline).
-- `pytest --collect-only -q | wc -l` — collected-test count must be
-  stable across the rename.
-- `ruff check tests/` on the touched files.
+Verification:
+
+- `pytest -q` → **495 passed, 2 skipped** (same as US-EN-02 baseline).
+- `pytest --collect-only -q` → **497 tests collected** (unchanged).
+- `python tools/check_coverage.py` → all floors still met.
+- `ruff check` on touched files: no new warnings.
 
 ## Invariants
 
 - `__version__` unchanged.
-- Zero production line modified.
-- Number of collected tests unchanged (445 test functions plus
-  parametrization).
-- Test outputs unchanged (no assertion touched, no fixture reordered).
-- Coverage floors held (renaming has no effect on line/branch
-  coverage of the production package).
+- No persisted-format key renamed. Manifest, cache, config unchanged.
+- No dispatch-value string renamed. `"repris"`, `"inchangé"`,
+  `"introuvable"`, `"erreur"`, `"coupure"`, `"transitoire"`,
+  `"definitif"`, `"galerie"`, `"date"`, `"plat"`, `"wordpress"`,
+  `"djangoplicity"` all unchanged.
+- No CLI flag renamed.
+- Coverage floors (`sources/*` 98.0, `scheduler.py` 95.0,
+  `config.py` 97.0, `engine/*` 98.5) held.
+- `Transport.get_json`'s `essais` and `fin_si` parameter names
+  unchanged (see out-of-scope).
 
 ## Validation
 
-Level `local`. Test-file text-only rename.
+Level `subsystem`. Widespread cascade across engine, sources, and
+tests, but no boundary crossed and no persisted format touched.
 
-- `pytest -q` green.
-- `pytest --collect-only -q` yields the same test count.
-- `ruff check tests/` clean on the touched files (pre-existing
-  warnings unchanged).
-- No `invariant-reviewer` (no invariant touched).
+- `pytest -q --cov=Glaneur --cov-branch` green.
+- `python tools/check_coverage.py` green.
+- `ruff check` clean on touched files (pre-existing warnings
+  unchanged).
+- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
+  green — `Element` dataclass docstring changes may affect autodoc.
+- `invariant-reviewer` — Transport frontier + Engine callback API
+  change (signature).
