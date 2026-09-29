@@ -1477,15 +1477,23 @@ class Fenetre(QMainWindow):
         self._ecrire(self.tr("--- {timestamp} — update started").format(
             timestamp=f"{datetime.now():%d/%m/%Y %H:%M}"))
 
+        # Per-profile fields go through the default-profile builder so
+        # this call site keeps working verbatim when E3 part B step 2
+        # flips Config storage to a real list[Profile]. The two
+        # inheritable settings (min_width, verify_integrity) resolve
+        # via the None-inheritance rule against `defaults()`. The
+        # request delay is application-level and stays on `cfg`.
+        profile = self.cfg.default_profile()
+        defaults = self.cfg.defaults()
         options = Options(
             target_dir=dossier,
-            site=self.cfg.site,
-            sort_mode=self.cfg.sort_mode,
-            min_width=self.cfg.min_width,
+            site=profile.site,
+            sort_mode=profile.sort_mode,
+            min_width=profile.effective_min_width(defaults),
             delay=self.cfg.request_delay,
-            verify=self.cfg.verify_integrity,
-            source_type=self.cfg.source_type,
-            image_format=self.cfg.image_format,
+            verify=profile.effective_verify_integrity(defaults),
+            source_type=profile.source_type,
+            image_format=profile.image_format,
         )
         self.travailleur = Travailleur(options, self.stop_event)
         self.travailleur.journal_event.connect(self._journal_evenement)
