@@ -1166,6 +1166,86 @@ class TestMultipleProfiles:
         cfg = Config.load(chemin)
         assert cfg._extra_profiles[0].sort_mode == "gallery"
 
+    # -- add_profile / remove_profile mutators ------------------------
+
+    def test_add_profile_appends_with_fresh_uuid(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        added = cfg.add_profile("gallery-2")
+        assert added is cfg._extra_profiles[-1]
+        assert len(added.id) == 32   # uuid4().hex
+        assert added.id != cfg._profile_id   # not colliding with default
+        assert added.name == "gallery-2"
+
+    def test_add_profile_accepts_field_overrides(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        added = cfg.add_profile(
+            "eso",
+            source_type="djangoplicity",
+            site="https://eso.example",
+            target_dir="/tmp/eso",
+            image_format="Small",
+            sort_mode="date",
+            min_width=2000,
+        )
+        assert added.source_type == "djangoplicity"
+        assert added.site == "https://eso.example"
+        assert added.target_dir == "/tmp/eso"
+        assert added.image_format == "Small"
+        assert added.sort_mode == "date"
+        assert added.min_width == 2000
+        assert added.verify_integrity is None   # not overridden → inherit
+
+    def test_add_profile_rejects_unknown_fields(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        with pytest.raises(TypeError, match="no field"):
+            cfg.add_profile("bad", nonexistent="foo")
+        # No profile added on failure.
+        assert cfg._extra_profiles == []
+
+    def test_add_profile_generates_distinct_ids(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        a = cfg.add_profile("A")
+        b = cfg.add_profile("B")
+        assert a.id != b.id
+        assert len(cfg._extra_profiles) == 2
+
+    def test_add_profile_survives_round_trip(self, tmp_path):
+        chemin = tmp_path / "c.json"
+        cfg = Config.load(chemin)
+        cfg.add_profile("eso", source_type="djangoplicity",
+                        site="https://eso.example")
+        cfg.save()
+        loaded = Config.load(chemin)
+        assert len(loaded._extra_profiles) == 1
+        assert loaded._extra_profiles[0].source_type == "djangoplicity"
+
+    def test_remove_profile_deletes_by_id(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        a = cfg.add_profile("A")
+        cfg.add_profile("B")
+        assert cfg.remove_profile(a.id) is True
+        assert len(cfg._extra_profiles) == 1
+        assert cfg._extra_profiles[0].name == "B"
+
+    def test_remove_profile_returns_false_on_unknown_id(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        cfg.add_profile("A")
+        assert cfg.remove_profile("no-such-uuid") is False
+        assert len(cfg._extra_profiles) == 1
+
+    def test_remove_profile_refuses_to_delete_default(self, tmp_path):
+        """The default profile is the anchor of the flat runtime state
+        and cannot be removed — that would leave Config's flat fields
+        orphaned. Callers change the default's fields through the
+        Preferences dialog, not through remove_profile."""
+        cfg = Config.load(tmp_path / "c.json")
+        assert cfg.remove_profile(cfg._profile_id) is False
+        assert cfg._profile_id != ""   # default still there
+
+    def test_remove_profile_on_empty_extras_is_noop(self, tmp_path):
+        cfg = Config.load(tmp_path / "c.json")
+        assert cfg.remove_profile("anything") is False
+
     def test_non_dict_entries_in_profiles_list_are_skipped(self, tmp_path):
         """A malformed profiles[1] (string instead of dict) is silently
         skipped rather than crashing the load — same tolerance as

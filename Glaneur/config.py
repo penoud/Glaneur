@@ -699,6 +699,66 @@ class Config:
         """
         return [self.default_profile(), *self._extra_profiles]
 
+    def add_profile(self, name: str, **overrides) -> Profile:
+        """Append a new extra profile with a fresh ``uuid4().hex`` and return it.
+
+        Keyword overrides are set on the new :class:`Profile`; anything
+        not supplied stays at the Profile dataclass defaults. The new
+        profile is added to :attr:`_extra_profiles` in append order —
+        the on-disk position is stable across save/load.
+
+        Args:
+            name: Display name for the ``Status`` column of the profile
+                list. Not required to be unique — the ``id`` is what
+                the scheduler keys off (roadmap §5.1).
+            **overrides: Any :class:`Profile` field to seed on the new
+                entry, for example ``source_type="djangoplicity"``.
+
+        Returns:
+            The newly-created :class:`Profile`, already appended.
+
+        Raises:
+            TypeError: If an override names a field the :class:`Profile`
+                dataclass does not have.
+        """
+        fields_par_nom = {f.name for f in fields(Profile)}
+        unknown = set(overrides) - fields_par_nom
+        if unknown:
+            raise TypeError(
+                f"Profile has no field(s): {sorted(unknown)!r}")
+        overrides.setdefault("id", uuid.uuid4().hex)
+        overrides.setdefault("name", name)
+        profile = Profile(**overrides)
+        self._extra_profiles.append(profile)
+        return profile
+
+    def remove_profile(self, ident: str) -> bool:
+        """Remove the extra profile whose ``id`` matches ``ident``.
+
+        Refuses to remove the default profile — :meth:`default_profile`
+        is the anchor of the flat runtime state and cannot disappear
+        without a promotion. Callers wanting to change the default
+        profile do it through the Preferences dialog on the flat
+        fields, not through this method.
+
+        Args:
+            ident: The ``Profile.id`` of the entry to remove.
+
+        Returns:
+            ``True`` if an extra profile was found and removed,
+            ``False`` if no extra profile has this id (or if the id
+            matches the default profile, which is refused).
+        """
+        if ident == self._profile_id:
+            # The default profile is the anchor of the flat runtime
+            # state; removal is refused.
+            return False
+        for i, profile in enumerate(self._extra_profiles):
+            if profile.id == ident:
+                del self._extra_profiles[i]
+                return True
+        return False
+
     def _snapshot_older(self, chemin: Path, current_version: int | None) -> None:
         """Copy an older on-disk config to ``config.v<n>.json`` before overwriting.
 
