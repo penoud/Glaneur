@@ -1161,6 +1161,56 @@ class TestRunExtra:
         assert len(events) == 1
         assert events[0].params == {"count": 2, "min_width": 1000}
 
+    def test_lowering_min_width_does_not_re_inventory_old_excluded(self, tmp_path):
+        """Contract (lot 0.9 / lot 11.2 target): after a run with a high
+        ``min_width`` filters out an old image, a subsequent run with a
+        lowered ``min_width`` does NOT re-fetch the previously excluded
+        image, because the engine passes the cache's ``derniere_date_media``
+        as ``after`` and a well-behaved source honours it.
+
+        This pins the current behaviour so lot 11.2 (filter fingerprint in
+        the cache key) has a target to change: when filters land, a
+        filter change will invalidate the cache and force a full
+        inventory, catching up the excluded image on the next run.
+        """
+        # Run 1: min_width=1500 excludes the small one; only the big one
+        # (both dated 2026-03) reaches the manifest.
+        moteur1 = _moteur(tmp_path, site="https://x.example",
+                          sort_mode="date", min_width=1500)
+        small = _element(1, width=200, month="2026-03",
+                         date="2026-03-10T08:00:00")
+        big = _element(2, width=2000, month="2026-03",
+                       date="2026-03-15T08:00:00",
+                       url="https://x/wp-content/uploads/2026/03/big.jpg")
+        with _patch_inventaire(moteur1, [small, big]), \
+             patch.object(moteur1, "download",
+                          return_value=("ok", {"size": 1, "etag": "",
+                                               "modified": "", "url": "u"},
+                                        None, None)) as dl1:
+            moteur1.run()
+        assert dl1.call_count == 1   # only the big one
+        assert read_cache(tmp_path)["derniere_date_media"] == "2026-03-15T08:00:00"
+
+        # Run 2: lowered filter, but the cache still gates inventory. A
+        # source that honours ``after`` returns nothing new. The engine
+        # never sees the small image, and does not re-download it.
+        moteur2 = _moteur(tmp_path, site="https://x.example",
+                          sort_mode="date", min_width=100)
+        seen: dict[str, str | None] = {}
+
+        def faux_inventaire(depuis, _jusqua):
+            seen["depuis"] = depuis
+            # honour `depuis`: neither the small nor the big element is
+            # strictly newer than the cache date, so nothing comes back.
+            return iter([])
+
+        with patch.object(moteur2.source, "inventory",
+                          side_effect=faux_inventaire), \
+             patch.object(moteur2, "download") as dl2:
+            moteur2.run()
+        assert seen["depuis"] == "2026-03-15T08:00:00"
+        assert dl2.call_count == 0   # small image NOT re-fetched
+
     def test_periodic_save(self, tmp_path):
         # 26 images: save_manifest must be called at least at the 25th
         # and once more in finally
