@@ -56,7 +56,10 @@ class TestProfileRowFromConfig:
         cfg.target_dir = ""
         cfg.last_run = ""
         row = app_module._profile_row(cfg)
-        assert row.name == "—"
+        # The default profile has name="default", which wins over an em
+        # dash when site is empty — a named-but-incomplete profile is
+        # clearer than a fully anonymous one.
+        assert row.name == "default"
         assert row.site == "—"
         assert row.folder == "—"
         assert row.last_run == "—"
@@ -131,6 +134,103 @@ class TestModelContract:
         m.set_status("Whatever")
         assert m.rowCount() == 0
         assert received == []
+
+
+class TestMultiRow:
+    """Multi-profile display: the table now shows every entry
+    :meth:`Glaneur.config.Config.profiles` returns, not just the
+    default one."""
+
+    def _row(self, name: str, status: str = "—") -> app_module.ProfileRow:
+        return app_module.ProfileRow(
+            name=name, source_type="WordPress (API REST)",
+            site="https://x", folder="/tmp",
+            last_run="—", status=status)
+
+    def test_set_rows_replaces_the_full_list(self, qtbot):
+        m = app_module.ProfileTableModel()
+        m.set_rows([self._row("A"), self._row("B"), self._row("C")])
+        assert m.rowCount() == 3
+        assert m.data(m.index(0, 0), Qt.DisplayRole) == "A"
+        assert m.data(m.index(1, 0), Qt.DisplayRole) == "B"
+        assert m.data(m.index(2, 0), Qt.DisplayRole) == "C"
+
+    def test_set_rows_in_place_keeps_selection(self, qtbot):
+        """Same row count -> in-place update -> no modelReset."""
+        m = app_module.ProfileTableModel()
+        m.set_rows([self._row("A"), self._row("B")])
+        received: list = []
+        m.modelReset.connect(lambda: received.append("reset"))
+        m.set_rows([self._row("A2"), self._row("B2")])
+        assert received == []
+        assert m.data(m.index(0, 0), Qt.DisplayRole) == "A2"
+
+    def test_set_rows_row_count_change_triggers_reset(self, qtbot):
+        m = app_module.ProfileTableModel()
+        m.set_rows([self._row("A")])
+        received: list = []
+        m.modelReset.connect(lambda: received.append("reset"))
+        m.set_rows([self._row("A"), self._row("B")])
+        assert received == ["reset"]
+
+    def test_set_status_targets_row_zero_by_default(self, qtbot):
+        m = app_module.ProfileTableModel()
+        m.set_rows([self._row("A", "Idle"), self._row("B", "Idle")])
+        m.set_status("Running…")
+        assert m.data(m.index(0, 5), Qt.DisplayRole) == "Running…"
+        assert m.data(m.index(1, 5), Qt.DisplayRole) == "Idle"
+
+    def test_set_status_can_target_any_row(self, qtbot):
+        m = app_module.ProfileTableModel()
+        m.set_rows([self._row("A", "Idle"), self._row("B", "Idle")])
+        m.set_status("Running…", row=1)
+        assert m.data(m.index(0, 5), Qt.DisplayRole) == "Idle"
+        assert m.data(m.index(1, 5), Qt.DisplayRole) == "Running…"
+
+    def test_set_status_out_of_range_row_is_noop(self, qtbot):
+        m = app_module.ProfileTableModel()
+        m.set_rows([self._row("A", "Idle")])
+        # No crash on a row index that does not exist.
+        m.set_status("X", row=9)
+        assert m.data(m.index(0, 5), Qt.DisplayRole) == "Idle"
+
+
+class TestProfileRowFrom:
+    """`_profile_row_from(profile, status)` — the multi-profile-friendly
+    builder that takes a Profile instance directly."""
+
+    def _profile(self, **overrides):
+        from Glaneur.config import Profile
+        base = {
+            "id": "abc",
+            "name": "eso",
+            "source_type": "djangoplicity",
+            "site": "https://eso.example",
+            "target_dir": "/tmp/eso",
+            "image_format": "Small",
+            "sort_mode": "date",
+            "last_run": "2026-09-30T10:00:00",
+        }
+        base.update(overrides)
+        return Profile(**base)
+
+    def test_populates_every_column(self):
+        row = app_module._profile_row_from(self._profile(), status="Idle")
+        assert row.name == "eso.example"
+        assert row.source_type == "Djangoplicity (ESO, ESA/Hubble…)"
+        assert row.site == "https://eso.example"
+        assert row.folder == "/tmp/eso"
+        assert row.last_run == "2026-09-30 10:00"
+        assert row.status == "Idle"
+
+    def test_name_falls_back_to_display_name_when_site_empty(self):
+        row = app_module._profile_row_from(
+            self._profile(site="", name="my-profile"))
+        assert row.name == "my-profile"
+
+    def test_status_default_is_em_dash(self):
+        row = app_module._profile_row_from(self._profile())
+        assert row.status == "—"
 
 
 # --------------------------------------------------------------------------- #

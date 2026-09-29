@@ -236,15 +236,11 @@ class ProfileRow:
     status: str
 
 
-def _profile_row(cfg: Config, status: str = "") -> ProfileRow:
-    """Build the display row for the single implicit profile.
+def _profile_row_from(profile, status: str = "") -> ProfileRow:
+    """Build the display row for one :class:`Glaneur.config.Profile`.
 
     Args:
-        cfg: The current :class:`Glaneur.config.Config`. Read through
-            :meth:`Glaneur.config.Config.default_profile` so this
-            function keeps working verbatim when Config storage flips
-            to a real ``list[Profile]`` in E3 part B step 2 — the
-            profile shape does not change, only where it lives.
+        profile: The profile to render.
         status: The status string to show in the last column. Empty by
             default so an idle app shows an em dash.
 
@@ -253,10 +249,11 @@ def _profile_row(cfg: Config, status: str = "") -> ProfileRow:
         the table looks intentional even before the user has entered
         anything.
     """
-    profile = cfg.default_profile()
     tiret = "—"
     site = profile.site or ""
-    nom = urlparse(site).netloc or site or tiret
+    # Fall back to the display name when the site is empty — a profile
+    # can carry a name (e.g. "gallery-2") even before its URL is set.
+    nom = urlparse(site).netloc or site or profile.name or tiret
     # Reverse lookup of the display label for the source type.
     type_label = next(
         (label for label, val in SOURCE_TYPES.items()
@@ -274,6 +271,15 @@ def _profile_row(cfg: Config, status: str = "") -> ProfileRow:
         last_run=dernier,
         status=status or tiret,
     )
+
+
+def _profile_row(cfg: Config, status: str = "") -> ProfileRow:
+    """Build the display row for the default (index 0) profile.
+
+    Thin forward-compat wrapper — most callers now go through
+    :func:`_profile_row_from` on the whole ``cfg.profiles()`` list.
+    """
+    return _profile_row_from(cfg.default_profile(), status)
 
 
 class ProfileTableModel(QAbstractTableModel):
@@ -335,23 +341,40 @@ class ProfileTableModel(QAbstractTableModel):
         time; otherwise ``dataChanged`` across every column so the view
         repaints in place.
         """
-        if not self._rows:
+        self.set_rows([row])
+
+    def set_rows(self, rows: list[ProfileRow]) -> None:
+        """Replace the full list of rows with ``rows``.
+
+        Emits ``modelReset`` when the row count changes (a profile was
+        added or removed); otherwise ``dataChanged`` across every cell
+        so the view repaints in place. That distinction matters for
+        the ``QTableView`` — a reset scrolls to the top and drops the
+        selection, an in-place update does not.
+        """
+        if len(rows) != len(self._rows):
             self.beginResetModel()
-            self._rows = [row]
+            self._rows = list(rows)
             self.endResetModel()
             return
-        self._rows[0] = row
-        haut = self.index(0, 0)
-        bas = self.index(0, self.columnCount() - 1)
-        self.dataChanged.emit(haut, bas, [Qt.DisplayRole])
+        self._rows = list(rows)
+        if self._rows:
+            haut = self.index(0, 0)
+            bas = self.index(len(self._rows) - 1, self.columnCount() - 1)
+            self.dataChanged.emit(haut, bas, [Qt.DisplayRole])
 
-    def set_status(self, status: str) -> None:
-        """Update the status column of the single row without rebuilding
-        the rest — used while a run is in flight."""
-        if not self._rows:
+    def set_status(self, status: str, row: int = 0) -> None:
+        """Update the status column of ``row`` without rebuilding it.
+
+        Args:
+            status: Text to show in the ``Status`` column.
+            row: Row index to update. Defaults to 0 (the default
+                profile — the one the engine runs today).
+        """
+        if not 0 <= row < len(self._rows):
             return
-        self._rows[0] = replace(self._rows[0], status=status)
-        cell = self.index(0, self.columnCount() - 1)
+        self._rows[row] = replace(self._rows[row], status=status)
+        cell = self.index(row, self.columnCount() - 1)
         self.dataChanged.emit(cell, cell, [Qt.DisplayRole])
 
 
@@ -1093,9 +1116,11 @@ class Fenetre(QMainWindow):
         self.table_profils.setEditTriggers(QTableView.NoEditTriggers)
         self.table_profils.verticalHeader().setVisible(False)
         self.table_profils.horizontalHeader().setStretchLastSection(True)
-        # One row today — cap the height so the table does not eat the
-        # journal area.
-        self.table_profils.setFixedHeight(60)
+        # Height range: enough for one row plus header (typical case),
+        # capped so several extra profiles do not eat the journal area
+        # — the internal scrollbar kicks in beyond the cap.
+        self.table_profils.setMinimumHeight(60)
+        self.table_profils.setMaximumHeight(160)
         racine.addWidget(self.table_profils)
 
         # Legacy aliases kept as None so any stray reference to the old
@@ -1207,19 +1232,27 @@ class Fenetre(QMainWindow):
         self.tray.show()
 
     def _rafraichir_table_profils(self, status: str | None = None) -> None:
-        """Push a fresh :class:`ProfileRow` into the profile table.
+        """Push fresh :class:`ProfileRow` entries for every profile.
+
+        The default profile is at row 0; extra profiles land in the
+        order :meth:`Glaneur.config.Config.profiles` returns them.
 
         Args:
-            status: Optional status override. When ``None`` (default),
-                the current status column is preserved so a background
-                refresh does not clobber an in-flight run label.
+            status: Optional status override for the default (row-0)
+                profile. When ``None`` (default), the current row-0
+                status column is preserved so a background refresh
+                does not clobber an in-flight run label. Extra
+                profiles are always shown with an em-dash status
+                today — the engine only runs the default one.
         """
         if status is None and self.profils_model.rowCount() > 0:
             current = self.profils_model.data(
                 self.profils_model.index(0, 5), Qt.DisplayRole)
             status = current if current and current != "—" else ""
-        self.profils_model.set_single_row(
-            _profile_row(self.cfg, status or ""))
+        profiles = self.cfg.profiles()
+        rows = [_profile_row_from(profiles[0], status or "")]
+        rows.extend(_profile_row_from(p) for p in profiles[1:])
+        self.profils_model.set_rows(rows)
 
     def _rafraichir_bandeau(self) -> None:
         """Kept as a single-line forwarder so existing callers
