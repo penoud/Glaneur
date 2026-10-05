@@ -12,10 +12,14 @@ has elapsed in the meantime, the update fires on the next launch.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+import math
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from .config import Profile
     from .engine.result import RunResult
 
 # Exponential backoff applied when the server did not provide a
@@ -23,6 +27,21 @@ if TYPE_CHECKING:
 # incremented on each successive defer and capped at 2; it is reset to
 # zero by :meth:`Scheduler.mark_run`.
 BACKOFFS_S: tuple[int, ...] = (3600, 7200, 14400)
+
+
+def _parse_iso(brut: str | None) -> datetime | None:
+    """Parse an ISO 8601 timestamp or return ``None`` on empty/broken input.
+
+    Shared between the single-profile and per-profile paths — the
+    latter has to swallow the same edge cases (empty string, malformed
+    format, ``None`` field) without raising.
+    """
+    if not brut:
+        return None
+    try:
+        return datetime.fromisoformat(brut)
+    except (TypeError, ValueError):
+        return None
 
 
 class Scheduler:
@@ -141,6 +160,125 @@ class Scheduler:
         self.config.retry_after = ""
         self.config.backoff_level = 0
         self.config.save()
+
+    # -- multi-profile grid (lot 5.2) --------------------------------------
+
+    def _parse_anchor(self) -> time:
+        """Parse ``config.schedule_anchor`` into a naive ``time`` value.
+
+        The anchor is a ``HH:MM`` string set at v2 migration from the
+        current ``last_run``'s time-of-day (see :meth:`Config.load` on
+        :mod:`Glaneur.config`). Empty or malformed values fall back to
+        midnight — a safe anchor for the periodic grid.
+        """
+        brut = getattr(self.config, "schedule_anchor", "") or ""
+        try:
+            return time.fromisoformat(brut)
+        except (TypeError, ValueError):
+            return time(0, 0)
+
+    @staticmethod
+    def _grid_slot(anchor_dt: datetime, k: int, n: int, interval_hours: int,
+                   threshold: datetime) -> datetime:
+        """Return the first grid slot for profile ``k`` at or after ``threshold``.
+
+        The grid is ``anchor_dt + k x I/n + m x I`` for every integer
+        ``m``. Given a threshold ``T``, the returned slot satisfies
+        ``slot ≥ T`` and no earlier slot in the same profile's grid
+        satisfies the same inequality — this is the smallest ``m`` such
+        that ``base + m x I ≥ T`` (with ``base = anchor_dt + k x I/n``).
+
+        Args:
+            anchor_dt: A datetime whose time-of-day is
+                ``config.schedule_anchor``. The date component is
+                irrelevant — the grid is periodic with period ``I``.
+            k: Profile rank in the list (0-based).
+            n: Total number of profiles (at least 1).
+            interval_hours: Shared ``config.interval_hours``.
+            threshold: Earliest acceptable slot; usually
+                ``last_run + I/2`` per the roadmap's
+                I/2-no-double-run rule.
+        """
+        n = max(1, n)
+        interval = timedelta(hours=interval_hours)
+        offset = timedelta(hours=interval_hours * k / n)
+        base = anchor_dt + offset
+        delta = (threshold - base).total_seconds() / interval.total_seconds()
+        m = math.ceil(delta)
+        return base + m * interval
+
+    def next_run_for(self, profile: Profile, k: int, n: int) -> datetime | None:
+        """Return the next automatic-run date for ``profile``.
+
+        Applies the roadmap §5.2 recipe:
+
+        1. In manual mode (``interval_hours == 0``), no automatic run
+           is scheduled; returns ``None``.
+        2. ``threshold = last_run + I/2`` — or ``now`` when
+           ``profile.last_run`` is empty (a fresh profile fires
+           immediately).
+        3. The slot is the first grid entry ≥ threshold.
+        4. If ``profile.retry_after`` is later than the slot, the
+           deferral pushes the run out to that date instead.
+
+        The "now" clock is not read internally — it is derived from the
+        threshold, so the method stays pure and testable.
+
+        Args:
+            profile: The :class:`Glaneur.config.Profile` whose next-run
+                is being computed. Only its ``last_run`` and
+                ``retry_after`` are consulted.
+            k: Rank of ``profile`` in the profile list (0 for the
+                default one).
+            n: Total number of profiles.
+
+        Returns:
+            The naive local datetime of the next slot, or ``None`` in
+            manual mode.
+        """
+        interval_hours = int(getattr(self.config, "interval_hours", 0) or 0)
+        if not interval_hours:
+            return None
+        last = _parse_iso(profile.last_run)
+        retry = _parse_iso(profile.retry_after)
+        if last is None:
+            # A profile that has never run fires immediately — matches
+            # the existing single-profile ``Scheduler.next_run`` (which
+            # returns ``datetime.now()`` on empty ``last_run``). A
+            # deferral, if any, still pushes past the immediate slot.
+            slot = datetime.now()  # noqa: DTZ005
+        else:
+            anchor = self._parse_anchor()
+            anchor_dt = datetime.combine(
+                datetime.now().date(), anchor)  # noqa: DTZ005
+            threshold = last + timedelta(hours=interval_hours / 2)
+            slot = self._grid_slot(anchor_dt, k, n, interval_hours, threshold)
+        if retry is not None and retry > slot:
+            return retry
+        return slot
+
+    def is_due_for(self, profile: Profile, k: int, n: int) -> bool:
+        """Report whether ``profile`` should start now.
+
+        Delegates to :meth:`next_run_for`; returns ``False`` in manual
+        mode.
+        """
+        prochaine = self.next_run_for(profile, k, n)
+        return prochaine is not None and datetime.now() >= prochaine  # noqa: DTZ005
+
+    def next_due_index(self, profiles: Sequence[Profile]) -> int | None:
+        """Return the index of the first profile that is due, or ``None``.
+
+        Walks ``profiles`` in order and returns the first ``k`` for
+        which :meth:`is_due_for` is true. This matches the roadmap's
+        "one profile at a time, in queue order" rule (§5.2). Manual
+        mode collapses the walk — no profile is ever due.
+        """
+        n = len(profiles)
+        for k, prof in enumerate(profiles):
+            if self.is_due_for(prof, k, n):
+                return k
+        return None
 
     def defer(self, res: RunResult) -> None:
         """Defer the next run after a network circuit-breaker trips.

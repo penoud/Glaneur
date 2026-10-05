@@ -284,3 +284,200 @@ class TestDisplayTextWithDefer:
         )
         p = Scheduler(cfg)
         assert "deferred" not in next_run_text(p).lower()
+
+
+# --------------------------------------------------------------------------- #
+# Lot 5.2 — per-profile grid (pure computation)
+# --------------------------------------------------------------------------- #
+
+from datetime import time as dt_time
+
+from Glaneur.config import Profile
+from Glaneur.scheduler import Scheduler as _Scheduler
+
+
+class TestGridSlot:
+    """`Scheduler._grid_slot` is a pure static computation of the
+    grid formula ``anchor_dt + k x I/n + m x I``. Every test seeds
+    the anchor, k, n, I and threshold explicitly so failures point
+    directly at the math, not at any implicit clock or config."""
+
+    _ANCHOR = datetime(2026, 9, 30, 10, 0, 0)  # 10:00 today  # noqa: DTZ001
+    _I = 24  # hours
+
+    def test_threshold_before_base_returns_base(self):
+        # k=0 base = anchor; threshold < base → m=0 → slot = base.
+        threshold = self._ANCHOR - timedelta(hours=4)
+        slot = _Scheduler._grid_slot(self._ANCHOR, 0, 1, self._I, threshold)
+        assert slot == self._ANCHOR
+
+    def test_threshold_equal_to_base_returns_base(self):
+        slot = _Scheduler._grid_slot(self._ANCHOR, 0, 1, self._I, self._ANCHOR)
+        assert slot == self._ANCHOR
+
+    def test_threshold_between_slots_returns_next(self):
+        # Threshold 2 h after base → m=1 → slot = base + 24 h.
+        threshold = self._ANCHOR + timedelta(hours=2)
+        slot = _Scheduler._grid_slot(self._ANCHOR, 0, 1, self._I, threshold)
+        assert slot == self._ANCHOR + timedelta(hours=24)
+
+    def test_threshold_exactly_at_a_slot_returns_that_slot(self):
+        threshold = self._ANCHOR + timedelta(hours=24)
+        slot = _Scheduler._grid_slot(self._ANCHOR, 0, 1, self._I, threshold)
+        assert slot == threshold
+
+    def test_two_profile_grid_is_staggered_by_I_over_2(self):
+        # k=1, n=2 → base offset = 24 / 2 = 12 h.
+        slot_k0 = _Scheduler._grid_slot(
+            self._ANCHOR, 0, 2, self._I, self._ANCHOR)
+        slot_k1 = _Scheduler._grid_slot(
+            self._ANCHOR, 1, 2, self._I, self._ANCHOR)
+        assert slot_k1 - slot_k0 == timedelta(hours=12)
+
+    def test_three_profile_grid_is_staggered_by_I_over_3(self):
+        # k=1 → +8h; k=2 → +16h.
+        slots = [_Scheduler._grid_slot(
+                    self._ANCHOR, k, 3, self._I, self._ANCHOR)
+                 for k in range(3)]
+        assert slots[1] - slots[0] == timedelta(hours=8)
+        assert slots[2] - slots[0] == timedelta(hours=16)
+
+    def test_anchor_midnight_vs_noon_grids_are_parallel(self):
+        """Changing the anchor's time-of-day shifts every slot by the
+        same half-interval magnitude — the grids stay parallel, each
+        slot a half-day away from the other anchor's slot (the sign
+        depends on which anchor sits above the threshold)."""
+        anchor_a = datetime(2026, 9, 30, 0, 0, 0)   # midnight  # noqa: DTZ001
+        anchor_b = datetime(2026, 9, 30, 12, 0, 0)  # noon  # noqa: DTZ001
+        threshold = datetime(2026, 10, 1, 6, 0, 0)  # noqa: DTZ001
+        slot_a = _Scheduler._grid_slot(anchor_a, 0, 1, self._I, threshold)
+        slot_b = _Scheduler._grid_slot(anchor_b, 0, 1, self._I, threshold)
+        assert abs(slot_b - slot_a) == timedelta(hours=12)
+
+    def test_n_of_zero_is_treated_as_one(self):
+        # Defensive: n=0 must not divide-by-zero the offset math.
+        slot = _Scheduler._grid_slot(
+            self._ANCHOR, 0, 0, self._I, self._ANCHOR)
+        assert slot == self._ANCHOR
+
+
+class TestParseAnchor:
+    def test_valid_hh_mm(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="14:30")
+        assert Scheduler(c)._parse_anchor() == dt_time(14, 30)
+
+    def test_empty_falls_back_to_midnight(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="")
+        assert Scheduler(c)._parse_anchor() == dt_time(0, 0)
+
+    def test_malformed_falls_back_to_midnight(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="nope")
+        assert Scheduler(c)._parse_anchor() == dt_time(0, 0)
+
+
+def _profile(**kw) -> Profile:
+    base = {"id": "abc", "name": "p"}
+    base.update(kw)
+    return Profile(**base)
+
+
+class TestNextRunFor:
+    """`Scheduler.next_run_for` combines the grid with the profile's
+    scheduler state (`last_run`, `retry_after`) and the config's
+    interval and anchor."""
+
+    def test_manual_mode_returns_none(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=0, schedule_anchor="10:00")
+        assert Scheduler(c).next_run_for(_profile(), 0, 1) is None
+
+    def test_fresh_profile_is_due_immediately(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        p = _profile(last_run="")
+        avant = datetime.now()  # noqa: DTZ005
+        prochaine = Scheduler(c).next_run_for(p, 0, 1)
+        assert prochaine is not None
+        # A fresh profile fires at the first grid slot ≥ now.
+        assert prochaine >= avant - timedelta(seconds=1)
+
+    def test_retry_after_pushes_past_nominal(self, tmp_path):
+        """A retry_after set well past the nominal slot wins."""
+        derniere = (datetime.now() - timedelta(hours=25)  # noqa: DTZ005
+                    ).isoformat(timespec="seconds")
+        report = (datetime.now() + timedelta(hours=100)  # noqa: DTZ005
+                  ).isoformat(timespec="seconds")
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        p = _profile(last_run=derniere, retry_after=report)
+        prochaine = Scheduler(c).next_run_for(p, 0, 1)
+        assert prochaine == datetime.fromisoformat(report)
+
+    def test_retry_after_older_than_slot_is_ignored(self, tmp_path):
+        """A ``retry_after`` older than the nominal grid slot does not
+        push the run — the deferral has already expired, so the
+        scheduler simply returns the grid slot. Note the slot itself
+        can still be in the past (the profile is "overdue"); the
+        important invariant is that we did NOT pick the stale
+        retry_after."""
+        derniere = (datetime.now() - timedelta(hours=25)  # noqa: DTZ005
+                    ).isoformat(timespec="seconds")
+        report_ancien = (datetime.now() - timedelta(hours=100)  # noqa: DTZ005
+                         ).isoformat(timespec="seconds")
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        p = _profile(last_run=derniere, retry_after=report_ancien)
+        prochaine = Scheduler(c).next_run_for(p, 0, 1)
+        assert prochaine is not None
+        # The stale retry_after would have put us 100 h in the past;
+        # the chosen slot is nowhere near that.
+        assert prochaine > datetime.fromisoformat(report_ancien) + timedelta(hours=50)
+
+    def test_i_over_two_rule_holds(self, tmp_path):
+        """A run made "on time" (last_run just now) lands on the next
+        slot exactly one interval later, not on the current one."""
+        derniere = datetime.now()  # noqa: DTZ005
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        p = _profile(last_run=derniere.isoformat(timespec="seconds"))
+        prochaine = Scheduler(c).next_run_for(p, 0, 1)
+        assert prochaine is not None
+        # ≥ threshold means ≥ last_run + I/2 = now + 12 h.
+        assert prochaine >= derniere + timedelta(hours=12)
+
+    def test_two_profiles_are_offset_by_half_the_interval(self, tmp_path):
+        """Two identical profiles with the same last_run land exactly
+        I/2 apart on the grid — one is at anchor + k x I/2, the other
+        at anchor + (k+1) x I/2. The sign of ``d1 - d0`` depends on
+        which base ends up on which side of the threshold, so this
+        test asserts the magnitude only."""
+        derniere = (datetime.now() - timedelta(hours=25)  # noqa: DTZ005
+                    ).isoformat(timespec="seconds")
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        p0 = _profile(last_run=derniere)
+        p1 = _profile(last_run=derniere)
+        s = Scheduler(c)
+        d0 = s.next_run_for(p0, 0, 2)
+        d1 = s.next_run_for(p1, 1, 2)
+        assert d0 is not None and d1 is not None
+        assert abs(d1 - d0) == timedelta(hours=12)
+
+
+class TestIsDueForAndNextDueIndex:
+    def test_is_due_for_fresh_profile(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="00:00")
+        assert Scheduler(c).is_due_for(_profile(last_run=""), 0, 1) is True
+
+    def test_is_due_for_manual_mode(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=0, schedule_anchor="00:00")
+        assert Scheduler(c).is_due_for(_profile(last_run=""), 0, 1) is False
+
+    def test_next_due_index_picks_first_due_profile(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="00:00")
+        # p0 ran recently (not due), p1 is fresh (due immediately).
+        recent = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
+        p0 = _profile(id="p0", last_run=recent)
+        p1 = _profile(id="p1", last_run="")
+        assert Scheduler(c).next_due_index([p0, p1]) == 1
+
+    def test_next_due_index_returns_none_when_nothing_is_due(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="00:00")
+        recent = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
+        p0 = _profile(id="p0", last_run=recent)
+        p1 = _profile(id="p1", last_run=recent)
+        assert Scheduler(c).next_due_index([p0, p1]) is None

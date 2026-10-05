@@ -9,114 +9,121 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 5.1 E3 part B step 3 — multi-profile persistence scaffolding.**
+**Lot 5.2 — Per-profile scheduler grid (pure computation).**
 
-Adds the disk round-trip for **additional** profiles beyond the
-single implicit default. The v2 schema landed in `ca187d5` already
-declares `profiles` as a list; today we only ever write/read one
-entry. This commit lets the same v2 file carry any number of
-additional profiles: `Config.save()` emits every profile in the
-list, and `Config.load()` reads them all back.
+Adds the multi-profile scheduling algorithm from
+`docs/design/evolution-multi-sources.md` §3.1 and roadmap §5.2 as
+pure methods on :class:`Glaneur.scheduler.Scheduler`. No wiring into
+:class:`app.Fenetre` or :class:`Glaneur.config.Config`'s state
+yet — that follows in a next commit once the core computation has
+its own tests and reviewer sign-off.
 
-Nothing at runtime consumes the extra profiles yet — the engine
-still runs the default profile only. But the persistence bones are
-now in place, which unblocks:
+### Grid formula
 
-- a future "Add profile" button in the Preferences dialog (E3
-  part B step 4);
-- multi-profile CLI `--profile <name|id>` (roadmap §5.3);
-- the scheduler grid (`anchor + k × I/n + m × I`, lot 5.2).
+For ``n`` scheduled profiles, ``k`` = profile rank (0 to n-1),
+``I`` = ``interval_hours``, the grid of slots for profile ``k`` is:
 
-No schema bump: the v2 format has always allowed multiple entries
-in `profiles`. This is an additive change to how the loader/saver
-walk the list.
+    anchor + k × I/n + m × I,  m ∈ ℤ
 
-### Storage
+The **anchor** is a time-of-day (``HH:MM``) stored on
+:attr:`Config.schedule_anchor` (already added in E3 part A). Empty
+anchor falls back to midnight.
 
-- `Config._extra_profiles: list[Profile]` — extra profiles beyond
-  the default. Default empty; hidden from serialisation like
-  `_profile_id` / `_path`.
-- `Config.save()` writes `profiles: [default_profile, *extra_profiles]`.
-- `Config.load()` reads all profiles; index 0 populates the flat
-  fields as before, indices 1.. go into `_extra_profiles`.
-- New `Config.profiles() -> list[Profile]` returns
-  `[default_profile(), *_extra_profiles]` — the complete list a
-  future UI or CLI can iterate.
-- Round-trip byte stability preserved: `Config.load(x).save()` on
-  a file with N profiles still reproduces the same file.
+Due-time for a profile:
+
+- ``threshold = last_run + I/2`` (or ``now`` when ``last_run`` is
+  empty — a fresh profile fires immediately);
+- slot = first grid slot ≥ threshold;
+- if a ``retry_after`` is set and it is later than the slot,
+  ``retry_after`` wins (the deferral pushes the run out further).
+
+The **I/2 rule** is what makes the computation robust — a run made
+on time lands on the next slot exactly ``+I`` later, a late catch-up
+realigns within 0.5–1.5 intervals without a double run, and adding
+or reordering profiles never restarts a profile less than ``I/2``
+after its last run. That last invariant is already documented in
+CLAUDE.md's multi-source section.
+
+### API added
+
+- `Scheduler._parse_anchor()` — parses
+  ``config.schedule_anchor`` into a naive ``time`` object,
+  fallback ``00:00`` on empty/malformed.
+- `Scheduler._grid_slot(anchor_dt, k, n, threshold)` — pure
+  computation returning the first slot ≥ threshold.
+- `Scheduler.next_run_for(profile, k, n)` — the runtime entry
+  point. Reads scheduler state (``last_run`` /
+  ``retry_after``) from the passed :class:`Glaneur.config.Profile`;
+  ``k`` / ``n`` come from the caller iterating
+  :meth:`Glaneur.config.Config.profiles`.
+- `Scheduler.is_due_for(profile, k, n)` — boolean wrapper.
+- `Scheduler.next_due_index(profiles)` — walks a list of profiles
+  and returns the index of the first one that is due, or ``None``.
 
 ## Directly modified
 
-- `Glaneur/config.py`:
-  - `Config._extra_profiles` field added.
-  - `_load_v2` extended to iterate `profiles[1..]` and build
-    `Profile` instances.
-  - `_to_v2_dict` extended to emit every extra profile after the
-    default one.
-  - New instance method `Config.profiles()`.
-- `tests/test_config.py`:
-  - `TestMultipleProfiles` — new class:
-    - extra profiles survive a save → load round-trip;
-    - `Config.profiles()` returns default + extra in order;
-    - a fresh Config has zero extras;
-    - an extra profile with `None` overrides inherits from
-      `defaults` (same rule as the default profile);
-    - v2 → v2 byte stability with N profiles.
+- `Glaneur/scheduler.py` — five new methods (four private + one
+  public helper). Existing single-profile API
+  (`next_run`, `is_due`, `mark_run`, `defer`) unchanged; still
+  drives the default-profile auto-run cadence.
+- `tests/test_scheduler.py` — new `TestGridSlot` and
+  `TestNextRunFor` classes locking the math.
 
 ## Direct dependencies
 
-- Uses `Profile`, `_DEFAULT_FIELDS`, `_PROFILE_STATE_FIELDS`.
-- No touch to `Config.load` / `save` outside the `_load_v2` /
-  `_to_v2_dict` helpers.
-- No caller migrated to iterate `Config.profiles()` yet — that
-  belongs to E3 part B step 4 and beyond.
+- Uses :attr:`Config.schedule_anchor`, :attr:`Config.interval_hours`,
+  and reads `profile.last_run` / `profile.retry_after` — all already
+  in place.
 
 ## Explicitly out of scope
 
-- UI to add / edit / remove profiles — E3 part B step 4 / lot 5.3.
-- Multi-profile scheduler grid — lot 5.2.
-- CLI `--profile <name|id>` — lot 5.3.
-- Engine changes to route runs per profile — E3 part B step 5.
+- Wiring `Fenetre._verifier_echeance` to iterate profiles — next
+  commit.
+- Per-profile `mark_run` / `defer` mutators on Scheduler — next
+  commit (they touch how per-profile state gets persisted, since
+  the default profile's state is flat on Config while extras'
+  state is on the Profile object in `_extra_profiles`).
+- Multi-profile queueing / one-profile-at-a-time worker — E3 part
+  B step 11 (queue) and lot 5.3.
 - `__version__` — unchanged.
 
 ## Tests
 
-- `TestMultipleProfiles`:
-  - `test_fresh_config_has_no_extras`
-  - `test_extra_profile_survives_round_trip`
-  - `test_profiles_returns_default_first_then_extras`
-  - `test_extra_profile_inherits_defaults_via_null_override`
-  - `test_extra_profile_override_wins_over_defaults`
-  - `test_multi_profile_v2_is_byte_stable_across_round_trip`
-- Every existing v2 test still passes: single-profile files
-  produce empty `_extra_profiles`, and `profiles[0]` handling is
-  unchanged.
+- `TestGridSlot`:
+  - single-profile grid == single-slot walk;
+  - two-profile grid staggered by I/2;
+  - three-profile grid staggered by I/3;
+  - threshold before base returns base (m=0);
+  - threshold exactly at base returns base;
+  - threshold exactly at a future slot returns that slot;
+  - anchor midnight vs. non-midnight give parallel grids.
+- `TestNextRunFor`:
+  - empty last_run + fresh profile → due immediately;
+  - manual mode (interval 0) returns None;
+  - deferral pushes past the nominal slot;
+  - I/2 rule: last_run == just now, next slot is exactly +I later;
+  - N=1 case matches today's single-profile Scheduler.next_run().
 
 Verification:
 
-- `pytest -q` → 578 + 6 new tests.
+- `pytest -q` → 634 + new tests.
 - `python tools/check_coverage.py` → floors held.
 - `ruff check` clean on touched files.
 
 ## Invariants
 
 - `__version__` unchanged.
-- `SCHEMA_VERSION` unchanged (still 2). Multi-profile is an
-  **additive** use of the existing schema; older Glaneur reading a
-  multi-profile file gets `profiles[0]` and quietly drops the rest
-  — expected, since older Glaneur has no runtime concept of extras.
-- No cache/manifest/config key touched.
-- `Config` runtime API of flat access (`cfg.site`, `cfg.min_width`,
-  ...) unchanged; still driven by the default profile.
-- Byte stability: `Config.load(x).save()` reproduces the input
-  bytes across any number of profiles.
-- No dispatch/CLI/Qt change.
+- Existing Scheduler behaviour unchanged.
+- I/2-no-double-run invariant enforced (already documented in
+  CLAUDE.md).
+- All new methods pure (no side-effects, no persistence, no
+  clock — every "now" value is a parameter, matching the existing
+  scheduler pattern for testability).
 
 ## Validation
 
-Level `subsystem` — persisted-format usage extended without
-schema bump. `invariant-reviewer` not required for a purely
-additive read/write of an already-declared list slot.
+Level `subsystem` per lot 5.2's engine-scheduler footprint. No
+persisted-format touched, no boundary crossed.
 
 - `pytest -q --cov=Glaneur --cov-branch` green.
 - `python tools/check_coverage.py` green.
