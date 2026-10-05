@@ -1794,13 +1794,15 @@ class Fenetre(QMainWindow):
             return indexes[0].row()
         return 0
 
-    def _lancer(self, auto: bool = False) -> None:
+    def _lancer(self, auto: bool = False, auto_row: int = 0) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        # Pick the profile to run: an auto-triggered run stays on the
-        # default profile (index 0) so scheduled cadence keeps matching
-        # today's behaviour; a user click respects the table selection.
-        row = 0 if auto else self._selected_profile_row()
+        # Pick the profile to run: auto-triggered runs get the row the
+        # scheduler picked (:meth:`_verifier_echeance`); a user click
+        # respects the table selection; interactive auto-free paths
+        # (menu action without a selection) still fall back to the
+        # default profile.
+        row = auto_row if auto else self._selected_profile_row()
         profile = self.cfg.profiles()[row]
         defaults = self.cfg.defaults()
         dossier = Path(profile.target_dir).expanduser()
@@ -1910,9 +1912,9 @@ class Fenetre(QMainWindow):
                 n=res.failures))
 
         if res.deferred:
-            self.planificateur.defer(res)
+            self.planificateur.defer_for(self._row_en_cours, res)
         elif not res.interrupted:
-            self.planificateur.mark_run()
+            self.planificateur.mark_run_for(self._row_en_cours)
         self._rafraichir_echeance()
 
         # info bubble only if the user was not watching
@@ -1928,9 +1930,16 @@ class Fenetre(QMainWindow):
     def _verifier_echeance(self) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        if self.planificateur.is_due():
-            self._ecrire(self.tr("Automatic update triggered."))
-            self._lancer(auto=True)
+        # Multi-profile scheduler: pick the first profile whose grid
+        # slot has passed, if any. Falls back to the default profile
+        # (index 0) when nothing extra is due, matching the
+        # pre-multi-profile cadence for every existing single-profile
+        # setup.
+        k = self.planificateur.next_due_index(self.cfg.profiles())
+        if k is None:
+            return
+        self._ecrire(self.tr("Automatic update triggered."))
+        self._lancer(auto=True, auto_row=k)
 
     def _rafraichir_echeance(self) -> None:
         texte = next_run_text(self.planificateur)

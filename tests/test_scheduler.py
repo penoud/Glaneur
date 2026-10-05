@@ -481,3 +481,100 @@ class TestIsDueForAndNextDueIndex:
         p0 = _profile(id="p0", last_run=recent)
         p1 = _profile(id="p1", last_run=recent)
         assert Scheduler(c).next_due_index([p0, p1]) is None
+
+
+class TestMarkRunForAndDeferFor:
+    """Per-profile mark_run / defer: k=0 routes to Config's flat
+    fields, k>0 writes to the Profile in `cfg._extra_profiles[k-1]`."""
+
+    def test_mark_run_for_default_updates_flat_fields(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00",
+                 last_run="", retry_after="old", backoff_level=2)
+        s = Scheduler(c)
+        s.mark_run_for(0)
+        assert c.last_run != ""
+        assert c.retry_after == ""
+        assert c.backoff_level == 0
+
+    def test_mark_run_for_extra_updates_extra_profile(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        added = c.add_profile("eso", site="https://eso.example")
+        added.retry_after = "old"
+        added.backoff_level = 2
+        s = Scheduler(c)
+        s.mark_run_for(1)
+        # The extra profile is at _extra_profiles[0] (k=1 → index 0).
+        reloaded = Config.load(c._path)
+        assert reloaded._extra_profiles[0].last_run != ""
+        assert reloaded._extra_profiles[0].retry_after == ""
+        assert reloaded._extra_profiles[0].backoff_level == 0
+        # Default profile untouched.
+        assert reloaded.last_run == ""
+
+    def test_mark_run_for_out_of_range_is_noop(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        s = Scheduler(c)
+        # No extras — k=1 is out of range.
+        s.mark_run_for(1)
+        assert c.last_run == ""
+
+    def test_defer_for_default_writes_flat_fields(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00",
+                 backoff_level=0)
+        s = Scheduler(c)
+        from Glaneur.engine.result import RunResult
+        s.defer_for(0, RunResult(deferred=True, retry_after=""))
+        assert c.retry_after != ""
+        assert c.backoff_level == 1   # local backoff incremented
+
+    def test_defer_for_extra_writes_extra_profile(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        c.add_profile("eso", site="https://eso.example")
+        s = Scheduler(c)
+        from Glaneur.engine.result import RunResult
+        s.defer_for(1, RunResult(deferred=True, retry_after=""))
+        extra = c._extra_profiles[0]
+        assert extra.retry_after != ""
+        assert extra.backoff_level == 1
+        # Default profile's backoff left alone.
+        assert c.backoff_level == 0
+
+    def test_defer_for_malformed_hint_falls_back_to_backoff(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        c.add_profile("eso", site="https://eso.example")
+        s = Scheduler(c)
+        from Glaneur.engine.result import RunResult
+        s.defer_for(1, RunResult(deferred=True, retry_after="not-a-date"))
+        extra = c._extra_profiles[0]
+        # Fallback kicked in — backoff was incremented.
+        assert extra.retry_after != ""
+        assert extra.backoff_level == 1
+
+    def test_defer_for_out_of_range_is_noop(self, tmp_path):
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        s = Scheduler(c)
+        from Glaneur.engine.result import RunResult
+        s.defer_for(1, RunResult(deferred=True, retry_after=""))
+        # No extras — the call is a no-op.
+        assert c.retry_after == ""
+
+    def test_parse_iso_malformed_returns_none(self, tmp_path):
+        from Glaneur.scheduler import _parse_iso
+        assert _parse_iso("not-a-date") is None
+        assert _parse_iso("") is None
+        assert _parse_iso(None) is None
+
+    def test_defer_for_server_hint_wins(self, tmp_path):
+        from Glaneur.engine.result import RunResult
+        c = _cfg(tmp_path, interval_hours=24, schedule_anchor="10:00")
+        c.add_profile("eso", site="https://eso.example")
+        s = Scheduler(c)
+        hint = datetime(2026, 10, 10, 12, 0, 0,
+                        tzinfo=timezone.utc).isoformat()
+        s.defer_for(1, RunResult(deferred=True, retry_after=hint))
+        extra = c._extra_profiles[0]
+        # Server hint applied as naive local — the exact timestamp
+        # equivalent to the hint.
+        assert extra.retry_after != ""
+        # Backoff level NOT incremented when the server gave a hint.
+        assert extra.backoff_level == 0

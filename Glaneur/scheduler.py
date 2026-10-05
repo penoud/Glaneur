@@ -266,6 +266,74 @@ class Scheduler:
         prochaine = self.next_run_for(profile, k, n)
         return prochaine is not None and datetime.now() >= prochaine  # noqa: DTZ005
 
+    def mark_run_for(self, k: int) -> None:
+        """Record a successful run for profile ``k`` and persist.
+
+        For ``k == 0`` (the default profile) this is equivalent to
+        :meth:`mark_run` — it writes the flat fields on :class:`Config`.
+        For ``k > 0`` the state travels with the :class:`Profile`
+        instance stored at ``cfg._extra_profiles[k-1]``, so the
+        mutation lands there instead. In either case a single
+        :meth:`Config.save` persists.
+
+        Clears any ongoing deferral (``retry_after`` / ``backoff_level``)
+        on the targeted profile, matching :meth:`mark_run`.
+        """
+        now_iso = datetime.now().isoformat(timespec="seconds")  # noqa: DTZ005
+        if k == 0:
+            self.config.last_run = now_iso
+            self.config.retry_after = ""
+            self.config.backoff_level = 0
+        else:
+            extras = self.config._extra_profiles
+            if not 0 <= k - 1 < len(extras):
+                return
+            prof = extras[k - 1]
+            prof.last_run = now_iso
+            prof.retry_after = ""
+            prof.backoff_level = 0
+        self.config.save()
+
+    def defer_for(self, k: int, res: RunResult) -> None:
+        """Record a deferral for profile ``k`` and persist.
+
+        Mirrors :meth:`defer` but routes the write either to the flat
+        Config fields (``k == 0``) or to the extra profile at
+        ``cfg._extra_profiles[k-1]`` (``k > 0``). The same server-hint
+        vs. exponential-backoff logic applies, and
+        ``retry_after`` is always written in naive local ISO 8601.
+        """
+        cible: datetime | None = None
+        if res.retry_after:
+            try:
+                brut = datetime.fromisoformat(res.retry_after)
+            except (ValueError, TypeError):
+                brut = None
+            if brut is not None:
+                if brut.tzinfo is not None:
+                    brut = brut.astimezone().replace(tzinfo=None)
+                cible = brut
+        if k == 0:
+            backoff_level = self.config.backoff_level
+        else:
+            extras = self.config._extra_profiles
+            if not 0 <= k - 1 < len(extras):
+                return
+            backoff_level = extras[k - 1].backoff_level
+        if cible is None:
+            niveau = max(0, min(int(backoff_level), 2))
+            cible = datetime.now() + timedelta(seconds=BACKOFFS_S[niveau])  # noqa: DTZ005
+            backoff_level = min(niveau + 1, 2)
+        retry_iso = cible.isoformat(timespec="seconds")
+        if k == 0:
+            self.config.retry_after = retry_iso
+            self.config.backoff_level = backoff_level
+        else:
+            prof = self.config._extra_profiles[k - 1]
+            prof.retry_after = retry_iso
+            prof.backoff_level = backoff_level
+        self.config.save()
+
     def next_due_index(self, profiles: Sequence[Profile]) -> int | None:
         """Return the index of the first profile that is due, or ``None``.
 
