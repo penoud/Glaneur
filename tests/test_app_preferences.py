@@ -169,9 +169,11 @@ class TestProfilesTab:
         dlg = app_module.DialoguePreferences(None, seeded_config)
         qtbot.addWidget(dlg)
         assert dlg.liste_profils.count() == 1
-        libelle = dlg.liste_profils.item(0).text()
-        assert "eso" in libelle
-        assert "https://eso.example" in libelle
+        # Exact-match assertion on the display label — the ``in`` form
+        # tripped CodeQL's py/incomplete-url-substring-sanitization
+        # rule (false positive: this is a UI label check, not URL
+        # validation), and a full equality is a stronger test anyway.
+        assert dlg.liste_profils.item(0).text() == "eso — https://eso.example"
 
     def test_add_queues_a_pending_profile(self, qtbot, seeded_config):
         """A pending add shows in the list but does NOT touch
