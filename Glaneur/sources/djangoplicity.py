@@ -32,6 +32,23 @@ FALLBACKS = ("Large", "Small")
 _BYTES_REPR = re.compile(r"^b'(.*)'$|^b\"(.*)\"$")
 
 
+def _same_origin(base: str, other: str) -> bool:
+    """Return True if ``other`` targets the same (scheme, netloc) as ``base``.
+
+    A ``Next`` URL without an explicit netloc (relative path or
+    scheme-relative) is treated as same-origin: it will be resolved
+    against ``base`` by the HTTP client as usual. Per
+    ``docs/design/evolution-multi-sources.md`` §8, a ``Next`` that
+    switches host or scheme is refused rather than crawled.
+    """
+    other_p = urlparse(other or "")
+    if not other_p.netloc:
+        # Relative URL (no host): stays on the current origin by construction.
+        return True
+    base_p = urlparse(base or "")
+    return (other_p.scheme, other_p.netloc) == (base_p.scheme, base_p.netloc)
+
+
 def _sanitized(texte) -> str:
     """Unwrap a possible bytes-repr and return a string."""
     if texte is None:
@@ -52,7 +69,7 @@ class Djangoplicity(Source):
     """Adapter for a Djangoplicity site exposing ``/images/d2d/``.
 
     Works with ESO, ESA/Hubble or ESA/Webb. Does not support the
-    ``galerie`` sort mode (the CMS does not expose a coherent album
+    ``gallery`` sort mode (the CMS does not expose a coherent album
     online — see the historical note in
     :file:`docs/design/evolution-multi-sources.md`).
 
@@ -64,10 +81,10 @@ class Djangoplicity(Source):
 
     #: Key used in ``Glaneur.sources.SOURCES``.
     type = "djangoplicity"
-    # No "galerie": Djangoplicity does not expose a coherent album online.
+    # No "gallery": Djangoplicity does not expose a coherent album online.
     # Sorting by `Subject.Category` (§9 Q5) is deliberately deferred.
-    #: Set of supported sort modes (no ``galerie``).
-    sort_modes = frozenset({"date", "plat"})
+    #: Set of supported sort modes (no ``gallery``).
+    sort_modes = frozenset({"date", "flat"})
 
     def __init__(self, base, transport, settings, journal=None, progression=None):
         """Instantiate the adapter and compute the ``d2d`` endpoint.
@@ -110,10 +127,21 @@ class Djangoplicity(Source):
 
     def _select_resource(self, ressources: list[dict]) -> tuple[dict | None, str]:
         """Return ``(resource, effective_format)``. Fall back to Small if the
-        requested format is missing; ``(None, "")`` if no format is available."""
+        requested format is missing; ``(None, "")`` if no format is available.
+
+        When the requested format is missing and the chosen variant is one
+        of the automatic fallbacks (``Large`` or ``Small``, never
+        ``Original``), a source-message is journalled so the fallback is
+        visible instead of silent (lot 0.3).
+        """
         par_type = {r.get("ResourceType"): r for r in ressources or []}
         for fmt in (self.format_image, *FALLBACKS):
             if fmt in par_type:
+                if fmt != self.format_image:
+                    self._journal(
+                        f"Format {self.format_image!r} not available, "
+                        f"falling back to {fmt!r}.",
+                    )
                 return par_type[fmt], fmt
         return None, ""
 
@@ -127,7 +155,7 @@ class Djangoplicity(Source):
         publication = _sanitized(entree.get("PublicationDate") or "")
         # Typical `PublicationDate`: "2026-09-21T13:00:00"; we extract
         # "YYYY-MM" from it for the by-date sort.
-        mois = publication[:7] if len(publication) >= 7 else None
+        month = publication[:7] if len(publication) >= 7 else None
 
         extra: dict = {}
         if entree.get("Credit"):
@@ -141,30 +169,30 @@ class Djangoplicity(Source):
             return Element(
                 ident=f"{ident_brut}:{self.format_image}",
                 url=None,
-                nom_fichier="",
+                filename="",
                 date=publication or None,
-                mois=mois,
-                largeur=None,
-                taille=None,
-                groupe=None,
+                month=month,
+                width=None,
+                size=None,
+                group=None,
                 extra=extra,
             )
 
         url = _sanitized(ressource.get("URL") or "")
-        nom_fichier = urlparse(url).path.rsplit("/", 1)[-1] if url else ""
+        filename = urlparse(url).path.rsplit("/", 1)[-1] if url else ""
 
         dims = ressource.get("Dimensions") or []
-        largeur: int | None = None
+        width: int | None = None
         if dims:
             try:
-                largeur = int(dims[0])
+                width = int(dims[0])
             except (TypeError, ValueError):
-                largeur = None
+                width = None
 
         try:
-            taille = int(ressource.get("FileSize")) if ressource.get("FileSize") is not None else None
+            size = int(ressource.get("FileSize")) if ressource.get("FileSize") is not None else None
         except (TypeError, ValueError):
-            taille = None
+            size = None
 
         if ressource.get("Checksum"):
             extra["checksum"] = _sanitized(ressource.get("Checksum"))
@@ -172,12 +200,12 @@ class Djangoplicity(Source):
         return Element(
             ident=f"{ident_brut}:{format_effectif}",
             url=url,
-            nom_fichier=nom_fichier,
+            filename=filename,
             date=publication or None,
-            mois=mois,
-            largeur=largeur,
-            taille=taille,
-            groupe=None,
+            month=month,
+            width=width,
+            size=size,
+            group=None,
             extra=extra,
         )
 
@@ -219,7 +247,7 @@ class Djangoplicity(Source):
             if page == 1:
                 compte = data.get("Count")
                 if compte is not None:
-                    self._journal(f"Catalogue : {compte} image(s)")
+                    self._journal(f"Catalog: {compte} image(s)")
 
             entrees = data.get("Collections") or []
             for entree in entrees:
@@ -228,11 +256,18 @@ class Djangoplicity(Source):
                     continue
                 vus.add(ident)
                 rendus.append(self._to_element(entree))
-            self._progression(page, page, f"Inventaire… {len(rendus)} image(s)")
+            self._progression(page, page, f"Inventory… {len(rendus)} image(s)")
 
             suivante = data.get("Next")
             if not suivante:
                 break
+            if not _same_origin(self.base, suivante):
+                # Lot 0.2 / evolution-multi-sources §8: refuse to follow a
+                # `Next` that switches host or scheme relative to the
+                # configured base — a compromised or misbehaving feed
+                # would otherwise redirect the crawl to another site.
+                raise RuntimeError(
+                    f"Next URL leaves the configured origin: {suivante!r}")
             url = suivante
             self.transport.sleep()
 

@@ -1,11 +1,13 @@
 """Class :class:`Engine` — orchestration of a run.
 
-This module is the only one in the package that depends on Qt: it uses
-``QCoreApplication.translate`` to localise messages surfaced to the
-user. The rest of the package stays Qt-independent.
+The engine has no Qt dependency: user-facing messages leave it as
+:class:`Glaneur.engine.events.EngineEvent` values (a stable ``code``
+plus named ``params``). The Qt UI (``app.py``) translates them in
+French under the ``UiJournal`` context; the CLI and the file log render
+them in English via :func:`Glaneur.engine.events.render_en`.
 
-lupdate only extracts QCoreApplication.translate("Ctx", "src") when
-context and source are literals: we inline rather than aliasing a _tr().
+See boundary 1 in ``CLAUDE.md`` and
+``docs/sprints/2026-09-verifier-lots-1-4-avant-lot-5.md``.
 """
 
 from __future__ import annotations
@@ -17,12 +19,13 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
-from PySide6.QtCore import QCoreApplication
 
 from ..sources import SOURCES, Element, Interrupted, Transport
 from ..sources.base import ErrorClassification, classify_error
+from ._folder_lock import FolderBusy, folder_lock
 from ._locks import _MANIFEST_LOCK
 from ._merge import _merge_ui_marks
+from .events import EngineEvent, render_en
 from .format_bytes import format_bytes
 from .manifest_path import manifest_path
 from .options import Options
@@ -50,50 +53,63 @@ class Engine:
     def __init__(
         self,
         options: Options,
-        journal: Callable[[str], None] | None = None,
+        journal: Callable[[EngineEvent], None] | None = None,
         progression: Callable[[int, int, str], None] | None = None,
-        arret: threading.Event | None = None,
+        stop_event: threading.Event | None = None,
     ) -> None:
         """Instantiate the engine with its callbacks.
 
         Args:
             options: Run parameters (folder, site, filters, etc.).
-            journal: Callback invoked for each user-facing text message.
-                Receives an already-localised string. May be ``None`` (no
-                display).
+            journal: Callback invoked for each user-facing message. It
+                receives an :class:`~Glaneur.engine.events.EngineEvent`
+                (stable ``code`` + ``params``). Rendering is the
+                caller's job — the engine no longer builds translated
+                strings. May be ``None`` (silent).
             progression: Callback invoked at each step of the run.
-                Receives ``(done, total, label)``. May be ``None``.
-            arret: Shared event that cuts the run when set. Created on
-                demand if not provided; the caller may reuse it to
+                Receives ``(done, total, label)`` — the label stays a
+                plain string (English by default) so a Qt progress bar
+                can display it directly. May be ``None``.
+            stop_event: Shared event that cuts the run when set. Created
+                on demand if not provided; the caller may reuse it to
                 synchronise several engines.
         """
         self.o = options
         self.base = options.site.rstrip("/")
-        self._journal = journal or (lambda _msg: None)
+        self._journal: Callable[[EngineEvent], None] = journal or (
+            lambda _event: None)
         self._progression = progression or (lambda _fait, _total, _etiquette: None)
-        self.arret = arret or threading.Event()
-        self.transport = Transport(delay=options.delay, arret=self.arret)
+        self.stop_event = stop_event or threading.Event()
+        self.transport = Transport(delay=options.delay, stop_event=self.stop_event)
         # The download session goes through the shared transport: a single
         # user-agent, a single pause floor.
         self.session = self.transport.session
         classe = SOURCES.get(options.source_type) or SOURCES["wordpress"]
+        # Source adapters still emit plain-text messages (their strings
+        # are French today; migrating them is out of scope for this US).
+        # Wrap them into a generic ``source-message`` event so the
+        # engine's callback keeps a single type contract.
         self.source = classe(
             base=self.base,
             transport=self.transport,
             settings={"format_image": options.image_format},
-            journal=self._journal,
+            journal=self._relay_source_message,
             progression=self._progression,
         )
+
+    def _relay_source_message(self, text: str) -> None:
+        """Lift a free-form source message into a structured event."""
+        self._journal(EngineEvent("source-message", {"text": text}))
 
     # -- plumbing ----------------------------------------------------------- #
 
     def _check_stop(self) -> None:
-        if self.arret.is_set():
+        if self.stop_event.is_set():
             raise Interrupted()
 
-    def _pause(self, secondes: float) -> None:
+    def _pause(self, seconds: float) -> None:
         """Fragmented wait so we can react quickly to a stop request."""
-        self.transport.sleep(secondes)
+        self.transport.sleep(seconds)
 
     # -- manifest ----------------------------------------------------------- #
 
@@ -110,7 +126,7 @@ class Engine:
             return {}
         manifeste = read_manifest(self.o.target_dir)
         if not manifeste:
-            self._journal(QCoreApplication.translate("Moteur", "Manifeste illisible, reconstruction complète."))
+            self._journal(EngineEvent("manifest-unreadable"))
         return manifeste
 
     def save_manifest(self, manifeste: dict) -> None:
@@ -153,7 +169,7 @@ class Engine:
         taille = dest.stat().st_size
         if taille == 0:
             return False
-        attendue = (etat or {}).get("taille") or taille_api
+        attendue = (etat or {}).get("size") or taille_api
         return not (attendue and taille != attendue)
 
     # -- API cache ---------------------------------------------------------- #
@@ -202,23 +218,23 @@ class Engine:
 
     # -- paths -------------------------------------------------------------- #
 
-    def dossier_pour(self, element: Element, titres: dict[str, str]) -> str:
+    def folder_for(self, element: Element, titres: dict[str, str]) -> str:
         """Relative sub-folder where ``element`` should land under the chosen sort.
 
         Args:
             element: Element to place.
             titres: ``{parent_id -> cleaned title}`` table resolved
-                upstream by the source, used for ``classement="galerie"``.
+                upstream by the source, used for ``sort_mode="gallery"``.
 
         Returns:
-            A relative sub-folder name, or an empty string in ``plat``
+            A relative sub-folder name, or an empty string in ``flat``
             mode (everything at the root level).
         """
-        if self.o.sort_mode == "plat":
+        if self.o.sort_mode == "flat":
             return ""
-        if self.o.sort_mode == "date" or not element.groupe:
-            return element.mois or "divers"
-        return titres.get(element.groupe) or f"contenu-{element.groupe}"
+        if self.o.sort_mode == "date" or not element.group:
+            return element.month or "divers"
+        return titres.get(element.group) or f"contenu-{element.group}"
 
     def free_path(self, dest: Path, ident: str, pris: set[str]) -> Path:
         """Pick a destination path that does not overwrite another element.
@@ -251,7 +267,7 @@ class Engine:
 
     def download(
         self, url: str, dest: Path, etat: dict | None,
-    ) -> tuple[str, dict | None, ErrorClassification | None]:
+    ) -> tuple[str, dict | None, ErrorClassification | None, str | None]:
         """Download ``url`` to ``dest`` with resume and revalidation.
 
         Handles:
@@ -270,19 +286,24 @@ class Engine:
                 size, ...) or ``None``.
 
         Returns:
-            A tuple ``(status, infos, classification)`` where ``status``
-            is ``"ok"``, ``"repris"``, ``"inchangé"``, ``"introuvable"``
-            or a localised error message, ``infos`` is the new state to
-            write to the manifest (or ``None`` if nothing was fetched),
-            and ``classification`` is the
-            :class:`Glaneur.sources.base.ErrorClassification` of the error
-            (``None`` on success). The engine consumes
-            ``classification`` in :meth:`run` to decide on a
-            circuit-breaker trip.
+            A four-tuple ``(status, infos, classification, error)``:
+
+            - ``status`` is a stable code, one of ``"ok"``, ``"resumed"``,
+              ``"unchanged"``, ``"not-found"`` or ``"error"``;
+            - ``infos`` is the new state to write to the manifest, or
+              ``None`` if nothing was fetched;
+            - ``classification`` is the
+              :class:`Glaneur.sources.base.ErrorClassification` of the
+              error (``None`` on success), consumed by :meth:`run` to
+              decide on a circuit-breaker trip;
+            - ``error`` is ``str(exception)`` on the ``"error"`` path
+              only, otherwise ``None`` — it lets the caller build a
+              :class:`~Glaneur.engine.events.EngineEvent` for the
+              per-file journal line.
 
         Raises:
-            Interrupted: Propagated if ``self.arret`` is set while the
-                stream is being written.
+            Interrupted: Propagated if ``self.stop_event`` is set while
+                the stream is being written.
         """
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".part")
@@ -292,8 +313,8 @@ class Engine:
         if dest.exists() and self.o.verify and etat:
             if etat.get("etag"):
                 entetes["If-None-Match"] = etat["etag"]
-            elif etat.get("modifie"):
-                entetes["If-Modified-Since"] = etat["modifie"]
+            elif etat.get("modified"):
+                entetes["If-Modified-Since"] = etat["modified"]
         elif tmp.exists():
             depuis = tmp.stat().st_size
             if depuis > 0:
@@ -302,9 +323,9 @@ class Engine:
         try:
             r = self.session.get(url, timeout=60, stream=True, headers=entetes)
             if r.status_code == 304:
-                return "inchangé", etat, None
+                return "unchanged", etat, None, None
             if r.status_code == 404:
-                return "introuvable", None, ErrorClassification("definitif", None)
+                return "not-found", None, ErrorClassification("definitive", None), None
             if r.status_code == 416:
                 tmp.unlink(missing_ok=True)
                 depuis = 0
@@ -314,29 +335,25 @@ class Engine:
             reprise = depuis > 0 and r.status_code == 206
             with open(tmp, "ab" if reprise else "wb") as f:
                 for bloc in r.iter_content(65536):
-                    if self.arret.is_set():
+                    if self.stop_event.is_set():
                         f.flush()
                         raise Interrupted()   # the .part is kept for resume
                     f.write(bloc)
             tmp.replace(dest)
 
             infos = {
-                "taille": dest.stat().st_size,
+                "size": dest.stat().st_size,
                 "etag": r.headers.get("ETag", ""),
-                "modifie": r.headers.get("Last-Modified", ""),
+                "modified": r.headers.get("Last-Modified", ""),
                 "url": url,
             }
             self._pause(self.o.delay)
-            return ("repris" if reprise else "ok"), infos, None
+            return ("resumed" if reprise else "ok"), infos, None, None
 
         except requests.RequestException as e:
             reponse = getattr(e, "response", None)
             classification = classify_error(e, reponse)
-            return (
-                QCoreApplication.translate("Moteur", "erreur : {erreur}").format(erreur=e),
-                None,
-                classification,
-            )
+            return "error", None, classification, str(e)
 
     def _trigger_defer(
         self,
@@ -359,23 +376,43 @@ class Engine:
                 seconds=classification.retry_after)
             res.retry_after = cible.isoformat(timespec="seconds")
         if cible is not None:
-            message = QCoreApplication.translate(
-                "Moteur",
-                "Serveur indisponible ou quota atteint — reprise après {heure}.",
-            ).format(heure=cible.astimezone().strftime("%H:%M"))
-        else:
-            message = QCoreApplication.translate(
-                "Moteur",
-                "Serveur indisponible ou quota atteint — reprise différée.",
+            event = EngineEvent(
+                "defer-with-time",
+                {"until": cible.astimezone().strftime("%H:%M")},
             )
-        res.message = message
-        self._journal(message)
-        self._progression(fait, total, message)
+        else:
+            event = EngineEvent("defer-no-time")
+        res.message_event = event
+        res.message = render_en(event)
+        self._journal(event)
+        self._progression(fait, total, res.message)
 
     # -- orchestration ------------------------------------------------------ #
 
     def run(self) -> RunResult:
-        """Run the whole thing and return the aggregated ``RunResult``.
+        """Run the whole thing under the per-folder OS lock.
+
+        Acquires the lock via
+        :func:`Glaneur.engine._folder_lock.folder_lock` and delegates the
+        real work to :meth:`_run_locked`. If another process already
+        holds the lock — application UI, scheduled task, legacy install
+        still running — the method returns a bare
+        ``RunResult(busy=True)`` immediately: nothing is written to
+        disk, no HTTP session is opened, no source is called.
+
+        Returns:
+            The numeric summary of the run, or ``RunResult(busy=True)``
+            when the folder is already in use.
+        """
+        self.o.target_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            with folder_lock(self.o.target_dir):
+                return self._run_locked()
+        except FolderBusy:
+            return RunResult(busy=True)
+
+    def _run_locked(self) -> RunResult:
+        """Execute the run body under the acquired folder lock.
 
         The order is:
 
@@ -397,11 +434,11 @@ class Engine:
             The numeric summary of the run.
         """
         res = RunResult()
-        self.o.target_dir.mkdir(parents=True, exist_ok=True)
         manifeste = self.load_manifest()
         cache = self.load_cache()
         if manifeste:
-            self._journal(QCoreApplication.translate("Moteur", "{n} image(s) déjà connues.").format(n=len(manifeste)))
+            self._journal(EngineEvent(
+                "already-known", {"count": len(manifeste)}))
 
         # Cache: only used if the user has not already bounded the period —
         # in that case, their bounds override the cache's memory.
@@ -409,10 +446,8 @@ class Engine:
         if not (self.o.since or self.o.until):
             depuis_cache = cache.get("derniere_date_media")
             if depuis_cache:
-                self._journal(QCoreApplication.translate(
-                    "Moteur",
-                    "Cache : ne redemande à l'API que les médias postérieurs à {date}.").format(
-                    date=depuis_cache[:19]))
+                self._journal(EngineEvent(
+                    "cache-since-date", {"date": depuis_cache[:19]}))
 
         try:
             depuis = self.source.convert_from(depuis_cache) or self.o.since
@@ -422,70 +457,75 @@ class Engine:
                 avant = len(elements)
                 elements = [
                     e for e in elements
-                    if e.largeur is None or e.largeur >= self.o.min_width
+                    if e.width is None or e.width >= self.o.min_width
                 ]
                 # An `Element` without a URL (source that did not find the
                 # requested resource) can no longer be downloaded: goes to `skipped`.
                 ecartees = avant - len(elements)
                 if ecartees:
-                    self._journal(QCoreApplication.translate(
-                        "Moteur",
-                        "{n} vignette(s) ou logo(s) écarté(s) (moins de {min} px).").format(
-                        n=ecartees, min=self.o.min_width))
+                    self._journal(EngineEvent(
+                        "discarded-below-min-width",
+                        {"count": ecartees, "min_width": self.o.min_width},
+                    ))
 
             if not elements:
-                res.message = QCoreApplication.translate("Moteur", "Aucune image ne correspond aux critères.")
+                res.message_event = EngineEvent("nothing-matches")
+                res.message = render_en(res.message_event)
                 return res
 
             # names already assigned, so an image does not overwrite another
-            pris = {e["fichier"] for e in manifeste.values() if e.get("fichier")}
+            pris = {e["filename"] for e in manifeste.values() if e.get("filename")}
 
             # sort: already on disk vs to be processed
             a_faire: list[tuple[Element, Path | None]] = []
             for e in elements:
                 etat = manifeste.get(e.ident)
-                connu = self.o.target_dir / etat["fichier"] if etat and etat.get("fichier") else None
+                connu = self.o.target_dir / etat["filename"] if etat and etat.get("filename") else None
 
-                if etat and etat.get("supprime"):
+                if etat and etat.get("deleted"):
                     res.skipped += 1
                     continue
                 if e.url is None:
                     # The source did not find any usable resource.
                     res.skipped += 1
                     continue
-                if (connu is not None and etat.get("taille") and not connu.exists()
-                        and not etat.get("restaure")):
+                if (connu is not None and etat.get("size") and not connu.exists()
+                        and not etat.get("restored")):
                     # already downloaded then gone: the user erased it
-                    etat["supprime"] = datetime.now().isoformat(timespec="seconds")
+                    etat["deleted"] = datetime.now().isoformat(timespec="seconds")
                     res.deleted += 1
                     continue
-                if connu and self.file_complete(connu, etat, e.taille) and not self.o.verify:
-                    etat.pop("restaure", None)
+                if connu and self.file_complete(connu, etat, e.size) and not self.o.verify:
+                    etat.pop("restored", None)
                     res.already_present += 1
                     continue
                 a_faire.append((e, connu))
 
-            self._journal(QCoreApplication.translate("Moteur", "{connues} déjà à jour, {a_faire} à traiter.").format(
-                connues=res.already_present, a_faire=len(a_faire)))
+            self._journal(EngineEvent(
+                "known-and-todo",
+                {"known": res.already_present, "todo": len(a_faire)},
+            ))
             if res.deleted:
-                self._journal(QCoreApplication.translate(
-                    "Moteur",
-                    "{n} image(s) effacée(s) sur le disque, elles ne seront plus retéléchargées."
-                ).format(n=res.deleted))
+                self._journal(EngineEvent(
+                    "n-files-erased-locally", {"count": res.deleted}))
             if not a_faire:
-                res.message = QCoreApplication.translate("Moteur", "Tout est déjà à jour.")
+                res.message_event = EngineEvent("all-up-to-date")
+                res.message = render_en(res.message_event)
                 self._progression(1, 1, res.message)
                 return res
 
             titres: dict[str, str] = {}
             titres_caches = {str(k): v
                              for k, v in (cache.get("titres_parents") or {}).items()}
-            inconnus = {e.groupe for e, connu in a_faire
-                        if e.groupe and connu is None}
-            if (self.o.sort_mode == "galerie"
-                    and "galerie" in self.source.sort_modes
+            inconnus = {e.group for e, connu in a_faire
+                        if e.group and connu is None}
+            if (self.o.sort_mode == "gallery"
+                    and "gallery" in self.source.sort_modes
                     and inconnus):
-                self._progression(0, len(a_faire), QCoreApplication.translate("Moteur", "Identification des galeries…"))
+                self._progression(
+                    0, len(a_faire),
+                    render_en(EngineEvent("identifying-galleries")),
+                )
                 titres = self.source.resolve_groups(
                     inconnus, connus=titres_caches)
 
@@ -495,18 +535,19 @@ class Engine:
                 url = e.url
                 etat = manifeste.get(e.ident)
                 if connu is not None:
-                    fichier = connu
+                    file_path = connu
                 else:
-                    sous = self.dossier_pour(e, titres)
+                    sous = self.folder_for(e, titres)
                     # clean("") would return "divers" and create a phantom directory
                     dossier = (self.o.target_dir / clean(sous)) if sous else self.o.target_dir
-                    nom = e.nom_fichier or Path(urlparse(url).path).name
-                    fichier = self.free_path(dossier / nom, e.ident, pris)
+                    nom = e.filename or Path(urlparse(url).path).name
+                    file_path = self.free_path(dossier / nom, e.ident, pris)
 
-                statut, infos, classification = self.download(url, fichier, etat)
+                statut, infos, classification, error_text = self.download(
+                    url, file_path, etat)
 
                 if infos:
-                    infos["fichier"] = str(fichier.relative_to(self.o.target_dir))
+                    infos["filename"] = str(file_path.relative_to(self.o.target_dir))
                     # Source metadata (credit, checksum...): copied into the
                     # manifest for the upcoming catalog export, without the
                     # engine interpreting them.
@@ -515,41 +556,49 @@ class Engine:
                     manifeste[e.ident] = infos
                 if statut == "ok":
                     res.downloaded += 1
-                    res.bytes += infos["taille"]
+                    res.bytes += infos["size"]
                     echecs_consecutifs = 0
-                elif statut == "repris":
+                elif statut == "resumed":
                     res.resumed += 1
-                    res.bytes += infos["taille"]
+                    res.bytes += infos["size"]
                     echecs_consecutifs = 0
-                elif statut == "inchangé":
+                elif statut == "unchanged":
                     res.unchanged += 1
                     echecs_consecutifs = 0
                 else:
                     res.failures += 1
-                    # `statut` can be an internal code ("introuvable") or an
-                    # already-translated phrase (see download()).
-                    affiche = QCoreApplication.translate("Moteur", "introuvable") if statut == "introuvable" else statut
-                    self._journal(f"{fichier.name} : {affiche}")
+                    if statut == "not-found":
+                        self._journal(EngineEvent(
+                            "file-not-found", {"filename": file_path.name}))
+                    else:
+                        self._journal(EngineEvent(
+                            "file-failed",
+                            {"filename": file_path.name,
+                             "error": error_text or ""},
+                        ))
 
-                    categorie = classification.category if classification else "transitoire"
-                    if categorie == "coupure":
+                    categorie = classification.category if classification else "transient"
+                    if categorie == "cut":
                         self._trigger_defer(res, classification, i, len(a_faire))
                         break
-                    if categorie == "transitoire":
+                    if categorie == "transient":
                         echecs_consecutifs += 1
                         if echecs_consecutifs >= 5:
                             self._trigger_defer(res, None, i, len(a_faire))
                             break
-                    else:  # "definitif" — a single 404/URL error stays local
+                    else:  # "definitive" — a single 404/URL error stays local
                         echecs_consecutifs = 0
 
-                self._progression(i, len(a_faire), f"{fichier.parent.name}/{fichier.name}")
+                self._progression(i, len(a_faire), f"{file_path.parent.name}/{file_path.name}")
                 if i % 25 == 0:
                     self.save_manifest(manifeste)
 
             if not res.deferred:
-                res.message = QCoreApplication.translate("Moteur", "{n} nouvelle(s) image(s), {taille} téléchargés.").format(
-                    n=res.downloaded, taille=format_bytes(res.bytes))
+                res.message_event = EngineEvent(
+                    "n-new-images",
+                    {"count": res.downloaded, "size": format_bytes(res.bytes)},
+                )
+                res.message = render_en(res.message_event)
 
                 # Cache update: max date and newly resolved titles.
                 # Only written on normal exit, never after an interruption,
@@ -566,13 +615,15 @@ class Engine:
 
         except Interrupted:
             res.interrupted = True
-            res.message = QCoreApplication.translate("Moteur", "Interrompu — la reprise repartira d'ici.")
+            res.message_event = EngineEvent("interrupted")
+            res.message = render_en(res.message_event)
         except RuntimeError as e:
             res.message = str(e)
-            self._journal(QCoreApplication.translate("Moteur", "Erreur : {erreur}").format(erreur=e))
+            self._journal(EngineEvent("runtime-error", {"error": str(e)}))
         except OSError as e:
-            res.message = QCoreApplication.translate("Moteur", "Problème d'écriture : {erreur}").format(erreur=e)
-            self._journal(res.message)
+            res.message_event = EngineEvent("write-problem", {"error": str(e)})
+            res.message = render_en(res.message_event)
+            self._journal(res.message_event)
         finally:
             self.save_manifest(manifeste)
 

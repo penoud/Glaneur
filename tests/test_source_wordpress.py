@@ -22,7 +22,7 @@ from Glaneur.sources.wordpress import WordPress
 
 def _wp(**kw):
     """Builds a WordPress source with a zero-delay transport."""
-    transport = Transport(delay=0, arret=threading.Event())
+    transport = Transport(delay=0, stop_event=threading.Event())
     return WordPress(
         base=kw.pop("base", "https://x.example"),
         transport=transport,
@@ -48,9 +48,9 @@ def _media(id_, url="https://x/wp-content/uploads/2026/01/img.jpg",
 # --------------------------------------------------------------------------- #
 
 class TestBase:
-    def test_type_et_classements(self):
+    def test_type_and_sort_modes(self):
         assert WordPress.type == "wordpress"
-        assert WordPress.sort_modes == frozenset({"galerie", "date", "plat"})
+        assert WordPress.sort_modes == frozenset({"gallery", "date", "flat"})
 
     def test_base_normalise_slash_final(self):
         s = _wp(base="https://example.test/")
@@ -72,35 +72,35 @@ class TestToElement:
     def test_mois_extrait_du_chemin_uploads(self):
         s = _wp()
         e = s._to_element(_media(1, url="https://x/wp-content/uploads/2025/03/img.jpg"))
-        assert e.mois == "2025-03"
+        assert e.month == "2025-03"
 
-    def test_mois_none_si_pas_de_pattern(self):
+    def test_month_none_without_pattern(self):
         s = _wp()
         e = s._to_element(_media(1, url="https://x/autre-chemin.jpg"))
-        assert e.mois is None
+        assert e.month is None
 
     def test_groupe_pris_du_champ_post(self):
         s = _wp()
         e = s._to_element(_media(1, post=17))
-        assert e.groupe == "17"
+        assert e.group == "17"
 
-    def test_groupe_none_si_pas_de_post(self):
+    def test_group_none_without_post(self):
         s = _wp()
         e = s._to_element(_media(1, post=None))
-        assert e.groupe is None
+        assert e.group is None
 
     def test_largeur_et_taille_lues(self):
         s = _wp()
         media = _media(1, width=1234)
         media["media_details"]["filesize"] = 4242
         e = s._to_element(media)
-        assert e.largeur == 1234
-        assert e.taille == 4242
+        assert e.width == 1234
+        assert e.size == 4242
 
-    def test_nom_fichier_dernier_segment_de_url(self):
+    def test_filename_is_last_url_segment(self):
         s = _wp()
         e = s._to_element(_media(1, url="https://x/wp-content/uploads/2026/01/match.jpg"))
-        assert e.nom_fichier == "match.jpg"
+        assert e.filename == "match.jpg"
 
 
 # --------------------------------------------------------------------------- #
@@ -140,7 +140,7 @@ class TestInventaire:
             r = list(s.inventory(None, None))
         assert sorted(e.ident for e in r) == ["1", "2", "3"]
 
-    def test_arret_immediat_si_pas_de_pages_totales(self):
+    def test_immediate_stop_when_no_total_pages(self):
         # without pages_totales and an empty batch, the loop exits on the 1st page
         s = _wp()
         appels = []
@@ -154,7 +154,7 @@ class TestInventaire:
         assert r == []
         assert len(appels) == 1
 
-    def test_stop_sur_deux_pages_vides_apres_contenu(self):
+    def test_stop_on_two_empty_pages_after_content(self):
         # once pages_totales is known, two consecutive empty pages are required
         s = _wp()
         appels = []
@@ -171,7 +171,7 @@ class TestInventaire:
         assert [e.ident for e in r] == ["1"]
         assert appels == [1, 2, 3]
 
-    def test_stop_sur_400_via_lot_none_page1(self):
+    def test_stop_on_400_via_none_batch_page1(self):
         # first page = None (400): immediate exit
         s = _wp()
         with patch.object(s, "_api",
@@ -179,7 +179,7 @@ class TestInventaire:
             r = list(s.inventory(None, None))
         assert r == []
 
-    def test_borne_par_pages_totales(self):
+    def test_bounded_by_total_pages(self):
         s = _wp()
         appels = []
 
@@ -191,7 +191,7 @@ class TestInventaire:
             list(s.inventory(None, None))
         assert appels == [1, 2, 3]   # does not go past the 3rd page
 
-    def test_filtre_depuis_et_jusqua(self):
+    def test_filters_since_and_until(self):
         s = _wp()
         capture = {}
 
@@ -210,17 +210,17 @@ class TestInventaire:
 # --------------------------------------------------------------------------- #
 
 class TestBasesRest:
-    def test_replie_sur_defaut_si_api_ko(self):
+    def test_falls_back_to_default_when_api_fails(self):
         s = _wp()
         with patch.object(s, "_api", side_effect=RuntimeError("HS")):
             assert s._rest_bases() == ["posts", "pages"]
 
-    def test_ecarte_types_techniques(self):
+    def test_excludes_technical_types(self):
         s = _wp()
         types = {
             "post": {"rest_base": "posts"},
             "page": {"rest_base": "pages"},
-            "galerie": {"rest_base": "galeries"},
+            "gallery": {"rest_base": "galeries"},
             "attachment": {"rest_base": "media"},
             "wp_block": {"rest_base": "blocks"},
             "nav_menu_item": {"rest_base": "menu-items"},
@@ -238,7 +238,7 @@ class TestBasesRest:
 # `resoudre_groupes`: parent lookup (WP returns integer IDs)
 # --------------------------------------------------------------------------- #
 
-class TestResoudreGroupes:
+class TestResolveGroups:
     def test_lookup_titre(self):
         s = _wp()
 
@@ -254,7 +254,7 @@ class TestResoudreGroupes:
         # result keys are strings to stay aligned with the manifest keys
         assert titres == {"42": "match-du-siecle"}
 
-    def test_non_trouve_journalise(self):
+    def test_not_found_journals(self):
         journal = []
         s = _wp(journal=journal.append)
 
@@ -267,13 +267,13 @@ class TestResoudreGroupes:
             titres = s.resolve_groups({"99"})
         assert titres == {}
         # a message reports unidentified galleries
-        assert any("non identifi" in m for m in journal)
+        assert any("not identified" in m for m in journal)
 
-    def test_set_vide(self):
+    def test_empty_set(self):
         s = _wp()
         assert s.resolve_groups(set()) == {}
 
-    def test_arret_boucle_quand_restants_vides(self):
+    def test_loop_stops_when_remaining_empty(self):
         # the first base finds everything: the second is never queried
         s = _wp()
         appels = []
@@ -294,7 +294,7 @@ class TestResoudreGroupes:
         assert titres == {"42": "match"}
         assert "posts" not in appels
 
-    def test_runtime_error_sur_un_base_continue(self):
+    def test_runtime_error_on_one_base_continues(self):
         # RuntimeError on a base → skip and try the next one
         s = _wp()
 
@@ -312,7 +312,7 @@ class TestResoudreGroupes:
             titres = s.resolve_groups({"42"})
         assert titres == {"42": "trouve"}
 
-    def test_court_circuite_sur_cache_connus(self):
+    def test_short_circuits_on_cached_known(self):
         s = _wp()
         with patch.object(s, "_api") as api:
             r = s.resolve_groups({"42"}, connus={"42": "deja-connu"})
@@ -325,7 +325,7 @@ class TestResoudreGroupes:
 # --------------------------------------------------------------------------- #
 
 class TestTransportGetJson:
-    def test_reponse_dans_fin_si_renvoie_none(self):
+    def test_response_in_fin_si_returns_none(self):
         t = Transport(delay=0)
         t.session = MagicMock()
         rep = MagicMock(status_code=400, headers={"h": "1"})
@@ -344,7 +344,7 @@ class TestTransportGetJson:
         payload, _ = t.get_json("https://x/api")
         assert payload == [{"id": 1}]
 
-    def test_rejeu_puis_succes(self):
+    def test_retry_then_success(self):
         t = Transport(delay=0)
         t.session = MagicMock()
         bon = MagicMock(status_code=200, headers={})
@@ -356,14 +356,14 @@ class TestTransportGetJson:
         assert payload == {"ok": True}
         assert t.session.get.call_count == 2
 
-    def test_echec_repete_leve_runtime(self):
+    def test_repeated_failure_raises_runtime(self):
         t = Transport(delay=0)
         t.session = MagicMock()
         t.session.get.side_effect = requests.ConnectionError("HS")
         with patch.object(t, "sleep"), pytest.raises(RuntimeError):
             t.get_json("https://x/api")
 
-    def test_wordpress_passe_fin_si_400(self):
+    def test_wordpress_passes_fin_si_400(self):
         # not an isolated case, but confirms the contract: it is the
         # WordPress adapter that carries the rule "400 = end of
         # pagination" via `fin_si={400}` — the engine does not force it

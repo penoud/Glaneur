@@ -26,8 +26,8 @@ from Glaneur.system import (
 # is_frozen / launch_command
 # --------------------------------------------------------------------------- #
 
-class TestEstGele:
-    def test_defaut_faux(self, monkeypatch):
+class TestIsFrozen:
+    def test_default_false(self, monkeypatch):
         monkeypatch.delattr(sys, "frozen", raising=False)
         assert is_frozen() is False
 
@@ -36,14 +36,14 @@ class TestEstGele:
         assert is_frozen() is True
 
 
-class TestCommandeLancement:
-    def test_dev_utilise_app_py(self, monkeypatch):
+class TestLaunchCommand:
+    def test_dev_uses_app_py(self, monkeypatch):
         monkeypatch.delattr(sys, "frozen", raising=False)
         cmd = launch_command()
         assert "app.py" in cmd
         assert "--reduit" in cmd
 
-    def test_frozen_utilise_executable(self, monkeypatch):
+    def test_frozen_uses_executable(self, monkeypatch):
         monkeypatch.setattr(sys, "frozen", True, raising=False)
         cmd = launch_command()
         assert "app.py" not in cmd
@@ -56,14 +56,14 @@ class TestCommandeLancement:
 
 @pytest.mark.skipif(sys.platform == "win32",
                     reason="hors Windows uniquement")
-class TestDemarrageHorsWindows:
-    def test_activer_renvoie_false(self):
+class TestStartupOutsideWindows:
+    def test_enable_returns_false(self):
         assert autostart(True) is False
 
-    def test_desactiver_renvoie_false(self):
+    def test_disable_returns_false(self):
         assert autostart(False) is False
 
-    def test_actif_renvoie_false(self):
+    def test_active_returns_false(self):
         assert autostart_active() is False
 
 
@@ -73,18 +73,18 @@ class TestDemarrageHorsWindows:
 
 @pytest.mark.skipif(sys.platform == "win32",
                     reason="hors Windows uniquement")
-class TestFondEcranHorsWindows:
-    def test_definir_dossier_diaporama_renvoie_false(self, tmp_path):
+class TestWallpaperOutsideWindows:
+    def test_set_slideshow_dir_returns_false(self, tmp_path):
         assert set_slideshow_dir(tmp_path) is False
 
-    def test_fond_ecran_actuel_renvoie_none(self):
+    def test_current_wallpaper_returns_none(self):
         assert current_wallpaper() is None
 
-    def test_avancer_diaporama_ne_leve_rien(self):
+    def test_advance_slideshow_does_not_raise(self):
         # no return expected, silence is the success criterion
         advance_slideshow()
 
-    def test_instancier_bureau_renvoie_none(self):
+    def test_instantiate_desktop_returns_none(self):
         ptr, uninit = system._instantiate_desktop()
         assert ptr is None
         assert uninit is False
@@ -96,12 +96,12 @@ class TestFondEcranHorsWindows:
 
 @pytest.mark.skipif(sys.platform != "win32",
                     reason="Windows uniquement")
-class TestFondEcranSousWindows:
-    def test_fond_ecran_actuel_ne_leve_rien(self):
+class TestWallpaperOnWindows:
+    def test_current_wallpaper_does_not_raise(self):
         # may return a path or None depending on the desktop state; no exception
         current_wallpaper()
 
-    def test_avancer_diaporama_ne_leve_rien(self):
+    def test_advance_slideshow_does_not_raise(self):
         advance_slideshow()
 
 
@@ -110,11 +110,11 @@ class TestFondEcranSousWindows:
 # (bugs that caused the "slideshow" checkbox to crash).
 # --------------------------------------------------------------------------- #
 
-class TestContratsWallpaper:
+class TestWallpaperContracts:
     """These checks are platform-independent: they cover constants and
     invariants (`_release_desktop` must accept anything without raising)."""
 
-    def test_indices_vtable_conformes_a_idesktopwallpaper(self):
+    def test_vtable_indices_match_idesktopwallpaper(self):
         # Indices must match the Microsoft vtable: SetSlideshow=12,
         # AdvanceSlideshow=16. An off-by-one called GetPosition instead
         # and corrupted memory → crash.
@@ -125,7 +125,7 @@ class TestContratsWallpaper:
         assert system._VT_SET_SLIDESHOW == 12
         assert system._VT_ADVANCESLIDESHOW == 16
 
-    def test_liberer_bureau_ignore_les_types_bizarres(self):
+    def test_release_desktop_ignores_weird_types(self):
         # Robustness: calling _release_desktop with something other than a
         # c_void_p must never raise (set_slideshow_dir's finally relies on it).
         system._release_desktop(None, False)
@@ -141,11 +141,11 @@ class TestContratsWallpaper:
 @pytest.mark.skipif(sys.platform == "win32",
                     reason="simulation only valid off Windows "
                            "(on Windows, ctypes.windll and COM are real)")
-class TestSimulationsWin:
+class TestWinSimulations:
     """Checks that the Windows code degrades gracefully when COM/winreg
     are missing (which is the case when running the tests on Linux)."""
 
-    def test_instancier_bureau_gerre_erreur_ctypes(self, monkeypatch):
+    def test_instantiate_desktop_handles_ctypes_error(self, monkeypatch):
         # on Linux, ctypes.windll does not exist: the AttributeError must
         # be caught and translated to (None, False)
         monkeypatch.setattr(sys, "platform", "win32")
@@ -153,11 +153,11 @@ class TestSimulationsWin:
         assert ptr is None
         assert uninit is False
 
-    def test_fond_ecran_actuel_retourne_none_si_com_ko(self, monkeypatch):
+    def test_current_wallpaper_returns_none_when_com_fails(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         assert current_wallpaper() is None
 
-    def test_avancer_diaporama_silencieux_si_com_ko(self, monkeypatch):
+    def test_advance_slideshow_silent_when_com_fails(self, monkeypatch):
         monkeypatch.setattr(sys, "platform", "win32")
         advance_slideshow()  # must not raise anything
 
@@ -171,8 +171,8 @@ class TestSimulationsWin:
 # open_dir: non-blocking call (no subprocess is actually launched)
 # --------------------------------------------------------------------------- #
 
-class TestOuvrirDossier:
-    def test_cree_dossier_manquant(self, tmp_path, monkeypatch):
+class TestOpenFolder:
+    def test_creates_missing_folder(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock
         cible = tmp_path / "pas-encore"
         monkeypatch.setattr(sys, "platform", "linux")
@@ -181,7 +181,7 @@ class TestOuvrirDossier:
         system.open_dir(cible)
         assert cible.is_dir()
 
-    def test_choisit_startfile_sous_windows(self, tmp_path, monkeypatch):
+    def test_picks_startfile_on_windows(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "win32")
         faux = MagicMock()
@@ -191,7 +191,7 @@ class TestOuvrirDossier:
         system.open_dir(tmp_path)
         assert faux.called
 
-    def test_choisit_open_sous_macos(self, tmp_path, monkeypatch):
+    def test_picks_open_on_macos(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "darwin")
         popen = MagicMock()
@@ -200,7 +200,7 @@ class TestOuvrirDossier:
         args = popen.call_args.args[0]
         assert args[0] == "open"
 
-    def test_choisit_xdg_open_ailleurs(self, tmp_path, monkeypatch):
+    def test_picks_xdg_open_elsewhere(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock
         monkeypatch.setattr(sys, "platform", "linux")
         popen = MagicMock()

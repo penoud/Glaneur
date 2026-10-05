@@ -36,11 +36,11 @@ class _FauxEngine:
 
     dernier: "_FauxEngine | None" = None
 
-    def __init__(self, options, journal=None, progression=None, arret=None):
+    def __init__(self, options, journal=None, progression=None, stop_event=None):
         self.options = options
         self.journal = journal
         self.progression = progression
-        self.arret = _FauxArret()
+        self.stop_event = _FauxArret()
         _FauxEngine.dernier = self
 
     # Filled by the test before `main()` is called.
@@ -104,8 +104,8 @@ def _run(monkeypatch, argv, *, resultat=None, leve=None, config_kw=None,
 # --------------------------------------------------------------------------- #
 
 
-class TestArgumentsVersOptions:
-    def test_defaults_viennent_de_config(self, monkeypatch, tmp_path):
+class TestArgumentsToOptions:
+    def test_defaults_come_from_config(self, monkeypatch, tmp_path):
         rc = _run(
             monkeypatch,
             [],
@@ -138,14 +138,45 @@ class TestArgumentsVersOptions:
         rc = _run(
             monkeypatch,
             [
-                "--dossier", str(tmp_path / "cli-dest"),
+                "--folder", str(tmp_path / "cli-dest"),
                 "--type", "djangoplicity",
                 "--format", "Small",
-                "--classement", "galerie",
+                "--sort", "gallery",
+                "--min-width", "1200",
+                "--delay", "2.25",
+                "--verify",
+                "--force",
+                "--no-cache",
+                "--since", "2026-01-01",
+                "--until", "2026-06-30",
+            ],
+        )
+        assert rc == 0
+        o = _FauxEngine.dernier.options
+        assert o.target_dir == (tmp_path / "cli-dest").expanduser()
+        assert o.source_type == "djangoplicity"
+        assert o.image_format == "Small"
+        assert o.sort_mode == "gallery"
+        assert o.min_width == 1200
+        assert o.delay == 2.25
+        assert o.verify is True
+        assert o.force is True
+        assert o.use_cache is False   # --no-cache inverts the default
+        assert o.since == "2026-01-01"
+        assert o.until == "2026-06-30"
+
+    def test_fr_aliases_still_work(self, monkeypatch, tmp_path):
+        """Every FR flag from the pre-US-EN-06 CLI is preserved as a
+        hidden alias sharing the EN dest, so existing scripts and
+        scheduled tasks keep working."""
+        rc = _run(
+            monkeypatch,
+            [
+                "--dossier", str(tmp_path / "cli-dest"),
+                "--classement", "gallery",
                 "--largeur-min", "1200",
                 "--delai", "2.25",
                 "--verifier",
-                "--force",
                 "--pas-cache",
                 "--depuis", "2026-01-01",
                 "--jusqua", "2026-06-30",
@@ -154,28 +185,56 @@ class TestArgumentsVersOptions:
         assert rc == 0
         o = _FauxEngine.dernier.options
         assert o.target_dir == (tmp_path / "cli-dest").expanduser()
-        assert o.source_type == "djangoplicity"
-        assert o.image_format == "Small"
-        assert o.sort_mode == "galerie"
+        assert o.sort_mode == "gallery"
         assert o.min_width == 1200
         assert o.delay == 2.25
         assert o.verify is True
-        assert o.force is True
-        assert o.use_cache is False   # --pas-cache inverts the default
+        assert o.use_cache is False
         assert o.since == "2026-01-01"
         assert o.until == "2026-06-30"
 
-    def test_choix_type_source_invalide(self, monkeypatch):
+    def test_help_hides_fr_aliases(self, monkeypatch, capsys):
+        """`--help` lists the canonical EN flags but no FR alias."""
+        with pytest.raises(SystemExit):
+            _run(monkeypatch, ["--help"])
+        out = capsys.readouterr().out
+        for en in ("--folder", "--sort", "--min-width", "--delay",
+                   "--verify", "--no-cache", "--since", "--until",
+                   "--restore"):
+            assert en in out, f"expected {en!r} in --help output"
+        for fr in ("--dossier", "--classement", "--largeur-min", "--delai",
+                   "--verifier", "--pas-cache", "--depuis", "--jusqua",
+                   "--restaurer"):
+            assert fr not in out, f"FR alias {fr!r} leaked into --help output"
+
+    def test_invalid_source_type_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
             _run(monkeypatch, ["--type", "flickr"])
 
-    def test_choix_format_invalide(self, monkeypatch):
+    def test_invalid_format_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
             _run(monkeypatch, ["--format", "Huge"])
 
-    def test_choix_classement_invalide(self, monkeypatch):
+    def test_invalid_sort_mode_choice(self, monkeypatch):
         with pytest.raises(SystemExit):
-            _run(monkeypatch, ["--classement", "aleatoire"])
+            _run(monkeypatch, ["--sort", "aleatoire"])
+
+    def test_choices_track_config_registries(self, monkeypatch, tmp_path):
+        """Lot 0.8 boundary: CLI --type/--format/--sort choices come from
+        the SOURCE_TYPES / DJANGOPLICITY_FORMATS / SORT_MODES registries
+        in Glaneur.config, not from a hard-coded copy. Adding a value to
+        one of those registries must make the parser accept it, without
+        touching cli.py.
+        """
+        from Glaneur.config import SOURCE_TYPES
+        patched = dict(SOURCE_TYPES)
+        patched["Test source"] = "test-source"
+        monkeypatch.setattr(cli, "SOURCE_TYPES", patched)
+        # Argparse now accepts the new key. The stub engine ignores the
+        # value, so the run still returns 0.
+        rc = _run(monkeypatch, ["--type", "test-source"])
+        assert rc == 0
+        assert _FauxEngine.dernier.options.source_type == "test-source"
 
 
 # --------------------------------------------------------------------------- #
@@ -183,24 +242,24 @@ class TestArgumentsVersOptions:
 # --------------------------------------------------------------------------- #
 
 
-class TestCodesRetour:
-    def test_succes_renvoie_zero(self, monkeypatch):
+class TestReturnCodes:
+    def test_success_returns_zero(self, monkeypatch):
         rc = _run(monkeypatch, [], resultat=RunResult(downloaded=3, message="OK"))
         assert rc == 0
 
-    def test_zero_si_aucun_echec_meme_sans_telechargement(self, monkeypatch):
+    def test_zero_if_no_failure_even_without_download(self, monkeypatch):
         # Nothing new but nothing failed either: still success.
         rc = _run(monkeypatch, [], resultat=RunResult(already_present=10, message="OK"))
         assert rc == 0
 
-    def test_un_si_tout_a_echoue(self, monkeypatch):
+    def test_one_if_everything_failed(self, monkeypatch):
         rc = _run(
             monkeypatch, [],
             resultat=RunResult(failures=5, downloaded=0, message="KO"),
         )
         assert rc == 1
 
-    def test_zero_si_echecs_mais_au_moins_un_telechargement(self, monkeypatch):
+    def test_zero_if_failures_but_at_least_one_download(self, monkeypatch):
         # Partial failure: not the "everything failed" branch.
         rc = _run(
             monkeypatch, [],
@@ -208,7 +267,7 @@ class TestCodesRetour:
         )
         assert rc == 0
 
-    def test_deux_si_run_reporte(self, monkeypatch, tmp_path, capsys):
+    def test_two_if_run_deferred(self, monkeypatch, tmp_path, capsys):
         # `Scheduler.defer` persists a defer via `Config.sauvegarder`,
         # so the config path has to be writable.
         rc = _run(
@@ -221,12 +280,12 @@ class TestCodesRetour:
         # next_run_text goes to stderr as a next-run hint.
         assert err.strip() != ""
 
-    def test_130_sur_keyboard_interrupt(self, monkeypatch, capsys):
+    def test_130_on_keyboard_interrupt(self, monkeypatch, capsys):
         rc = _run(monkeypatch, [], leve=KeyboardInterrupt())
         assert rc == 130
-        # The stub engine's `arret` event was signalled cooperatively.
-        assert _FauxEngine.dernier.arret.set_called is True
-        assert "Interrompu" in capsys.readouterr().out
+        # The stub engine's `stop_event` was signalled cooperatively.
+        assert _FauxEngine.dernier.stop_event.set_called is True
+        assert "Interrupted" in capsys.readouterr().out
 
 
 # --------------------------------------------------------------------------- #
@@ -234,27 +293,27 @@ class TestCodesRetour:
 # --------------------------------------------------------------------------- #
 
 
-class TestSortieStdout:
-    def test_resume_contient_les_compteurs(self, monkeypatch, capsys):
+class TestStdoutOutput:
+    def test_summary_contains_the_counters(self, monkeypatch, capsys):
         _run(
             monkeypatch,
             [],
             resultat=RunResult(
                 downloaded=4, resumed=1, already_present=10, unchanged=2,
                 deleted=1, skipped=3, failures=0, bytes=2048,
-                message="Terminé",
+                message="Done",
             ),
         )
         out = capsys.readouterr().out
-        assert "Terminé" in out
+        assert "Done" in out
         # All the labelled counters appear with their value.
-        assert "téléchargées : 4" in out
-        assert "reprises : 1" in out
-        assert "déjà à jour  : 10" in out
-        assert "inchangées : 2" in out
-        assert "supprimées   : 1" in out
-        assert "ignorées : 3" in out
-        assert "échecs       : 0" in out
+        assert "downloaded    : 4" in out
+        assert "resumed : 1" in out
+        assert "up-to-date    : 10" in out
+        assert "unchanged : 2" in out
+        assert "deleted       : 1" in out
+        assert "skipped : 3" in out
+        assert "failures      : 0" in out
         # `format_bytes` turned 2048 into a human-readable string.
         assert "2" in out and "o" in out.lower()
 
@@ -264,8 +323,8 @@ class TestSortieStdout:
 # --------------------------------------------------------------------------- #
 
 
-class TestRestaurer:
-    def test_restaurer_avec_ids_explicites(self, monkeypatch, tmp_path, capsys):
+class TestRestore:
+    def test_restore_with_explicit_ids(self, monkeypatch, tmp_path, capsys):
         appels = {}
 
         def faux_restaurer(dossier, ids):
@@ -282,14 +341,14 @@ class TestRestaurer:
 
         rc = _run(
             monkeypatch,
-            ["--dossier", str(tmp_path), "--restaurer", "12", "34", "56"],
+            ["--folder", str(tmp_path), "--restore", "12", "34", "56"],
         )
         assert rc == 0
         assert appels["target_dir"] == tmp_path.expanduser()
         assert appels["ids"] == ["12", "34", "56"]
-        assert "3 image(s) remise(s)" in capsys.readouterr().out
+        assert "3 image(s) re-queued" in capsys.readouterr().out
 
-    def test_restaurer_sans_ids_prend_toutes_les_supprimees(
+    def test_restore_without_ids_takes_all_deleted(
         self, monkeypatch, tmp_path, capsys,
     ):
         def faux_lister(dossier):
@@ -305,10 +364,10 @@ class TestRestaurer:
         monkeypatch.setattr(cli, "list_deleted", faux_lister)
         monkeypatch.setattr(cli, "restore", faux_restaurer)
 
-        rc = _run(monkeypatch, ["--dossier", str(tmp_path), "--restaurer"])
+        rc = _run(monkeypatch, ["--folder", str(tmp_path), "--restore"])
         assert rc == 0
         assert appels["ids"] == ["a", "b"]
-        assert "2 image(s) remise(s)" in capsys.readouterr().out
+        assert "2 image(s) re-queued" in capsys.readouterr().out
 
 
 # --------------------------------------------------------------------------- #
@@ -316,8 +375,8 @@ class TestRestaurer:
 # --------------------------------------------------------------------------- #
 
 
-class TestProgression:
-    def test_ecrit_seulement_quand_la_ligne_change(self, monkeypatch, capsys):
+class TestProgress:
+    def test_writes_only_when_the_line_changes(self, monkeypatch, capsys):
         """The progression callback rewrites a single line on stdout and
         skips writes when the formatted output would be identical.
         """
@@ -333,7 +392,7 @@ class TestProgression:
         assert out.count("photo-1") == 1
         assert "photo-2" in out
 
-    def test_tronque_l_etiquette_a_60_caracteres(self, monkeypatch, capsys):
+    def test_truncates_the_label_to_60_characters(self, monkeypatch, capsys):
         _run(monkeypatch, [])
         prog = _FauxEngine.dernier.progression
         prog(1, 2, "x" * 200)
@@ -341,3 +400,110 @@ class TestProgression:
         # The 200 xs got clipped to 60.
         assert "x" * 60 in out
         assert "x" * 61 not in out
+
+
+# --------------------------------------------------------------------------- #
+# Multi-profile picker (lot 5.1 E3 part B step 6)
+# --------------------------------------------------------------------------- #
+
+
+def _seed_extra_profile(monkeypatch, tmp_path, *, name="eso",
+                        site="https://eso.example", source_type="djangoplicity",
+                        target_dir=None):
+    """Create a config file with one extra profile alongside the default.
+
+    Returns the (chemin, added_profile_id) pair. The chemin is a real
+    file that `_run` can point Config.load at through config_chemin.
+    """
+    chemin = tmp_path / "c.json"
+    cfg = cli.Config.load(chemin)
+    added = cfg.add_profile(name, site=site, source_type=source_type,
+                            target_dir=str(target_dir or tmp_path / name))
+    cfg.save()
+    return chemin, added.id
+
+
+class TestProfilePicker:
+    """`--profile <name|id>` chooses which profile the engine runs."""
+
+    def test_default_is_first_profile_when_flag_absent(
+            self, monkeypatch, tmp_path):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path)
+        rc = _run(monkeypatch, [], config_chemin=chemin)
+        assert rc == 0
+        # No --profile: the first (default) profile runs.
+        assert _FauxEngine.dernier.options.source_type == "wordpress"
+
+    def test_profile_selected_by_exact_name(self, monkeypatch, tmp_path):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path, name="eso")
+        rc = _run(monkeypatch, ["--profile", "eso"], config_chemin=chemin)
+        assert rc == 0
+        o = _FauxEngine.dernier.options
+        assert o.source_type == "djangoplicity"
+        assert o.site == "https://eso.example"
+
+    def test_profile_selected_by_id_prefix(self, monkeypatch, tmp_path):
+        chemin, ident = _seed_extra_profile(monkeypatch, tmp_path)
+        rc = _run(monkeypatch, ["--profile", ident[:8]], config_chemin=chemin)
+        assert rc == 0
+        assert _FauxEngine.dernier.options.source_type == "djangoplicity"
+
+    def test_unknown_profile_exits_2_with_message(
+            self, monkeypatch, tmp_path, capsys):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path, name="eso")
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--profile", "nope"], config_chemin=chemin)
+        assert exc.value.code == 2
+        assert "No profile" in capsys.readouterr().err
+
+    def test_ambiguous_name_exits_2(self, monkeypatch, tmp_path, capsys):
+        """Two profiles sharing a name — the user has to disambiguate
+        with the id."""
+        chemin = tmp_path / "c.json"
+        cfg = cli.Config.load(chemin)
+        cfg.add_profile("dup", site="https://a.example")
+        cfg.add_profile("dup", site="https://b.example")
+        cfg.save()
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--profile", "dup"], config_chemin=chemin)
+        assert exc.value.code == 2
+        assert "Ambiguous" in capsys.readouterr().err
+
+    def test_ambiguous_id_prefix_exits_2(
+            self, monkeypatch, tmp_path, capsys):
+        """Two profile ids starting with the same prefix — refuse."""
+        chemin = tmp_path / "c.json"
+        cfg = cli.Config.load(chemin)
+        # Bypass add_profile's uuid generation so we can pin two shared
+        # prefixes without relying on chance collisions.
+        from Glaneur.config import Profile
+        cfg._extra_profiles.append(Profile(id="deadbeef01", name="a"))
+        cfg._extra_profiles.append(Profile(id="deadbeef02", name="b"))
+        cfg.save()
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--profile", "deadbee"], config_chemin=chemin)
+        assert exc.value.code == 2
+        assert "Ambiguous" in capsys.readouterr().err
+
+
+class TestListProfiles:
+    def test_list_profiles_prints_rows_and_exits_zero(
+            self, monkeypatch, tmp_path, capsys):
+        chemin, ident = _seed_extra_profile(monkeypatch, tmp_path, name="eso")
+        rc = _run(monkeypatch, ["--list-profiles"], config_chemin=chemin)
+        assert rc == 0
+        out = capsys.readouterr().out
+        # One line for the default, one for the extra.
+        lines = out.strip().splitlines()
+        assert len(lines) == 2
+        assert "default" in lines[0]
+        assert "eso" in lines[1]
+        assert ident in lines[1]
+
+    def test_list_profiles_does_not_start_the_engine(
+            self, monkeypatch, tmp_path):
+        chemin, _ = _seed_extra_profile(monkeypatch, tmp_path)
+        _FauxEngine.dernier = None
+        _run(monkeypatch, ["--list-profiles"], config_chemin=chemin)
+        # No Engine instance was created.
+        assert _FauxEngine.dernier is None

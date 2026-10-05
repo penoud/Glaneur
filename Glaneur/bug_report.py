@@ -101,16 +101,16 @@ def collect_context(
         The Markdown block, ready to append to the issue body.
     """
     lignes = [
-        f"### {QCoreApplication.translate('BugReport', 'Contexte')}",
+        f"### {QCoreApplication.translate('BugReport', 'Context')}",
         "",
-        f"- **{QCoreApplication.translate('BugReport', 'Version')}** : {version}",
-        f"- **{QCoreApplication.translate('BugReport', 'Plateforme')}** : {platform.platform()}",
-        f"- **{QCoreApplication.translate('BugReport', 'Python')}** : {sys.version.split()[0]}",
+        f"- **{QCoreApplication.translate('BugReport', 'Version')}**: {version}",
+        f"- **{QCoreApplication.translate('BugReport', 'Platform')}**: {platform.platform()}",
+        f"- **{QCoreApplication.translate('BugReport', 'Python')}**: {sys.version.split()[0]}",
     ]
     tail, note = _tail_log(chemin_log, nb_lignes) if chemin_log else ("", "")
     if tail:
         entete = "### " + QCoreApplication.translate(
-            "BugReport", "Dernières lignes de log ({n} max)").format(n=nb_lignes)
+            "BugReport", "Last log lines ({n} max)").format(n=nb_lignes)
         if note:
             entete += f" — {note}"
         lignes += ["", entete, "", "```", tail, "```"]
@@ -132,7 +132,7 @@ def _tail_log(chemin: Path, nb_lignes: int) -> tuple[str, str]:
     date_commune = _all_same_date(lignes_recentes)
     compactees = [_compact_line(l, drop_date=bool(date_commune))
                   for l in lignes_recentes]
-    note = (QCoreApplication.translate("BugReport", "date : {date}").format(date=date_commune)
+    note = (QCoreApplication.translate("BugReport", "date: {date}").format(date=date_commune)
             if date_commune else "")
     return "\n".join(compactees).rstrip(), note
 

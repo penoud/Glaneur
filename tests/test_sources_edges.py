@@ -50,38 +50,38 @@ def _reponse(headers=None, status=200):
 
 
 class TestRetryAfter:
-    def test_pas_de_reponse_renvoie_none(self):
+    def test_no_response_returns_none(self):
         assert _retry_after(None) is None
 
-    def test_header_absent_renvoie_none(self):
+    def test_header_absent_returns_none(self):
         assert _retry_after(_reponse({})) is None
 
-    def test_valeur_vide_renvoie_none(self):
+    def test_empty_value_returns_none(self):
         assert _retry_after(_reponse({"Retry-After": "  "})) is None
 
-    def test_entier_secondes(self):
+    def test_integer_seconds(self):
         assert _retry_after(_reponse({"Retry-After": "42"})) == 42.0
 
-    def test_http_date_dans_le_futur(self):
+    def test_http_date_in_the_future(self):
         # A valid HTTP-date far in the future returns a positive delta.
         assert _retry_after(
             _reponse({"Retry-After": "Wed, 21 Oct 2099 07:28:00 GMT"}),
         ) > 0
 
-    def test_http_date_dans_le_passe_donne_zero(self):
+    def test_http_date_in_the_past_yields_zero(self):
         # A past date clamps to 0 (never negative).
         assert _retry_after(
             _reponse({"Retry-After": "Wed, 21 Oct 1999 07:28:00 GMT"}),
         ) == 0.0
 
-    def test_http_date_naive_est_traitee_comme_utc(self):
+    def test_naive_http_date_treated_as_utc(self):
         # `parsedate_to_datetime` returns a naive datetime for a date
         # without a timezone: the branch that fills UTC must run.
         assert _retry_after(
             _reponse({"Retry-After": "Wed, 21 Oct 2099 07:28:00"}),
         ) > 0
 
-    def test_http_date_invalide_renvoie_none(self):
+    def test_invalid_http_date_returns_none(self):
         # `parsedate_to_datetime` raises `TypeError`/`ValueError` on
         # complete garbage: the except branch returns None.
         assert _retry_after(_reponse({"Retry-After": "pas une date"})) is None
@@ -92,32 +92,32 @@ class TestRetryAfter:
 # --------------------------------------------------------------------------- #
 
 
-class TestClasserErreur:
-    def test_5xx_hors_liste_est_transitoire(self):
+class TestClassifyError:
+    def test_5xx_outside_list_is_transient(self):
         c = classify_error(None, _reponse({}, status=500))
-        assert c.category == "transitoire"
+        assert c.category == "transient"
 
-    def test_connection_error_generique_est_transitoire(self):
-        # ConnectionError without a "coupure" keyword: transient retry.
+    def test_generic_connection_error_is_transient(self):
+        # ConnectionError without a "cut" keyword: transient retry.
         c = classify_error(requests.exceptions.ConnectionError("timeout doux"), None)
-        assert c.category == "transitoire"
+        assert c.category == "transient"
 
-    def test_connection_error_avec_mot_cle_est_coupure(self):
+    def test_connection_error_with_keyword_is_a_cut(self):
         c = classify_error(
             requests.exceptions.ConnectionError(
                 "NameResolutionError: unreachable",
             ), None,
         )
-        assert c.category == "coupure"
+        assert c.category == "cut"
 
-    def test_url_invalide_est_definitif(self):
+    def test_invalid_url_is_definitive(self):
         c = classify_error(requests.exceptions.InvalidURL("no scheme"), None)
-        assert c.category == "definitif"
+        assert c.category == "definitive"
 
-    def test_ni_reponse_ni_exception_est_transitoire(self):
+    def test_neither_response_nor_exception_is_transient(self):
         # Extreme fallback: nothing to classify. Kept as transient so
         # the engine at least retries once.
-        assert classify_error(None, None) == ErrorClassification("transitoire", None)
+        assert classify_error(None, None) == ErrorClassification("transient", None)
 
 
 # --------------------------------------------------------------------------- #
@@ -126,14 +126,14 @@ class TestClasserErreur:
 
 
 class TestTransport:
-    def test_verifier_arret_leve_si_arret_signale(self):
-        arret = threading.Event()
-        t = Transport(delay=0, arret=arret)
-        arret.set()
+    def test_check_stop_raises_when_stop_signalled(self):
+        stop_event = threading.Event()
+        t = Transport(delay=0, stop_event=stop_event)
+        stop_event.set()
         with pytest.raises(Interrupted):
             t.check_stop()
 
-    def test_pause_dort_puis_revient(self):
+    def test_pause_sleeps_then_returns(self):
         # Real pause: 0.2 s so the loop enters the sleep branch at least
         # twice (`min(0.1, ...)` cap). The test tolerates timing jitter.
         t = Transport(delay=0)
@@ -141,10 +141,10 @@ class TestTransport:
         t.sleep(0.2)
         assert time.monotonic() - debut >= 0.15
 
-    def test_pause_interrompue_leve_interrompu(self):
-        arret = threading.Event()
-        t = Transport(delay=0, arret=arret)
-        arret.set()
+    def test_interrupted_pause_raises_interrupted(self):
+        stop_event = threading.Event()
+        t = Transport(delay=0, stop_event=stop_event)
+        stop_event.set()
         with pytest.raises(Interrupted):
             t.sleep(1.0)
 
@@ -172,16 +172,16 @@ def _stub():
     )
 
 
-class TestSourceDefaut:
-    def test_resoudre_groupes_defaut_renvoie_connus(self):
+class TestSourceDefault:
+    def test_resolve_groups_default_returns_known(self):
         assert _stub().resolve_groups({"a", "b"}, connus={"a": "titre-a"}) == {
             "a": "titre-a",
         }
 
-    def test_resoudre_groupes_defaut_sans_connus_renvoie_vide(self):
+    def test_resolve_groups_default_without_known_returns_empty(self):
         assert _stub().resolve_groups({"a"}) == {}
 
-    def test_convertir_depuis_defaut_identite(self):
+    def test_convert_from_default_is_identity(self):
         assert _stub().convert_from("2026-01-01T00:00:00") == "2026-01-01T00:00:00"
         assert _stub().convert_from(None) is None
 
@@ -191,20 +191,20 @@ class TestSourceDefaut:
 # --------------------------------------------------------------------------- #
 
 
-class TestSain:
-    def test_none_donne_chaine_vide(self):
+class TestClean:
+    def test_none_yields_empty_string(self):
         assert _sanitized(None) == ""
 
     def test_bytes_utf8_decode(self):
         assert _sanitized("Nébuleuse".encode("utf-8")) == "Nébuleuse"
 
-    def test_bytes_repr_dans_str_est_deballe(self):
+    def test_bytes_repr_inside_str_is_unwrapped(self):
         # The `d2d` feed sometimes serialises a `bytes` as `"b'...'"` in
         # a JSON string: the wrapper is stripped.
         assert _sanitized("b'Nebula'") == "Nebula"
         assert _sanitized('b"Nebula"') == "Nebula"
 
-    def test_chaine_normale_passe_telle_quelle(self):
+    def test_normal_string_passes_through(self):
         assert _sanitized("Nébuleuse") == "Nébuleuse"
 
 
@@ -237,15 +237,15 @@ def _entree(dimensions=None, filesize=None):
 
 
 class TestDjangoplicityConversion:
-    def test_dimensions_non_numeriques_donnent_largeur_none(self):
+    def test_non_numeric_dimensions_yield_width_none(self):
         el = _dj()._to_element(_entree(dimensions=["pas-un-int"]))
-        assert el.largeur is None
+        assert el.width is None
 
-    def test_filesize_non_numerique_donne_taille_none(self):
+    def test_non_numeric_filesize_yields_size_none(self):
         el = _dj()._to_element(_entree(filesize="not-a-number"))
-        assert el.taille is None
+        assert el.size is None
 
-    def test_inventaire_borne_par_jusqua(self):
+    def test_inventory_bounded_by_until(self):
         # The `before` parameter is only added when `jusqua` is set;
         # cover that branch by capturing the first request's params.
         s = _dj()
@@ -265,28 +265,28 @@ class TestDjangoplicityConversion:
 # --------------------------------------------------------------------------- #
 
 
-class TestNettoyer:
-    def test_entities_html_sont_decodees(self):
+class TestSanitize:
+    def test_html_entities_are_decoded(self):
         # `&`, `<`, `>` and `/` are stripped by the alphanumeric filter,
         # so `&amp;` disappears, and the tags collapse against their
         # neighbours: `<i>siecle</i>` → `isieclei`.
         assert _clean("Match &amp; the &lt;i&gt;siècle&lt;/i&gt;") == "match-the-isieclei"
 
-    def test_accents_sont_supprimes(self):
+    def test_accents_are_stripped(self):
         assert _clean("Nébuleuse") == "nebuleuse"
 
-    def test_espaces_deviennent_tirets(self):
+    def test_spaces_become_hyphens(self):
         assert _clean("Le grand voyage") == "le-grand-voyage"
 
-    def test_chaine_vide_prend_le_defaut(self):
+    def test_empty_string_takes_default(self):
         assert _clean("") == "divers"
         assert _clean("   ") == "divers"
         assert _clean(None) == "divers"
 
-    def test_defaut_personnalise(self):
+    def test_custom_default(self):
         assert _clean("", defaut="sans-titre") == "sans-titre"
 
-    def test_longueur_bornee_a_80(self):
+    def test_length_capped_at_80(self):
         assert len(_clean("x" * 200)) == 80
 
 
@@ -295,15 +295,15 @@ class TestNettoyer:
 # --------------------------------------------------------------------------- #
 
 
-class TestClassementsPour:
-    def test_source_connue_renvoie_ses_classements(self):
+class TestSortModesFor:
+    def test_known_source_returns_its_sort_modes(self):
         r = sort_modes_for("wordpress")
         # A known source declares at least the "date" mode.
         assert "date" in r
 
-    def test_source_inconnue_renvoie_frozenset_vide(self):
+    def test_unknown_source_returns_empty_frozenset(self):
         assert sort_modes_for("flickr") == frozenset()
 
-    def test_registre_contient_les_deux_sources(self):
+    def test_registry_contains_both_sources(self):
         assert "wordpress" in SOURCES
         assert "djangoplicity" in SOURCES

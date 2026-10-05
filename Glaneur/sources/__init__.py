@@ -31,7 +31,7 @@ def sort_modes_for(source_type: str) -> frozenset[str]:
 
     Returns:
         The supported sort modes (for example
-        ``frozenset({"galerie", "date", "plat"})``), or an empty frozenset
+        ``frozenset({"gallery", "date", "flat"})``), or an empty frozenset
         if ``source_type`` is not registered.
     """
     classe = SOURCES.get(source_type)

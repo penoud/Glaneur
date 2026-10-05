@@ -54,11 +54,11 @@ def download(asset: ReleaseAsset, directory: Path, session: requests.Session | N
         destination.unlink(missing_ok=True)
         logger.exception("Download failed: %s", asset.name)
         raise DownloadError(QCoreApplication.translate(
-            "Updater", "Téléchargement impossible : {erreur}").format(erreur=error)) from error
+            "Updater", "Download failed: {error}").format(error=error)) from error
     if not destination.exists() or destination.stat().st_size == 0:
         destination.unlink(missing_ok=True)
         logger.error("Empty download: %s", asset.name)
-        raise DownloadError(QCoreApplication.translate("Updater", "Téléchargement vide"))
+        raise DownloadError(QCoreApplication.translate("Updater", "Empty download"))
     logger.info("Download completed: %s (%d bytes)", asset.name, destination.stat().st_size)
     return destination
 

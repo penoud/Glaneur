@@ -38,6 +38,15 @@ _CUT_STATUSES = frozenset({429, 502, 503, 504})
 #: Definitive client HTTP codes: nothing to retry without intervention.
 _DEFINITIVE_STATUSES = frozenset({400, 401, 403, 404, 405, 410})
 
+#: Maximum honoured value of a ``Retry-After`` header, in seconds. Beyond
+#: this the run gives up and the item will be retried on a later call —
+#: waiting several minutes on a single request blocks the whole queue.
+_MAX_RETRY_AFTER: float = 120.0
+
+#: Default backoff between attempts when the server did not provide a
+#: ``Retry-After``. Two waits, so three attempts in total.
+_RETRY_BACKOFF_S: tuple[float, ...] = (2.0, 4.0)
+
 
 @dataclass(frozen=True)
 class ErrorClassification:
@@ -48,10 +57,10 @@ class ErrorClassification:
     and Napoleon).
     """
 
-    #: Error category. ``"transitoire"`` = retry immediately,
-    #: ``"coupure"`` = the server cut us off (the engine must defer the
-    #: run), ``"definitif"`` = nothing to retry.
-    category: Literal["transitoire", "coupure", "definitif"]
+    #: Error category. ``"transient"`` = retry immediately,
+    #: ``"cut"`` = the server cut us off (the engine must defer the
+    #: run), ``"definitive"`` = nothing to retry.
+    category: Literal["transient", "cut", "definitive"]
     #: Number of seconds to wait before retrying, extracted from a
     #: ``Retry-After`` header (integer or HTTP-date). ``None`` if the
     #: information is missing — the engine falls back on its own backoff.
@@ -112,31 +121,31 @@ def classify_error(
     if reponse is not None:
         code = reponse.status_code
         if code in _CUT_STATUSES:
-            return ErrorClassification("coupure", retry_after)
+            return ErrorClassification("cut", retry_after)
         if code in _DEFINITIVE_STATUSES:
-            return ErrorClassification("definitif", retry_after)
+            return ErrorClassification("definitive", retry_after)
         if 500 <= code < 600:
             # 5xx not listed above: treated as transient
             # (an isolated 500 is not a cut).
-            return ErrorClassification("transitoire", retry_after)
+            return ErrorClassification("transient", retry_after)
 
     if exc is not None:
         if isinstance(exc, requests.exceptions.Timeout):
-            return ErrorClassification("transitoire", retry_after)
+            return ErrorClassification("transient", retry_after)
         if isinstance(exc, requests.exceptions.ConnectionError):
             message = str(exc)
             if any(mot in message for mot in _CUT_KEYWORDS):
-                return ErrorClassification("coupure", retry_after)
-            return ErrorClassification("transitoire", retry_after)
+                return ErrorClassification("cut", retry_after)
+            return ErrorClassification("transient", retry_after)
         if isinstance(exc, (
             requests.exceptions.MissingSchema,
             requests.exceptions.InvalidSchema,
             requests.exceptions.InvalidURL,
             requests.exceptions.URLRequired,
         )):
-            return ErrorClassification("definitif", retry_after)
+            return ErrorClassification("definitive", retry_after)
 
-    return ErrorClassification("transitoire", retry_after)
+    return ErrorClassification("transient", retry_after)
 
 
 class Interrupted(Exception):
@@ -166,21 +175,21 @@ class Element:
     #: the element in :attr:`Glaneur.engine.result.RunResult.skipped`.
     url: str | None
     #: File name to give the resource on disk, without directory.
-    nom_fichier: str
+    filename: str
     #: Publication date in ISO format, if known.
     date: str | None = None
     #: ``YYYY-MM`` month extracted from the date, used for the
     #: by-date sort.
-    mois: str | None = None
+    month: str | None = None
     #: Width in pixels, when the source provides it — used by the
     #: :attr:`Glaneur.engine.options.Options.min_width` filter.
-    largeur: int | None = None
+    width: int | None = None
     #: File size in bytes, if announced by the source (allows
     #: :meth:`Glaneur.engine.core.Engine.file_complete` to validate).
-    taille: int | None = None
+    size: int | None = None
     #: Parent identifier (WordPress gallery, Djangoplicity collection)
-    #: for the ``galerie`` sort mode.
-    groupe: str | None = None
+    #: for the ``gallery`` sort mode.
+    group: str | None = None
     #: Free-form metadata passed through to the manifest (credit,
     #: checksum, ...). The engine does not interpret them.
     extra: dict = field(default_factory=dict)
@@ -194,42 +203,42 @@ class Transport:
     stop apply to every source without an adapter being able to forget.
     """
 
-    def __init__(self, delay: float, arret: threading.Event | None = None) -> None:
+    def __init__(self, delay: float, stop_event: threading.Event | None = None) -> None:
         """Build the transport with its session and delay floor.
 
         Args:
             delay: Floor for the pause between two requests, in seconds.
-            arret: Shared event that cuts pending requests. Created on
+            stop_event: Shared event that cuts pending requests. Created on
                 demand if not provided.
         """
         self.delay = delay
-        self.arret = arret or threading.Event()
+        self.stop_event = stop_event or threading.Event()
         self.session = requests.Session()
         self.session.headers["User-Agent"] = UA
 
     def check_stop(self) -> None:
-        """Raise :class:`Interrupted` if ``self.arret`` was set.
+        """Raise :class:`Interrupted` if ``self.stop_event`` was set.
 
         Raises:
             Interrupted: If a cooperative stop was requested.
         """
-        if self.arret.is_set():
+        if self.stop_event.is_set():
             raise Interrupted()
 
-    def sleep(self, secondes: float | None = None) -> None:
+    def sleep(self, seconds: float | None = None) -> None:
         """Fragmented wait that reacts quickly to a stop request.
 
         Args:
-            secondes: Duration to wait. Uses ``self.delay`` when ``None``.
+            seconds: Duration to wait. Uses ``self.delay`` when ``None``.
 
         Raises:
             Interrupted: If a cooperative stop is requested during the
                 wait.
         """
-        fin = time.monotonic() + (self.delay if secondes is None else secondes)
-        while time.monotonic() < fin:
+        end = time.monotonic() + (self.delay if seconds is None else seconds)
+        while time.monotonic() < end:
             self.check_stop()
-            time.sleep(min(0.1, max(0.0, fin - time.monotonic())))
+            time.sleep(min(0.1, max(0.0, end - time.monotonic())))
 
     def get_json(
         self,
@@ -238,17 +247,31 @@ class Transport:
         essais: int = 3,
         fin_si: frozenset[int] = frozenset(),
     ) -> tuple[object | None, Mapping]:
-        """GET JSON with retries.
+        """GET JSON with a bounded retry policy.
+
+        The policy is driven by :func:`classify_error`:
+
+        - ``definitive`` (401, 403, 404 outside ``fin_si``, malformed
+          URL, ...): the original exception is re-raised on the first
+          attempt — no retry, no wait. Retrying would only add noise
+          for the remote and delay the caller.
+        - ``transient`` or ``cut``: a new attempt is scheduled, up
+          to ``essais`` in total. When the server supplies a
+          ``Retry-After``, it is honoured, capped at
+          :data:`_MAX_RETRY_AFTER`; otherwise the default
+          :data:`_RETRY_BACKOFF_S` table applies (2 s, then 4 s).
 
         A code listed in ``fin_si`` is treated as a normal end: the
-        result is ``(None, headers)`` without raising. WordPress passes
-        ``fin_si={400}`` to say "page beyond the last one".
+        result is ``(None, headers)`` without raising and without
+        classification. WordPress passes ``fin_si={400}`` to say "page
+        beyond the last one".
 
         Args:
             url: Absolute URL to query.
             params: Query parameters passed to ``requests``.
-            essais: Maximum number of attempts (linear backoff:
-                2s, 4s, 6s, ...).
+            essais: Maximum number of attempts. Waits between attempts
+                come from :data:`_RETRY_BACKOFF_S`, so there are
+                ``essais - 1`` waits — never one after the last attempt.
             fin_si: HTTP codes interpreted as a normal end.
 
         Returns:
@@ -256,8 +279,10 @@ class Transport:
             response code belongs to ``fin_si``.
 
         Raises:
-            RuntimeError: After the ``essais`` attempts are exhausted
-                without success.
+            requests.RequestException: On a ``definitive`` classification
+                (client errors, malformed URL); re-raised unchanged.
+            RuntimeError: After ``essais`` transient/cut attempts are
+                exhausted without success.
             Interrupted: If a cooperative stop is requested.
         """
         derniere: Exception | None = None
@@ -271,8 +296,23 @@ class Transport:
                 return r.json(), r.headers
             except requests.RequestException as e:
                 derniere = e
-                self.sleep(2 * (tentative + 1))
-        raise RuntimeError(f"L'API ne répond pas ({derniere})")
+                classification = classify_error(e, getattr(e, "response", None))
+                if classification.category == "definitive":
+                    # 401/403/404 (outside fin_si), malformed URL, etc.:
+                    # surface the exception rather than wasting attempts.
+                    raise
+                if tentative < essais - 1:
+                    # Sleep only between attempts, never after the last:
+                    # ``essais`` attempts means ``essais - 1`` waits.
+                    if classification.retry_after is not None:
+                        pause = min(
+                            classification.retry_after, _MAX_RETRY_AFTER)
+                    else:
+                        pause = _RETRY_BACKOFF_S[
+                            min(tentative, len(_RETRY_BACKOFF_S) - 1)
+                        ]
+                    self.sleep(pause)
+        raise RuntimeError(f"The API is not responding ({derniere})")
 
 
 class Source(ABC):
@@ -337,7 +377,7 @@ class Source(ABC):
         """Resolve group identifiers into folder names.
 
         Default implementation: return ``connus`` as-is — no additional
-        grouping. Sources that expose a ``galerie`` sort mode (see
+        grouping. Sources that expose a ``gallery`` sort mode (see
         :attr:`sort_modes`) override this to query the missing titles.
 
         Args:
@@ -346,7 +386,7 @@ class Source(ABC):
 
         Returns:
             A ``{key -> cleaned title}`` table, ready to be passed to
-            :meth:`Glaneur.engine.core.Engine.dossier_pour`.
+            :meth:`Glaneur.engine.core.Engine.folder_for`.
         """
         return dict(connus or {})
 

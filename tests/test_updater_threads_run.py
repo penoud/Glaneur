@@ -54,8 +54,8 @@ def qapp():
 # --------------------------------------------------------------------------- #
 
 
-class TestVerificationRun:
-    def test_disponible_emis_si_release_plus_recente(self, qapp):
+class TestCheckRun:
+    def test_available_emitted_when_release_is_newer(self, qapp):
         release = Release(Version.parse("v999.0.0"), "v999.0.0", assets=())
         provider = MagicMock()
         provider.check.return_value = UpdateInfo(Version.parse("1.0.0"), release)
@@ -73,7 +73,7 @@ class TestVerificationRun:
         assert recu_aucune.args == []
         assert recu_err.args == []
 
-    def test_aucune_maj_emis_si_deja_a_jour(self, qapp):
+    def test_no_update_emitted_when_up_to_date(self, qapp):
         provider = MagicMock()
         provider.check.return_value = UpdateInfo(Version.parse("1.0.0"), None)
 
@@ -88,7 +88,7 @@ class TestVerificationRun:
         assert recu_aucune.args[0][0].is_available is False
         assert recu_dispo.args == []
 
-    def test_erreur_emise_si_exception(self, qapp):
+    def test_error_emitted_on_exception(self, qapp):
         provider = MagicMock()
         provider.check.side_effect = RuntimeError("boom")
 
@@ -101,7 +101,7 @@ class TestVerificationRun:
         assert len(recu.args) == 1
         assert "boom" in recu.args[0][0]
 
-    def test_provider_par_defaut_utilise_github(self, qapp):
+    def test_default_provider_uses_github(self, qapp):
         # Not exercising a network call: only verifying that omitting
         # `provider` picks the `GitHubReleaseProvider` default.
         thread = UpdateCheck()
@@ -142,8 +142,8 @@ def _mock_download_pair(monkeypatch, installer_path: Path, checksum_path: Path,
     )
 
 
-class TestTelechargementRun:
-    def test_termine_emis_apres_verification_ok(
+class TestDownloadRun:
+    def test_finished_emitted_after_verification_ok(
         self, qapp, fausse_release, tmp_path, monkeypatch,
     ):
         installer_path = tmp_path / "installer.exe"
@@ -166,7 +166,7 @@ class TestTelechargementRun:
         assert installer_path.exists()
         assert recu_err.args == []
 
-    def test_supprime_fichier_si_sha256_faux(
+    def test_deletes_file_on_wrong_sha256(
         self, qapp, fausse_release, tmp_path, monkeypatch,
     ):
         installer_path = tmp_path / "installer.exe"
@@ -189,7 +189,7 @@ class TestTelechargementRun:
         assert not installer_path.exists()
         assert recu_termine.args == []
 
-    def test_erreur_si_installateur_manquant(self, qapp):
+    def test_error_when_installer_missing(self, qapp):
         release_vide = Release(Version.parse("2.0.0"), "v2.0.0", assets=())
         thread = UpdateDownload(release_vide)
         recu = _Recepteur()
@@ -201,7 +201,7 @@ class TestTelechargementRun:
         message = recu.args[0][0]
         assert "Installateur" in message or "checksum" in message
 
-    def test_erreur_si_checksum_manquant(self, qapp):
+    def test_error_when_checksum_missing(self, qapp):
         # Installer is present, but its `.sha256` sibling is not.
         installer = ReleaseAsset(
             "Glaneur-2.0.0-setup.exe", "https://x/i.exe", 42,
@@ -216,7 +216,7 @@ class TestTelechargementRun:
         assert len(recu.args) == 1
         assert "checksum" in recu.args[0][0].lower() or "Installateur" in recu.args[0][0]
 
-    def test_erreur_si_download_echoue(
+    def test_error_when_download_fails(
         self, qapp, fausse_release, tmp_path, monkeypatch,
     ):
         # `download` raises: the thread must translate it into an

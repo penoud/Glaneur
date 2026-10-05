@@ -3,8 +3,8 @@
 Sits on the UI side of boundary 1 so the scheduler itself stays Qt-free.
 lupdate only extracts ``QCoreApplication.translate("Ctx", "src")`` calls
 with literals: we inline rather than aliasing (see ``bug_report.py``).
-The ``"Planificateur"`` context is kept so the existing ``.ts`` entries
-remain matched.
+Context is ``"Scheduler"`` — the previous FR name ``"Planificateur"``
+was renamed by US-EN-07 in lockstep with the sourcelanguage flip.
 """
 
 from __future__ import annotations
@@ -28,33 +28,33 @@ def next_run_text(scheduler: Scheduler) -> str:
         scheduler: The scheduler whose state is rendered.
 
     Returns:
-        A translated text (context ``"Planificateur"``).
+        A translated text (context ``"Scheduler"``).
     """
     config = scheduler.config
     if not config.interval_hours:
-        return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
+        return QCoreApplication.translate("Scheduler", "Automatic update disabled")
     prochaine = scheduler.next_run()
     if prochaine is None:
-        return QCoreApplication.translate("Planificateur", "Mise à jour automatique désactivée")
+        return QCoreApplication.translate("Scheduler", "Automatic update disabled")
     reste = prochaine - datetime.now()
     if reste.total_seconds() <= 0:
-        return QCoreApplication.translate("Planificateur", "Prochaine mise à jour : imminente")
+        return QCoreApplication.translate("Scheduler", "Next update: imminent")
     heures, secondes = divmod(int(reste.total_seconds()), 3600)
     minutes = secondes // 60
     if heures >= 24:
         jours, heures = divmod(heures, 24)
         delai = QCoreApplication.translate(
-            "Planificateur", "{jours} j {heures} h").format(jours=jours, heures=heures)
+            "Scheduler", "{days} d {hours} h").format(days=jours, hours=heures)
     elif heures:
         delai = QCoreApplication.translate(
-            "Planificateur", "{heures} h {minutes:02d} min").format(heures=heures, minutes=minutes)
+            "Scheduler", "{hours} h {minutes:02d} min").format(hours=heures, minutes=minutes)
     else:
         delai = QCoreApplication.translate(
-            "Planificateur", "{minutes} min").format(minutes=minutes)
+            "Scheduler", "{minutes} min").format(minutes=minutes)
     if scheduler.defer_active():
         return QCoreApplication.translate(
-            "Planificateur", "Reprise reportée dans {delai} ({date})").format(
-            delai=delai, date=f"{prochaine:%d/%m à %H:%M}")
+            "Scheduler", "Resume deferred, in {delay} ({date})").format(
+            delay=delai, date=f"{prochaine:%d/%m at %H:%M}")
     return QCoreApplication.translate(
-        "Planificateur", "Prochaine mise à jour dans {delai} ({date})").format(
-        delai=delai, date=f"{prochaine:%d/%m à %H:%M}")
+        "Scheduler", "Next update in {delay} ({date})").format(
+        delay=delai, date=f"{prochaine:%d/%m at %H:%M}")

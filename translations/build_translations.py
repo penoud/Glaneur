@@ -62,7 +62,7 @@ def update() -> None:
         _run([
             lupdate,
             *[str(s) for s in SOURCES if s.is_file()],
-            "-source-language", "fr",
+            "-source-language", "en",
             "-target-language", langue,
             "-ts", str(cible),
         ])

@@ -28,6 +28,7 @@ from ._constants import SIZE_SUFFIX, UA
 from .cache_path import cache_path
 from .core import Engine
 from .delete_image import delete_image
+from .events import EngineEvent, render_en
 from .format_bytes import format_bytes
 from .list_deleted import list_deleted
 from .manifest_path import manifest_path
@@ -44,6 +45,7 @@ __all__ = [
     "SIZE_SUFFIX",
     "UA",
     "Engine",
+    "EngineEvent",
     "Interrupted",
     "Options",
     "RunResult",
@@ -55,6 +57,7 @@ __all__ = [
     "manifest_path",
     "read_cache",
     "read_manifest",
+    "render_en",
     "restore",
     "write_cache",
     "write_manifest",

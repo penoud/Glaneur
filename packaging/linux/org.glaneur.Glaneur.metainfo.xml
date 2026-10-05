@@ -2,15 +2,15 @@
 <component type="desktop-application">
   <id>org.glaneur.Glaneur</id>
   <name>Glaneur</name>
-  <summary>Synchronise les images d'un site WordPress</summary>
+  <summary>Sync images from a WordPress or Djangoplicity site</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-or-later</project_license>
   <description>
-    <p>Application de bureau pour synchroniser les images d'une médiathèque WordPress compatible avec son API REST.</p>
+    <p>Desktop application to synchronise images from a remote media library — WordPress via its REST API, or a Djangoplicity site such as ESO, ESA/Hubble or ESA/Webb.</p>
   </description>
-  <!-- Doit correspondre au nom sous lequel le .desktop est INSTALLÉ dans
-       /app/share/applications, pas au nom source — le manifeste Flatpak le
-       renomme en <app-id>.desktop conformément à la convention. -->
+  <!-- Must match the name under which the .desktop file is INSTALLED in
+       /app/share/applications, not the source name — the Flatpak manifest
+       renames it to <app-id>.desktop per the convention. -->
   <launchable type="desktop-id">org.glaneur.Glaneur.desktop</launchable>
   <url type="homepage">https://github.com/penoud/Glaneur</url>
   <url type="bugtracker">https://github.com/penoud/Glaneur/issues</url>

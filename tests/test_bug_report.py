@@ -17,7 +17,7 @@ from Glaneur.bug_report import (
 # --------------------------------------------------------------------------- #
 
 class TestBuildIssueUrl:
-    def test_construit_url_de_base(self):
+    def test_builds_the_base_url(self):
         url = build_issue_url("penoud", "Glaneur", "titre", "corps")
         parsed = urlparse(url)
         assert parsed.scheme == "https"
@@ -27,7 +27,7 @@ class TestBuildIssueUrl:
         assert q["title"] == ["titre"]
         assert q["body"] == ["corps"]
 
-    def test_encode_caracteres_speciaux(self):
+    def test_special_characters_are_encoded(self):
         url = build_issue_url("o", "r", "É&é ?", "```\nlog\n```")
         parsed = urlparse(url)
         q = parse_qs(parsed.query)
@@ -38,7 +38,7 @@ class TestBuildIssueUrl:
         assert "%26" in parsed.query   # & encoded
         assert "%3F" in parsed.query   # ? encoded
 
-    def test_ne_tronque_jamais_le_body(self):
+    def test_never_truncates_the_body(self):
         # Silent truncation has been removed: the caller must warn the
         # user via is_url_too_long() rather than lose content.
         body = "x" * 20000
@@ -52,11 +52,11 @@ class TestBuildIssueUrl:
 # --------------------------------------------------------------------------- #
 
 class TestIsUrlTooLong:
-    def test_url_courte_ok(self):
+    def test_short_url_is_ok(self):
         url = build_issue_url("o", "r", "t", "petit corps")
         assert is_url_too_long(url) is False
 
-    def test_url_longue_detectee(self):
+    def test_long_url_is_detected(self):
         # 20 000 raw chars + accents/backslashes inflate the encoded URL
         # well beyond MAX_URL_LENGTH.
         body = ("Chemin C:\\Users\\Denis\\AppData é à ù\n" * 500)
@@ -64,7 +64,7 @@ class TestIsUrlTooLong:
         assert len(url) > MAX_URL_LENGTH
         assert is_url_too_long(url) is True
 
-    def test_seuil_personnalisable(self):
+    def test_threshold_is_configurable(self):
         url = build_issue_url("o", "r", "t", "x" * 200)
         assert is_url_too_long(url, max_length=100) is True
         assert is_url_too_long(url, max_length=10_000) is False
@@ -75,18 +75,18 @@ class TestIsUrlTooLong:
 # --------------------------------------------------------------------------- #
 
 class TestCollectContext:
-    def test_inclut_version_platforme_python(self):
+    def test_includes_version_platform_python(self):
         ctx = collect_context("1.2.3")
-        assert "**Version** : 1.2.3" in ctx
-        assert "**Plateforme**" in ctx
+        assert "**Version**: 1.2.3" in ctx
+        assert "**Platform**" in ctx
         assert "**Python**" in ctx
 
-    def test_sans_log_omet_section_log(self):
+    def test_without_log_omits_log_section(self):
         ctx = collect_context("1.2.3", chemin_log=None)
-        assert "log" not in ctx.lower() or "Dernières lignes" not in ctx
-        assert "Dernières lignes de log" not in ctx
+        assert "log" not in ctx.lower() or "Last log lines" not in ctx
+        assert "Last log lines" not in ctx
 
-    def test_avec_log_inclut_les_dernieres_lignes(self, tmp_path):
+    def test_with_log_includes_the_last_lines(self, tmp_path):
         chemin = tmp_path / "app.log"
         chemin.write_text("\n".join(f"ligne{i}" for i in range(100)) + "\n")
         ctx = collect_context("1.2.3", chemin_log=chemin, nb_lignes=5)
@@ -94,12 +94,12 @@ class TestCollectContext:
         assert "ligne95" in ctx
         assert "ligne94" not in ctx   # below the 5-line window
 
-    def test_log_inaccessible_omet_section(self, tmp_path):
+    def test_inaccessible_log_omits_section(self, tmp_path):
         # missing file -> section omitted without raising
         ctx = collect_context("1.2.3", chemin_log=tmp_path / "absent.log")
-        assert "Dernières lignes de log" not in ctx
+        assert "Last log lines" not in ctx
 
-    def test_log_est_compacte(self, tmp_path):
+    def test_log_is_compacted(self, tmp_path):
         # The real user log (logger prefix + Windows paths + ms-precision
         # timestamps) must be compacted before being included in the body.
         # Two different dates disable the date-in-header output so we can
@@ -119,7 +119,7 @@ class TestCollectContext:
         assert "2026-" not in ctx     # year dropped at the line start
         assert "09-21 15:03:04" in ctx
 
-    def test_log_meme_jour_note_la_date_dans_len_tete(self, tmp_path):
+    def test_same_day_log_notes_the_date_in_the_header(self, tmp_path):
         # All lines on the same day -> date in the header, HH:MM:SS
         # only in the lines themselves.
         chemin = tmp_path / "app.log"
@@ -128,7 +128,7 @@ class TestCollectContext:
             "2026-09-21 15:03:05,000 INFO Glaneur.foo: b\n"
         )
         ctx = collect_context("1.2.3", chemin_log=chemin, nb_lignes=10)
-        assert "date : 2026-09-21" in ctx
+        assert "date: 2026-09-21" in ctx
         assert "09-21 15:03:04" not in ctx   # date also stripped from the lines
         assert "15:03:04 INFO foo: a" in ctx
 
@@ -138,7 +138,7 @@ class TestCollectContext:
 # --------------------------------------------------------------------------- #
 
 class TestCompactLine:
-    def test_strip_prefixe_logger_uniquement_apres_le_niveau(self):
+    def test_strips_logger_prefix_only_after_the_level(self):
         # The prefix is stripped after INFO/WARN/… but NOT when it appears
         # inside a message (e.g., GitHub repo, path, etc.).
         line = (
@@ -149,17 +149,17 @@ class TestCompactLine:
         assert "INFO updater.foo:" in out
         assert "penoud/Glaneur.git" in out  # untouched
 
-    def test_strip_millisecondes(self):
+    def test_strips_milliseconds(self):
         out = _compact_line("2026-09-21 15:03:04,949 INFO foo: bar")
         assert ",949" not in out
         assert "15:03:04" in out
 
-    def test_strip_annee(self):
+    def test_strips_year(self):
         out = _compact_line("2026-09-21 15:03:04,949 INFO foo: bar")
         assert not out.startswith("2026-")
         assert out.startswith("09-21 15:03:04")
 
-    def test_chemins_windows_remplaces_par_placeholders(self):
+    def test_windows_paths_replaced_by_placeholders(self):
         line = (
             "INFO x: "
             r"a=C:\Users\Denis\AppData\Local\Temp\z "

@@ -61,14 +61,14 @@ def _session_with_chunks(chunks, *, status_ok: bool = True):
 
 
 class TestDownloadOk:
-    def test_ecrit_les_chunks_dans_le_fichier(self, tmp_path):
+    def test_writes_chunks_to_file(self, tmp_path):
         session, _ = _session_with_chunks([b"AAAA", b"BBBB", b"CCCC"])
         asset = _asset()
         result = download(asset, tmp_path, session=session)
         assert result == tmp_path / asset.name
         assert result.read_bytes() == b"AAAABBBBCCCC"
 
-    def test_ignore_les_chunks_vides(self, tmp_path):
+    def test_ignores_empty_chunks(self, tmp_path):
         # iter_content yields empty bytes to keep the connection alive;
         # they must not be written to disk (they would still be a no-op,
         # but the code branch is explicit).
@@ -76,7 +76,7 @@ class TestDownloadOk:
         result = download(_asset(), tmp_path, session=session)
         assert result.read_bytes() == b"XY"
 
-    def test_cree_le_repertoire_de_destination(self, tmp_path):
+    def test_creates_destination_directory(self, tmp_path):
         session, _ = _session_with_chunks([b"data"])
         cible = tmp_path / "n1" / "n2"
         assert not cible.exists()
@@ -84,7 +84,7 @@ class TestDownloadOk:
         assert result.exists()
         assert result.parent == cible
 
-    def test_utilise_la_session_fournie(self, tmp_path):
+    def test_uses_provided_session(self, tmp_path):
         session, _ = _session_with_chunks([b"data"])
         asset = _asset()
         download(asset, tmp_path, session=session)
@@ -94,7 +94,7 @@ class TestDownloadOk:
         assert args[0] == asset.download_url
         assert kwargs.get("stream") is True
 
-    def test_cree_une_session_par_defaut(self, tmp_path, monkeypatch):
+    def test_creates_default_session(self, tmp_path, monkeypatch):
         session, _ = _session_with_chunks([b"data"])
         appel = {"n": 0}
 
@@ -117,8 +117,8 @@ class TestDownloadOk:
 # --------------------------------------------------------------------------- #
 
 
-class TestDownloadErreurs:
-    def test_erreur_reseau_leve_downloaderror_et_nettoie(self, tmp_path):
+class TestDownloadErrors:
+    def test_network_error_raises_downloaderror_and_cleans_up(self, tmp_path):
         session = MagicMock()
         session.get.side_effect = requests.ConnectionError("boum")
         asset = _asset()
@@ -127,7 +127,7 @@ class TestDownloadErreurs:
         # No partial file left behind.
         assert not (tmp_path / asset.name).exists()
 
-    def test_erreur_http_leve_downloaderror(self, tmp_path):
+    def test_http_error_raises_downloaderror(self, tmp_path):
         session, _ = _session_with_chunks([b"partiel"], status_ok=False)
         asset = _asset()
         with pytest.raises(DownloadError):
@@ -136,7 +136,7 @@ class TestDownloadErreurs:
         # not leak — the destination has to be cleaned up.
         assert not (tmp_path / asset.name).exists()
 
-    def test_erreur_disque_leve_downloaderror(self, tmp_path, monkeypatch):
+    def test_disk_error_raises_downloaderror(self, tmp_path, monkeypatch):
         session, _ = _session_with_chunks([b"data"])
         # Force `Path.open` to raise an OSError on write.
         orig_open = Path.open
@@ -150,7 +150,7 @@ class TestDownloadErreurs:
         with pytest.raises(DownloadError):
             download(_asset(), tmp_path, session=session)
 
-    def test_fichier_vide_leve_downloaderror_et_nettoie(self, tmp_path):
+    def test_empty_file_raises_downloaderror_and_cleans_up(self, tmp_path):
         # An empty iter_content produces a zero-byte file: `download`
         # must reject and clean it up.
         session, _ = _session_with_chunks([])
@@ -166,7 +166,7 @@ class TestDownloadErreurs:
 
 
 class TestTemporaryDirectory:
-    def test_retourne_un_dossier_existant_avec_le_prefixe(self):
+    def test_returns_existing_folder_with_prefix(self):
         d = temporary_directory()
         try:
             assert d.is_dir()
@@ -176,7 +176,7 @@ class TestTemporaryDirectory:
             # cleanup: `temporary_directory` deliberately does not.
             d.rmdir()
 
-    def test_creations_multiples_sont_distinctes(self):
+    def test_multiple_creations_are_distinct(self):
         a = temporary_directory()
         b = temporary_directory()
         try:

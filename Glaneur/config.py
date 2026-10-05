@@ -3,6 +3,21 @@
 The file lives in ``%APPDATA%\\Glaneur\\config.json`` on Windows and in
 ``~/.config/glaneur/`` elsewhere. It is written atomically so that it
 never gets truncated if the application is killed.
+
+Schema versioning
+-----------------
+
+`Glaneur.config` writes JSON in the **v2 schema** described in
+``docs/design/evolution-multi-sources.md`` §3.1: a top-level
+application block, a ``defaults`` block, and a ``profiles`` list
+containing one entry today. Older files (no ``schema_version`` key,
+or ``schema_version < 2``) are read as v1 and, on the next call to
+:meth:`Config.save`, migrated in place — the pre-migration bytes are
+copied to ``config.v1.json`` for rollback.
+
+At runtime :class:`Config` stays flat: every attribute callers rely on
+(``cfg.site``, ``cfg.min_width``, ``cfg.last_run``, ...) is preserved.
+The v2 shape only affects the load/save I/O boundary.
 """
 
 from __future__ import annotations
@@ -10,12 +25,116 @@ from __future__ import annotations
 import json
 import os
 import sys
+import uuid
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 APP_NAME = "Glaneur"
 GITHUB_OWNER = "penoud"
 GITHUB_REPOSITORY = "Glaneur"
+
+#: Version of the on-disk configuration schema. Incremented on
+#: incompatible format changes; on load, an older or missing value
+#: triggers a one-way migration.
+SCHEMA_VERSION = 2
+
+#: Config fields that live under the ``defaults`` block in v2 and can
+#: be overridden per-profile with ``None`` meaning "inherit".
+_DEFAULT_FIELDS: tuple[str, ...] = (
+    "min_width",
+    "verify_integrity",
+)
+
+#: Config fields that live inside a profile in v2 as its run state
+#: (per-profile scheduler bookkeeping). Not overridable by defaults.
+_PROFILE_STATE_FIELDS: tuple[str, ...] = (
+    "last_run",
+    "retry_after",
+    "backoff_level",
+)
+
+
+#: Fields kept on a serialised profile dict. Order matches
+#: :meth:`Config._to_v2_dict`'s emission so extra profiles round-trip
+#: byte-for-byte.
+_PROFILE_DICT_KEYS: tuple[str, ...] = (
+    "id", "name",
+    "source_type", "site", "image_format", "target_dir", "sort_mode",
+    *_PROFILE_STATE_FIELDS,
+    *_DEFAULT_FIELDS,
+)
+
+
+def _profile_from_dict(entry: dict) -> Profile:
+    """Build a :class:`Profile` from a v2 ``profiles[i]`` dict.
+
+    Applies the same legacy sort_mode alias as the default profile
+    (US-EN-04 one-way migration). Missing keys stay at the dataclass
+    defaults, so a partial entry — a hand-edited config or a future
+    Glaneur that has extra fields we do not yet know about — loads
+    without crashing. Unknown keys are ignored.
+    """
+    fields_par_nom = {f.name for f in fields(Profile)}
+    kw = {k: v for k, v in entry.items() if k in fields_par_nom}
+    profile = Profile(**kw)
+    if profile.sort_mode in _LEGACY_SORT_MODE_ALIASES:
+        profile.sort_mode = _LEGACY_SORT_MODE_ALIASES[profile.sort_mode]
+    return profile
+
+
+def _profile_to_dict(profile: Profile) -> dict:
+    """Serialise a :class:`Profile` in the on-disk key order.
+
+    Complements :func:`_profile_from_dict` — the order matches
+    :meth:`Config._to_v2_dict`'s emission of the default profile so a
+    v2 file with N profiles is byte-stable across a load-save cycle.
+    """
+    return {cle: getattr(profile, cle) for cle in _PROFILE_DICT_KEYS}
+
+
+def _resolve(override, defaults: dict, key: str, fallback):
+    """Return the effective value of ``key`` under the None-inheritance rule.
+
+    Semantic (roadmap §5.1, evolution-multi-sources.md §3.2): a profile
+    field set to ``None`` inherits the default; a default is never
+    copied into a profile. Applied to a single lookup:
+
+    1. If ``override`` is not ``None``, return it — the profile's own
+       explicit value wins.
+    2. Otherwise return ``defaults[key]`` when present.
+    3. Otherwise return ``fallback`` — the class-level default from
+       :class:`Config`, used when the config file is missing the
+       ``defaults`` block or the specific key inside it.
+    """
+    if override is not None:
+        return override
+    if key in defaults:
+        return defaults[key]
+    return fallback
+
+
+def _current_schema_version(chemin: Path) -> int | None:
+    """Return the schema version currently on disk at ``chemin``.
+
+    Reads the file, extracts its ``schema_version`` field, and returns
+    the integer value. A file without that field is treated as v1. The
+    return value is ``None`` when the file is missing, unreadable, or
+    holds JSON whose top level is not a mapping — the caller then
+    treats it as "no on-disk state to consider".
+    """
+    if not chemin.exists():
+        return None
+    try:
+        with open(chemin, encoding="utf-8") as f:
+            brut = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(brut, dict):
+        return None
+    version = brut.get("schema_version")
+    if isinstance(version, int):
+        return version
+    return 1   # v1 shape: no schema_version key
 
 # intervals offered in the UI: label -> hours (0 = manual)
 INTERVALS: dict[str, int] = {
@@ -28,9 +147,9 @@ INTERVALS: dict[str, int] = {
 
 # sort modes offered in the UI: label -> stored value
 SORT_MODES: dict[str, str] = {
-    "Par galerie": "galerie",
+    "Par galerie": "gallery",
     "Par date": "date",
-    "Tout dans un dossier": "plat",
+    "Tout dans un dossier": "flat",
 }
 
 # supported site types: label -> key of the `sources.SOURCES` registry
@@ -45,6 +164,83 @@ DJANGOPLICITY_FORMATS: dict[str, str] = {
     "Original (TIFF, très lourd)": "Original",
     "Écran (1280 px)": "Small",
 }
+
+#: `Config` fields that belong to a sync **profile** rather than to the
+#: application. Drives the "Site" tab of :class:`DialoguePreferences`
+#: today, and the v1 → v2 migration described in
+#: ``docs/design/evolution-multi-sources.md`` §3.1: on migration, these
+#: fields move from the top-level `Config` into a `Profile` entry, while
+#: every other field stays at the application level.
+#:
+#: Order matters — the migration writes profile keys in this order, and
+#: the "Site" tab lays them out top-to-bottom.
+PROFILE_FIELDS: tuple[str, ...] = (
+    "source_type",
+    "site",
+    "image_format",
+    "target_dir",
+    "sort_mode",
+    "min_width",
+    "verify_integrity",
+)
+
+
+@dataclass
+class Profile:
+    """One sync job: a site, a source type, a target directory.
+
+    Represents a single entry of the v2 ``profiles`` list. Today
+    :class:`Config` still holds a single implicit profile flat on
+    itself and this class is not instantiated at runtime; it will be
+    used when E3 part B promotes each profile field into a real
+    per-profile object.
+
+    Fields documented inline with ``#:`` to avoid the Sphinx
+    autodoc/Napoleon duplication (same pattern as :class:`Config`).
+    """
+
+    #: Stable ``uuid4().hex`` — the scheduler state and the log key
+    #: point here, never at the display name.
+    id: str = ""
+    #: Human-readable display name shown in the profile table.
+    name: str = ""
+    source_type: str = "wordpress"
+    site: str = ""
+    target_dir: str = ""
+    image_format: str = "Large"
+    sort_mode: str = "gallery"
+    #: Overrides — ``None`` means "inherit from ``Config.defaults``".
+    min_width: int | None = None
+    verify_integrity: bool | None = None
+    #: Scheduler state, per profile (roadmap §5.1).
+    last_run: str = ""
+    retry_after: str = ""
+    backoff_level: int = 0
+
+    # -- None-inheritance resolvers ---------------------------------------
+
+    def effective_min_width(self, defaults: dict) -> int:
+        """Return the effective ``min_width`` for this profile.
+
+        Applies the None-inheritance rule (:func:`_resolve`): the
+        profile's own ``min_width`` wins when non-null, otherwise the
+        value from ``defaults``, otherwise the :class:`Config`
+        class-level default (``800``).
+
+        Args:
+            defaults: The ``defaults`` block of the v2 config, or any
+                dict-like exposing ``"min_width"``.
+        """
+        return _resolve(self.min_width, defaults, "min_width", 800)
+
+    def effective_verify_integrity(self, defaults: dict) -> bool:
+        """Return the effective ``verify_integrity`` for this profile.
+
+        Same rule as :meth:`effective_min_width`; class-level default
+        is ``False``.
+        """
+        return _resolve(self.verify_integrity, defaults,
+                        "verify_integrity", False)
 
 
 def config_dir() -> Path:
@@ -158,6 +354,15 @@ _LEGACY_FIELD_ALIASES: dict[str, str] = {
     "langue": "language",
 }
 
+# Legacy sort_mode value aliases: a config.json written before US-EN-04
+# stored "galerie"/"plat" as the sort_mode value. Translate on load so
+# users do not lose their chosen sort mode; the next Config.save
+# rewrites the file with the English value.
+_LEGACY_SORT_MODE_ALIASES: dict[str, str] = {
+    "galerie": "gallery",
+    "plat": "flat",
+}
+
 
 @dataclass
 class Config:
@@ -178,8 +383,8 @@ class Config:
     interval_hours: int = 24
     #: Skips images narrower than this (in pixels).
     min_width: int = 800
-    #: ``galerie``, ``date`` or ``plat``.
-    sort_mode: str = "galerie"
+    #: ``gallery``, ``date`` or ``flat``.
+    sort_mode: str = "gallery"
     #: Key of the ``Glaneur.sources.SOURCES`` registry.
     source_type: str = "wordpress"
     #: Used by Djangoplicity; values in ``DJANGOPLICITY_FORMATS``.
@@ -211,14 +416,39 @@ class Config:
     check_updates_on_start: bool = True
     #: Language code (``fr``, ``en``, ...). Empty = system locale.
     language: str = ""
+    #: Anchor of the scheduler grid, ``HH:MM`` (local naive time).
+    #: Introduced with v2 (roadmap §5.1). Seeded from ``last_run`` on
+    #: migration to keep today's rhythm; empty means "start at
+    #: midnight".
+    schedule_anchor: str = ""
 
     _path: Path | None = field(default=None, repr=False, compare=False)
+    #: Stable ``uuid4().hex`` of the single implicit profile. Seeded
+    #: on v1 → v2 migration or on the first save without a prior load;
+    #: never serialised at the top level (it appears as
+    #: ``profiles[0].id`` in v2).
+    _profile_id: str = field(default="", repr=False, compare=False)
+    #: Additional profiles beyond the single implicit default. Empty
+    #: today; populated once the UI or CLI adds a second profile.
+    #: Persisted after :meth:`default_profile` in the v2 ``profiles``
+    #: list (roadmap §5.1). Excluded from :func:`dataclasses.asdict`
+    #: via the ``_`` prefix, same as :attr:`_path` and
+    #: :attr:`_profile_id`.
+    _extra_profiles: list[Profile] = field(default_factory=list,
+                                           repr=False, compare=False)
 
     # -- load / save ------------------------------------------------------- #
 
     @classmethod
     def load(cls, chemin: Path | None = None) -> Config:
         """Load the config from ``chemin`` or fall back to default values.
+
+        Accepts both the v1 flat layout and the v2 layered layout
+        (``schema_version`` + ``defaults`` + ``profiles``). A v1 file
+        is read into the flat :class:`Config` as before; the on-disk
+        migration to v2 happens on the next call to :meth:`save`,
+        where the pre-migration bytes are copied to
+        ``config.v1.json`` for rollback.
 
         Missing or unknown keys are ignored, and an unreadable file
         (invalid JSON, OS error) is treated as an absent config: we
@@ -240,35 +470,330 @@ class Config:
             try:
                 with open(chemin, encoding="utf-8") as f:
                     brut = json.load(f)
-                connus = {f.name for f in fields(cls) if not f.name.startswith("_")}
-                for cle, valeur in brut.items():
-                    # Translate legacy FR keys to their EN name so a
-                    # config.json written before batch 4b keeps loading.
-                    cle = _LEGACY_FIELD_ALIASES.get(cle, cle)
-                    if cle in connus:
-                        setattr(cfg, cle, valeur)
-            except (json.JSONDecodeError, OSError, TypeError):
+                if isinstance(brut, dict):
+                    version = brut.get("schema_version")
+                    if version == SCHEMA_VERSION:
+                        cfg._load_v2(brut)
+                    elif not isinstance(version, int) or version < SCHEMA_VERSION:
+                        # No `schema_version` field, or a version we
+                        # know about — read as v1.
+                        cfg._load_v1(brut)
+                    # else: version > SCHEMA_VERSION (a file from a
+                    # future Glaneur). Do not misread it as v1 — that
+                    # would silently drop every future-only field. Fall
+                    # back to defaults; ``save()`` refuses to overwrite
+                    # the file so the future version is preserved.
+            except (AttributeError, json.JSONDecodeError, OSError,
+                    TypeError, ValueError):
                 pass  # unreadable config: fall back to default values
         if not cfg.target_dir:
             cfg.target_dir = str(default_images_dir())
         cfg.validate()
+        # Every Config that reaches the runtime has a stable profile id;
+        # first-time save carries it into ``profiles[0].id`` on disk.
+        if not cfg._profile_id:
+            cfg._profile_id = uuid.uuid4().hex
         return cfg
 
+    def _load_v1(self, brut: dict) -> None:
+        """Populate this instance from a v1 flat dict.
+
+        Applies :data:`_LEGACY_FIELD_ALIASES` on keys and
+        :data:`_LEGACY_SORT_MODE_ALIASES` on the sort_mode value so
+        pre-US-EN-04/US-EN-05 files still load without loss.
+
+        Seeds ``schedule_anchor`` from the current ``last_run``'s
+        time-of-day so the scheduler grid (roadmap §5.1) keeps today's
+        rhythm: the first slot after migration lands at the same hour
+        of the day as the user has been used to. When ``last_run`` is
+        empty, the anchor stays empty (the caller then treats it as
+        midnight).
+        """
+        connus = {f.name for f in fields(type(self)) if not f.name.startswith("_")}
+        for cle, valeur in brut.items():
+            cle = _LEGACY_FIELD_ALIASES.get(cle, cle)
+            if cle in connus:
+                setattr(self, cle, valeur)
+        if self.sort_mode in _LEGACY_SORT_MODE_ALIASES:
+            self.sort_mode = _LEGACY_SORT_MODE_ALIASES[self.sort_mode]
+        if not self.schedule_anchor and self.last_run:
+            # last_run is an ISO 8601 timestamp — extract HH:MM.
+            candidate = self.last_run[:16].split("T")[-1]
+            if len(candidate) == 5 and candidate[2] == ":":
+                self.schedule_anchor = candidate
+
+    def _load_v2(self, brut: dict) -> None:
+        """Populate this instance from a v2 layered dict.
+
+        Layout: application keys at the top level, inheritable settings
+        under ``defaults``, per-profile state under ``profiles[0]``.
+        A profile-level override of ``None`` inherits from ``defaults``.
+        Only the first profile is read today; multi-profile support
+        arrives with E3 part B.
+
+        Tolerant to malformed nesting: a ``defaults`` value that is not
+        a dict, or a ``profiles[0]`` entry that is not a dict, is
+        skipped rather than crashing the load — the outer
+        :meth:`load` treats a corrupt config as absent and falls back
+        to default values.
+        """
+        connus = {f.name for f in fields(type(self)) if not f.name.startswith("_")}
+        # -- Top-level (application) keys ---------------------------------
+        for cle in ("language", "interval_hours", "schedule_anchor",
+                    "request_delay", "run_at_startup", "close_to_tray",
+                    "notifications", "check_updates_on_start",
+                    "slideshow_dir"):
+            if cle in brut and cle in connus:
+                setattr(self, cle, brut[cle])
+        # -- Defaults block (inheritable settings) ------------------------
+        defaults = brut.get("defaults")
+        if isinstance(defaults, dict):
+            for cle in _DEFAULT_FIELDS:
+                if cle in defaults and cle in connus:
+                    setattr(self, cle, defaults[cle])
+        # -- profiles[0] --------------------------------------------------
+        profiles = brut.get("profiles")
+        if isinstance(profiles, list) and profiles:
+            first = profiles[0]
+            if not isinstance(first, dict):
+                return
+            self._profile_id = str(first.get("id") or "")
+            for cle in ("source_type", "site", "target_dir", "image_format",
+                        "sort_mode", *_PROFILE_STATE_FIELDS):
+                if cle in first and cle in connus:
+                    setattr(self, cle, first[cle])
+            # Overrides: profile-level `null` means "inherit"; a real
+            # value wins over the defaults value.
+            for cle in _DEFAULT_FIELDS:
+                valeur = first.get(cle)
+                if valeur is not None and cle in connus:
+                    setattr(self, cle, valeur)
+            if self.sort_mode in _LEGACY_SORT_MODE_ALIASES:
+                self.sort_mode = _LEGACY_SORT_MODE_ALIASES[self.sort_mode]
+            # -- profiles[1..] --------------------------------------------
+            # Additional profiles round-trip through _extra_profiles.
+            # Nothing consumes them at runtime yet (E3 part B step 4+).
+            self._extra_profiles = [
+                _profile_from_dict(entry)
+                for entry in profiles[1:]
+                if isinstance(entry, dict)
+            ]
+
     def save(self) -> None:
-        """Write the config to disk atomically.
+        """Write the config to disk atomically, in the v2 shape.
 
         Uses the path stored by :meth:`load` if any, otherwise
-        ``<config_dir()>/config.json``. Private fields (prefixed
-        with ``_``) are not serialised.
+        ``<config_dir()>/config.json``. If the current on-disk file is
+        in an older shape (v1, or a future schema we know about), its
+        bytes are copied to ``config.v<n>.json`` (n = the current
+        file's version, ``1`` if none) before the v2 file replaces it.
+        The backup is never overwritten if it already exists.
+
+        Refuses to touch a file whose ``schema_version`` is greater
+        than :data:`SCHEMA_VERSION` — that would silently drop every
+        field the future version added. A downgrade run must delete
+        the file by hand before the older Glaneur can rewrite it.
+
+        Private fields (prefixed with ``_``) are not serialised at the
+        top level; ``_profile_id`` appears inside ``profiles[0]`` as
+        its ``id`` field.
         """
         chemin = self._path or (config_dir() / "config.json")
         chemin.parent.mkdir(parents=True, exist_ok=True)
-        donnees = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
+        current_version = _current_schema_version(chemin)
+        if current_version is not None and current_version > SCHEMA_VERSION:
+            # Future format on disk — do not overwrite.
+            self._path = chemin
+            return
+        self._snapshot_older(chemin, current_version)
+        if not self._profile_id:
+            self._profile_id = uuid.uuid4().hex
+        donnees = self._to_v2_dict()
         tmp = chemin.with_suffix(".json.tmp")
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(donnees, f, ensure_ascii=False, indent=2)
         tmp.replace(chemin)
         self._path = chemin
+
+    def _to_v2_dict(self) -> dict:
+        """Serialise the current state as the v2 on-disk layout.
+
+        The single implicit profile is emitted first with its
+        overrides set to ``None`` (the effective value flows through
+        ``defaults``); any extra profiles in :attr:`_extra_profiles`
+        are emitted in order after it, verbatim. Every entry keeps
+        the ``id`` / ``name`` / per-profile keys the loader expects
+        so a round-trip is byte-stable.
+        """
+        flat = {k: v for k, v in asdict(self).items() if not k.startswith("_")}
+        # Split into three buckets: profile, defaults, top-level.
+        defaults = {cle: flat.pop(cle) for cle in _DEFAULT_FIELDS}
+        profile: dict = {"id": self._profile_id, "name": "default"}
+        for cle in ("source_type", "site", "image_format", "target_dir",
+                    "sort_mode", *_PROFILE_STATE_FIELDS):
+            profile[cle] = flat.pop(cle)
+        # Overrides null: the effective value lives in `defaults`.
+        for cle in _DEFAULT_FIELDS:
+            profile[cle] = None
+        profile_dicts = [profile]
+        profile_dicts.extend(_profile_to_dict(p) for p in self._extra_profiles)
+        return {
+            "schema_version": SCHEMA_VERSION,
+            **flat,
+            "defaults": defaults,
+            "profiles": profile_dicts,
+        }
+
+    # -- Forward-compat helpers: profile builders --------------------------
+
+    def default_profile(self) -> Profile:
+        """Return a :class:`Profile` reflecting the single implicit profile.
+
+        Today :class:`Config` stores per-profile state flat on itself;
+        this method reconstructs the equivalent :class:`Profile` on
+        demand so callers can migrate to
+        ``cfg.default_profile().effective_min_width(cfg.defaults())``
+        before E3 part B step 2 flips storage to a real
+        ``list[Profile]``.
+
+        Overrides are ``None`` so the effective value flows through the
+        ``defaults`` block, matching what :meth:`save` writes.
+        """
+        return Profile(
+            id=self._profile_id,
+            name="default",
+            source_type=self.source_type,
+            site=self.site,
+            target_dir=self.target_dir,
+            image_format=self.image_format,
+            sort_mode=self.sort_mode,
+            min_width=None,
+            verify_integrity=None,
+            last_run=self.last_run,
+            retry_after=self.retry_after,
+            backoff_level=self.backoff_level,
+        )
+
+    def defaults(self) -> dict:
+        """Return the inheritable settings block as a fresh dict.
+
+        Matches the ``defaults`` key emitted by :meth:`save`. Callers
+        pair this with :meth:`default_profile` to invoke the resolvers
+        (:meth:`Profile.effective_min_width`,
+        :meth:`Profile.effective_verify_integrity`).
+        """
+        return {cle: getattr(self, cle) for cle in _DEFAULT_FIELDS}
+
+    def profiles(self) -> list[Profile]:
+        """Return the complete list of profiles: default first, then extras.
+
+        A fresh :class:`Profile` is built for the default entry (see
+        :meth:`default_profile`); the extra profiles are the actual
+        objects stored on :attr:`_extra_profiles`. The list order is
+        the on-disk order — index ``0`` is the default profile, ``1..``
+        are the extras.
+
+        This is the shape a future multi-profile UI or CLI walks over;
+        today no runtime caller iterates it (the engine still runs the
+        default profile only).
+        """
+        return [self.default_profile(), *self._extra_profiles]
+
+    def add_profile(self, name: str, **overrides) -> Profile:
+        """Append a new extra profile with a fresh ``uuid4().hex`` and return it.
+
+        Keyword overrides are set on the new :class:`Profile`; anything
+        not supplied stays at the Profile dataclass defaults. The new
+        profile is added to :attr:`_extra_profiles` in append order —
+        the on-disk position is stable across save/load.
+
+        Args:
+            name: Display name for the ``Status`` column of the profile
+                list. Not required to be unique — the ``id`` is what
+                the scheduler keys off (roadmap §5.1).
+            **overrides: Any :class:`Profile` field to seed on the new
+                entry, for example ``source_type="djangoplicity"``.
+
+        Returns:
+            The newly-created :class:`Profile`, already appended.
+
+        Raises:
+            TypeError: If an override names a field the :class:`Profile`
+                dataclass does not have.
+        """
+        fields_par_nom = {f.name for f in fields(Profile)}
+        unknown = set(overrides) - fields_par_nom
+        if unknown:
+            raise TypeError(
+                f"Profile has no field(s): {sorted(unknown)!r}")
+        overrides.setdefault("id", uuid.uuid4().hex)
+        overrides.setdefault("name", name)
+        profile = Profile(**overrides)
+        self._extra_profiles.append(profile)
+        return profile
+
+    def remove_profile(self, ident: str) -> bool:
+        """Remove the extra profile whose ``id`` matches ``ident``.
+
+        Refuses to remove the default profile — :meth:`default_profile`
+        is the anchor of the flat runtime state and cannot disappear
+        without a promotion. Callers wanting to change the default
+        profile do it through the Preferences dialog on the flat
+        fields, not through this method.
+
+        Args:
+            ident: The ``Profile.id`` of the entry to remove.
+
+        Returns:
+            ``True`` if an extra profile was found and removed,
+            ``False`` if no extra profile has this id (or if the id
+            matches the default profile, which is refused).
+        """
+        if ident == self._profile_id:
+            # The default profile is the anchor of the flat runtime
+            # state; removal is refused.
+            return False
+        for i, profile in enumerate(self._extra_profiles):
+            if profile.id == ident:
+                del self._extra_profiles[i]
+                return True
+        return False
+
+    def _snapshot_older(self, chemin: Path, current_version: int | None) -> None:
+        """Copy an older on-disk config to ``config.v<n>.json`` before overwriting.
+
+        Called only when the current file exists and its schema version
+        is strictly older than :data:`SCHEMA_VERSION`. The snapshot goes
+        through a ``.tmp`` sidecar and an atomic rename so a crash mid-
+        backup cannot leave a truncated snapshot in place. Idempotent:
+        if the target snapshot already exists, no snapshot is written —
+        the older backup is the source of truth.
+
+        Args:
+            chemin: Path of the live config file.
+            current_version: The schema version currently on disk, as
+                returned by :func:`_current_schema_version`. ``None``
+                means the file is missing or unreadable (nothing to
+                snapshot).
+        """
+        if current_version is None or current_version >= SCHEMA_VERSION:
+            return
+        backup = chemin.with_name(f"{chemin.stem}.v{current_version}.json")
+        if backup.exists():
+            return
+        # Atomic backup: bytes → tmp → rename. A partial write cannot
+        # leave a truncated backup because the rename is atomic and the
+        # tmp file is removed on failure.
+        tmp = backup.with_suffix(".json.tmp")
+        try:
+            tmp.write_bytes(chemin.read_bytes())
+            tmp.replace(backup)
+        except OSError:
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
+            # Snapshot failed — best-effort; the migration continues.
 
     # -- guardrails --------------------------------------------------------- #
 
@@ -286,7 +811,7 @@ class Config:
             self.interval_hours = 24
         self.min_width = max(0, min(int(self.min_width), 10000))
         if self.sort_mode not in SORT_MODES.values():
-            self.sort_mode = "galerie"
+            self.sort_mode = "gallery"
         if self.source_type not in SOURCE_TYPES.values():
             self.source_type = "wordpress"
         if self.image_format not in DJANGOPLICITY_FORMATS.values():

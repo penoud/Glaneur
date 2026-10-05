@@ -1,4 +1,4 @@
-"""Restore entries marked ``supprime``."""
+"""Restore entries marked ``deleted``."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .write_manifest import write_manifest
 def restore(dossier: Path, ids: Iterable) -> int:
     """Clear the delete mark so these images re-enter the queue.
 
-    The ``restaure`` mark stays in place until the next successful
+    The ``restored`` mark stays in place until the next successful
     download, so that a network failure does not immediately reclassify
     the image as "deleted".
 
@@ -29,10 +29,10 @@ def restore(dossier: Path, ids: Iterable) -> int:
         retablies = 0
         for ident in ids:
             etat = manifeste.get(str(ident))
-            if etat and etat.pop("supprime", None):
+            if etat and etat.pop("deleted", None):
                 # the mark only clears on a successful download, which rewrites
                 # the entry: a network failure will not reclassify the image as "deleted"
-                etat["restaure"] = True
+                etat["restored"] = True
                 retablies += 1
         if retablies:
             write_manifest(dossier, manifeste)

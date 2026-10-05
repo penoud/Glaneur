@@ -1,4 +1,4 @@
-"""Disk delete + manifest mark of a downloaded image."""
+"""Disk delete + manifest mark (``deleted``) of a downloaded image."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .write_manifest import write_manifest
 
 
 def delete_image(dossier: Path, fichier: Path) -> bool:
-    """Delete ``fichier`` from disk and set the ``supprime`` mark in the manifest.
+    """Delete ``fichier`` from disk and set the ``deleted`` mark in the manifest.
 
     Without this mark, the next update would see the image missing and
     re-download it: deleting on disk alone is not enough.
@@ -57,7 +57,7 @@ def delete_image(dossier: Path, fichier: Path) -> bool:
         manifeste = read_manifest(dossier)
         ident_trouve: str | None = None
         for ident, etat in manifeste.items():
-            stocke = etat.get("fichier")
+            stocke = etat.get("filename")
             if not stocke:
                 continue
             if os.path.normcase(str(stocke).replace("\\", "/")) == aiguille:
@@ -73,7 +73,7 @@ def delete_image(dossier: Path, fichier: Path) -> bool:
 
         if ident_trouve is not None:
             entree = manifeste[ident_trouve]
-            entree["supprime"] = datetime.now().isoformat(timespec="seconds")
-            entree.pop("restaure", None)
+            entree["deleted"] = datetime.now().isoformat(timespec="seconds")
+            entree.pop("restored", None)
             write_manifest(dossier, manifeste)
     return True

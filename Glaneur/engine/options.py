@@ -18,9 +18,9 @@ class Options:
     target_dir: Path
     #: Source site origin (for example ``https://example.com``).
     site: str = "https://example.com"
-    #: ``galerie`` (by parent title), ``date`` (by month) or ``plat``
+    #: ``gallery`` (by parent title), ``date`` (by month) or ``flat``
     #: (everything at the same level).
-    sort_mode: str = "galerie"
+    sort_mode: str = "gallery"
     #: Skips resources narrower than this, in pixels.
     min_width: int = 800
     #: Floor of the pause between two network requests, in seconds.

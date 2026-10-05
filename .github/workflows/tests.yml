@@ -40,7 +40,24 @@ jobs:
         # `Glaneur.i18n.installer_traducteur` ne peut pas charger le
         # vrai fichier. Même logique que dans `build.yml`.
         run: python translations/build_translations.py release
+      # Coverage is measured on Linux only: config_dir() has
+      # OS-specific branches whose reachability flips between Linux and
+      # Windows, so a shared floor would be either loose or falsely red.
+      # Windows still runs the full suite (next step) to catch OS-specific
+      # regressions; the ratchet lives on Linux where the measurement is
+      # stable.
+      - name: Run tests with coverage
+        if: runner.os == 'Linux'
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q --cov=Glaneur --cov-branch
+
       - name: Run tests
+        if: runner.os == 'Windows'
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
+
+      - name: Check per-module coverage floors
+        if: runner.os == 'Linux'
+        run: python tools/check_coverage.py

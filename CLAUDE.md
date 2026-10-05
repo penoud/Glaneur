@@ -1,205 +1,227 @@
 # CLAUDE.md — Glaneur
 
-Ce fichier est volontairement minimal pour l'instant : seules les sections
-nécessaires au fonctionnement multi-agent sont posées. Les frontières, le
-tableau d'invariants et les conventions seront rédigés dans un lot dédié.
+This file is deliberately minimal for now: only the sections needed for
+multi-agent work are in place. Boundaries, the invariants table, and the
+conventions will be written in a dedicated story.
 
-## Écarts connus entre ce document et le code
+## Known gaps between this document and the code
 
-Ce document décrit l'état visé. Tant qu'un écart figure ici, il n'est ni corrigé
-hors de son lot, ni signalé comme régression, sauf s'il s'aggrave.
+This document describes the target state. As long as a gap is listed
+here it is neither fixed outside its story nor reported as a regression,
+unless it gets worse.
 
-- `Glaneur/engine/core.py` importe `QCoreApplication` (PySide6) pour traduire
-  ses messages. La frontière 1 sera tenue quand le moteur émettra des événements
-  structurés. Suivi par `xfail(strict=True)` dans `tests/test_boundaries.py`.
-  Les autres submodules de `Glaneur/engine/` sont indépendants de Qt.
-- La surface publique Python est passée en anglais lors du sprint
-  « Identifiants FR → EN » (2026-09-27) : classes, méthodes, fonctions,
-  constantes et champs `Config` (avec shim de compat FR → EN à la
-  lecture de `config.json`). Restent volontairement FR :
-  - **Clés du manifeste** (`taille`, `fichier`, `etag`, `modifie`,
-    `url`, `extra`, `supprime`, `restaure`) : persistées sur disque.
-    Un renommage exigerait un shim de manifest-read, à faire dans un
-    lot dédié.
-  - **Champs de la dataclass `Element`** (`nom_fichier`, `mois`,
-    `largeur`, `taille`, `groupe`). `Element` n'est pas sérialisé
-    directement — c'est le manifeste hardcoded ci-dessus qui l'est —
-    donc le renommage n'est pas bloqué par la persistance mais il
-    cascade largement (sources, `Engine.dossier_pour`, tests) : lot
-    séparé.
-  - **CLI flags** (`--dossier`, `--classement`, `--delai`, `--verifier`,
-    `--depuis`, `--jusqua`, `--restaurer`, `--pas-cache`) et leurs
-    attributs `argparse` (`args.dossier`, `args.classement`, etc.) :
-    user-facing.
-  - **Valeurs de dispatch** (`"transitoire"`, `"coupure"`, `"definitif"`,
-    `"galerie"`, `"date"`, `"plat"`, `"wordpress"`, `"djangoplicity"`,
-    `"Large"`, `"Small"`, `"Original"`, marques `"supprime"` /
-    `"restaure"`, statuts d'engine `"ok"` / `"repris"` / `"inchangé"` /
-    `"introuvable"`) : chaînes stockées ou affichées, changement =
-    rupture UI ou format.
-  - **Contextes Qt de traduction** (`"Moteur"`, `"Planificateur"`,
-    `"Updater"`, `"BugReport"`) et strings sources FR dans les
-    `.translate()` — leur modification invaliderait les `.qm`
-    livrés.
-  - **Chaînes sources `.ts`** (`sourcelanguage="fr"`) : lot i18n séparé,
-    exige une passe de retraduction (`glaneur_fr.ts` deviendrait cible).
-  - **Attribut `Transport.arret` + paramètre `arret` d'`Engine.__init__`**
-    (event de coupure coopérative) : cascade sur toute l'API des
-    callbacks, différée.
-  - **`Engine._pause`** et **`Engine.dossier_pour`** : méthodes internes
-    du moteur laissées FR par cohérence avec `Element.groupe`/`mois`.
-  - Docstrings et noms de fichiers Python en anglais depuis le lot
-    « nettoyage et docstrings-en » (2026-09-26).
-- Le README décrit encore la signature par `WINDOWS_PFX_BASE64`, obsolète (lot 9).
-- Les métadonnées AppStream de `packaging/linux/` décrivent encore une
-  application WordPress seule : en attente avec Linux.
+- The README still describes the `WINDOWS_PFX_BASE64` signing flow,
+  which is obsolete (story 9).
+- The README stays deliberately dual French/English by sprint decision;
+  this is the only intentional French text left in the project.
 
-Mets cette liste à jour quand un lot résorbe un écart ou que tu en découvres un.
+Update this list whenever a story resolves a gap or you discover a new
+one.
 
-## Travail multi-agent
+## Multi-source invariants
 
-- La conversation principale cadre, implémente et décide. Elle ne délègue pas
-  l'écriture du code de production.
-- Sous-agents : `test-author` (tests seulement), `test-runner` (exécution et
-  résumé), `invariant-reviewer` (relecture, lecture seule), `server-prober`
-  (serveurs réels, sur demande). La suite complète et la couverture passent par
-  `test-runner` ; un test isolé peut se lancer directement.
-- Un seul rédacteur à la fois sur le code de production. Deux lots indépendants
-  en parallèle se font dans deux sessions distinctes, chacune dans son worktree
-  et sa branche.
-- Jamais de push, de tag ni de modification de `__version__` : `main` publie.
-  Des hooks le bloquent. Ne les contourne pas (autre shell, autre syntaxe) :
-  signale le blocage.
-- Un sous-agent ne voit pas cette conversation. Le message de délégation donne
-  le périmètre, les fichiers et les invariants en jeu.
+These come from ``docs/design/evolution-multi-sources.md`` §5 and
+``docs/design/roadmap.md``. The first four already have code and
+tests behind them and are documented here so a caller does not
+accidentally break them; the rest sit ahead of us on the roadmap
+and are noted so a future change is designed against them from the
+start rather than after the fact.
 
-## Politique de contexte minimal
+**Currently enforced**
 
-Chaque agent travaille avec le plus petit périmètre de fichiers permettant de
-répondre correctement à la tâche.
+- **None-inheritance rule.** A profile field set to ``None``
+  inherits the value from the ``defaults`` block; a default is
+  **never** copied into a profile. Implemented on
+  :meth:`Glaneur.config.Profile.effective_min_width` and
+  :meth:`Profile.effective_verify_integrity`; every caller of a
+  per-profile field goes through
+  :meth:`Glaneur.config.Config.default_profile` +
+  :meth:`Glaneur.config.Config.defaults`. Test:
+  ``tests/test_config.py::TestProfileInheritance``.
+- **v1 → v2 config migration is one-way.**
+  :meth:`Config.save` writes only v2; :meth:`Config.load` reads
+  both, and a v1 read triggers an atomic ``config.v<n>.json``
+  snapshot on next save. A schema newer than
+  :data:`Glaneur.config.SCHEMA_VERSION` is refused rather than
+  misread as v1. Tests: ``tests/test_config.py::TestSchemaVersion``.
+- **The Config runtime API is stable across the shape change.**
+  ``cfg.site``, ``cfg.min_width``, ``cfg.last_run`` etc. keep
+  returning the effective value regardless of whether Config
+  stores its state flat (today) or as a real ``list[Profile]``
+  (E3 part B step 2). Every caller migrated onto
+  :meth:`default_profile` must keep working verbatim.
+- **Djangoplicity ``Next`` URL stays on the configured origin.**
+  A ``Next`` link whose scheme or netloc differs from the base is
+  refused with a ``RuntimeError``. Tests:
+  ``tests/test_source_djangoplicity.py::TestNextOriginCheck``.
 
-- Ne jamais analyser tout le dépôt par défaut.
-- Commencer par le diff et les fichiers explicitement concernés.
-- Ne rechercher des dépendances supplémentaires que lorsqu'une dépendance
-  réelle est découverte.
-- Ne pas relire un fichier déjà analysé dans la même tâche sans raison.
-- Les recherches `Glob` et `Grep` doivent être ciblées.
-- Ne pas explorer les répertoires hors périmètre simplement pour comprendre
-  « tout le projet ».
-- Une modification locale ne déclenche pas une analyse globale.
-- Une modification de documentation ne déclenche pas une analyse du code.
-- Une modification d'un test ne déclenche pas automatiquement une analyse
-  de toute la production.
-- Les tests sont ciblés avant d'envisager la suite complète.
-- Une vérification coûteuse doit être justifiée par l'impact du changement.
-- Lorsqu'un fichier supplémentaire est nécessaire, identifier brièvement le
-  lien entre ce fichier et le changement avant de poursuivre.
-- Une exploration terminée ne doit pas être recommencée par un autre agent :
-  son résultat doit être transmis via l'Impact Map ou le message de délégation.
+**Ahead on the roadmap (respect if your change touches the area)**
+
+- **The cache fingerprint includes the source type, the site AND
+  the filter fingerprint.** Otherwise loosening a filter never
+  recovers old images. (Arrives with lot 11.2.)
+- **Changing a filter or a size setting moves, replaces or
+  deletes no file.** Same rule as the sort mode. (Filters:
+  lot 11.2. Resize: lot 11.5.)
+- **``remote_missing_since`` only applies to entries that meet
+  the current filter.** A filter is not a server-side deletion.
+  (Lot 6 introduces the mark; lot 11.2 introduces the filter.)
+- **Only the "Reapply to folder" action replaces an existing
+  file.** The new version is validated and in the manifest
+  **before** the old one is deleted — the only engine-initiated
+  deletion. (Lot 11.6.)
+- **Header reading goes through the ``Transport`` and reads at
+  most 64 KiB.** Delay floor and server load. (Lot 11.2.)
+- **A profile is never restarted automatically less than I/2
+  after its last run.** Adding, removing or reordering profiles
+  must not cause a double run. (Lot 5.2.)
+
+## Multi-agent work
+
+- The main conversation frames, implements, and decides. It does not
+  delegate the writing of production code.
+- Sub-agents: `test-author` (tests only), `test-runner` (execution and
+  summary), `invariant-reviewer` (review, read-only), `server-prober`
+  (real servers, on demand). The full suite and coverage go through
+  `test-runner`; an isolated test can be launched directly.
+- Only one writer at a time on production code. Two independent
+  stories run in parallel in two separate sessions, each in its own
+  worktree and branch.
+- Never push, never tag, never modify `__version__`: `main` publishes.
+  Hooks block this. Do not work around them (another shell, other
+  syntax): report the block.
+- A sub-agent does not see this conversation. The delegation message
+  provides the scope, the files, and the invariants at play.
+
+## Minimal context policy
+
+Each agent works with the smallest set of files that lets it correctly
+answer the task.
+
+- Never analyse the whole repository by default.
+- Start from the diff and the files explicitly named.
+- Only look for extra dependencies once a real dependency has been
+  found.
+- Do not re-read a file already analysed in the same task without a
+  reason.
+- `Glob` and `Grep` searches must be targeted.
+- Do not explore directories outside the scope just to understand
+  "the whole project".
+- A local change does not trigger a global analysis.
+- A documentation change does not trigger a code analysis.
+- A test change does not automatically trigger an analysis of the
+  entire production code.
+- Tests are targeted before considering the full suite.
+- An expensive check must be justified by the impact of the change.
+- When an extra file is needed, briefly identify the link between that
+  file and the change before continuing.
+- A finished exploration must not be redone by another agent: its
+  result must be passed on via the Impact Map or the delegation
+  message.
 
 ## Impact Map
 
-Chaque lot comportant une modification de code doit disposer d'une Impact Map.
-Le fichier `.claude/state/impact-map.md` en fournit le gabarit ; il est
-temporaire, remis à zéro entre deux lots, et ne contient que ce qui est
-nécessaire à la tâche courante.
+Every story that changes code must come with an Impact Map. The file
+`.claude/state/impact-map.md` provides the template; it is temporary,
+reset between two stories, and contains only what the current task
+needs.
 
-L'Impact Map :
+The Impact Map:
 
-- définit le périmètre de travail ;
-- distingue les fichiers directement modifiés des dépendances ;
-- identifie les tests concernés ;
-- indique explicitement ce qui est hors périmètre ;
-- identifie les invariants réellement concernés ;
-- détermine le niveau de validation nécessaire.
+- defines the working scope;
+- distinguishes directly modified files from dependencies;
+- identifies the tests concerned;
+- states explicitly what is out of scope;
+- identifies the invariants actually concerned;
+- determines the required validation level.
 
-Les sous-agents reçoivent cette information dans leur délégation.
+Sub-agents receive this information in their delegation.
 
-Un sous-agent ne doit pas reconstruire une Impact Map déjà disponible.
+A sub-agent must not rebuild an Impact Map already available.
 
-Si un agent découvre une nouvelle dépendance réelle, il peut proposer son ajout
-à l'Impact Map et expliquer pourquoi elle est nécessaire.
+If an agent discovers a new real dependency it may propose adding it
+to the Impact Map and explain why it is needed.
 
-Une simple possibilité théorique ne suffit pas à élargir le périmètre.
+A mere theoretical possibility is not enough to widen the scope.
 
-## Validation conditionnelle
+## Conditional validation
 
-La présence d'un outil dans le workflow ne signifie pas qu'il doit être lancé
-à chaque changement.
+The presence of a tool in the workflow does not mean it must be run on
+every change.
 
-Le niveau de validation est déterminé par l'Impact Map (`local`, `module`,
+The validation level is set by the Impact Map (`local`, `module`,
 `subsystem`, `full`).
 
-| Type de changement                       | Vérifications                                                                    |
-| ---------------------------------------- | -------------------------------------------------------------------------------- |
-| Test seul                                | tests concernés + ruff ciblé                                                     |
-| Python local                             | tests concernés + ruff ciblé                                                     |
-| Une source (`Glaneur/sources/…`)         | tests de la source + tests de contrat concernés + ruff ciblé + `invariant-reviewer` si frontière/invariant touché |
-| Engine, scheduler, `config.py`           | tests concernés + ruff ciblé + `invariant-reviewer`                              |
-| API publique ou format persistant        | tests concernés + suite complète + couverture + `invariant-reviewer`             |
-| Packaging                                | tests concernés + validation packaging + `invariant-reviewer`                    |
-| Documentation Sphinx (`docs/sphinx/**`)  | `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` (installer d'abord `requirements-doc.txt`) |
-| Docstrings d'un module Python            | `sphinx-build -W` en plus des vérifications habituelles du type de changement    |
-| Transversal                              | pytest complet + couverture + ruff complet + Sphinx + `invariant-reviewer`       |
+| Change type                              | Checks                                                                             |
+| ---------------------------------------- | ---------------------------------------------------------------------------------- |
+| Test only                                | tests concerned + targeted ruff                                                    |
+| Local Python                             | tests concerned + targeted ruff                                                    |
+| A source (`Glaneur/sources/…`)           | source's tests + relevant contract tests + targeted ruff + `invariant-reviewer` if a boundary or invariant is touched |
+| Engine, scheduler, `config.py`           | tests concerned + targeted ruff + `invariant-reviewer`                             |
+| Public API or persisted format           | tests concerned + full suite + coverage + `invariant-reviewer`                     |
+| Packaging                                | tests concerned + packaging validation + `invariant-reviewer`                      |
+| Sphinx documentation (`docs/sphinx/**`)  | `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` (install `requirements-doc.txt` first) |
+| Docstrings of a Python module            | `sphinx-build -W` on top of the usual checks for the change type                   |
+| Cross-cutting                            | full pytest + coverage + full ruff + Sphinx + `invariant-reviewer`                 |
 
-Une validation complète est réservée aux changements transversaux, aux
-changements d'API/format persistant et aux étapes explicitement prévues par
-le lot.
+A full validation is reserved for cross-cutting changes, changes to the
+public API or a persisted format, and steps explicitly planned by the
+story.
 
-Après une modification locale, ne pas lancer automatiquement la suite complète,
-la couverture complète ou Sphinx.
+After a local change, do not automatically run the full suite, full
+coverage, or Sphinx.
 
-## Docstrings et documentation API
+## Docstrings and API documentation
 
-La documentation API vit dans `docs/sphinx/`. Elle est générée par Sphinx
-avec `autodoc` + `napoleon` à partir des docstrings du code — la source
-de vérité est le code, pas des fichiers `.rst` maintenus à la main.
+API documentation lives in `docs/sphinx/`. It is generated by Sphinx
+with `autodoc` + `napoleon` from the code's docstrings — the source of
+truth is the code, not `.rst` files maintained by hand.
 
-- Style de docstring : **Napoleon (Google-style)**. Sections `Args:`,
-  `Returns:`, `Yields:`, `Raises:`, `Attributes:` quand elles s'appliquent.
-  Détail, exemple canonique et raison du choix dans
+- Docstring style: **Napoleon (Google-style)**. Sections `Args:`,
+  `Returns:`, `Yields:`, `Raises:`, `Attributes:` when they apply.
+  Details, canonical example, and rationale in
   `docs/sphinx/README.md`.
-- Champs de dataclass : documentés par commentaires `#:` inline, jamais
-  par une section `Attributes:` — sinon autodoc et Napoleon créent deux
-  entrées d'index pour le même champ et cassent `sphinx-build -W`.
-- Références internes qui ne résolvent pas via autodoc (constantes de
-  module, attributs d'instance, membres d'un autre paquet non documenté)
-  s'écrivent en double-backtick (```` ``foo`` ````), pas avec un rôle
-  Sphinx comme `:data:` ou `:attr:`.
-- Régénérer `docs/sphinx/api/*.rst` après un ajout, rename ou suppression
-  de module : `make -C docs/sphinx apidoc` (ou `make.bat` sous Windows).
-  Le post-traitement du Makefile retire les blocs « Module contents »
-  paquet qui produiraient des doublons.
-- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html` doit
-  rester vert. Un warning se traite avant le commit, pas après.
+- Dataclass fields: documented via inline `#:` comments, never in an
+  `Attributes:` section — otherwise autodoc and Napoleon create two
+  index entries for the same field and break `sphinx-build -W`.
+- Internal references that do not resolve through autodoc (module
+  constants, instance attributes, members of another undocumented
+  package) are written with double backticks (```` ``foo`` ````), not
+  with a Sphinx role like `:data:` or `:attr:`.
+- Regenerate `docs/sphinx/api/*.rst` after a module is added, renamed,
+  or removed: `make -C docs/sphinx apidoc` (or `make.bat` on Windows).
+  The Makefile's post-processing removes the "Module contents" blocks
+  that would produce duplicates at the package level.
+- `sphinx-build -W -n -b html docs/sphinx docs/sphinx/_build/html`
+  must stay green. A warning is handled before commit, not after.
 
-## Politique de délégation
+## Delegation policy
 
-Un agent est lancé uniquement lorsqu'il apporte une capacité distincte de
-celle de la conversation principale ou d'un autre agent.
+An agent is launched only when it brings a capability distinct from
+that of the main conversation or another agent.
 
-- Ne pas lancer plusieurs agents pour analyser le même problème.
-- Ne pas lancer un reviewer pour une modification triviale qui ne touche aucun
+- Do not launch several agents to analyse the same problem.
+- Do not launch a reviewer for a trivial change that touches no
   invariant.
-- Ne pas lancer `server-prober` si un test local suffit.
-- Ne pas lancer `test-runner` pour exécuter une commande unique triviale qui
-  peut être exécutée directement.
-- Ne pas lancer un agent uniquement pour déplacer du travail vers un autre
-  contexte.
-- Le parallélisme est réservé aux tâches réellement indépendantes.
+- Do not launch `server-prober` if a local test is enough.
+- Do not launch `test-runner` to execute a single trivial command that
+  can be run directly.
+- Do not launch an agent just to move work to another context.
+- Parallelism is reserved for genuinely independent tasks.
 
-### Politique de modèle
+### Model policy
 
-| Rôle                            | Modèle par défaut                              |
+| Role                            | Default model                                  |
 | ------------------------------- | ---------------------------------------------- |
-| Exploration ciblée              | modèle économique (par défaut de la session)   |
-| Exécution de tests              | Haiku (`test-runner`)                          |
-| Écriture de tests               | modèle hérité (`test-author`)                  |
-| Probe serveur                   | Sonnet (`server-prober`)                       |
-| Review standard                 | Sonnet (`invariant-reviewer`)                  |
-| Review d'architecture           | Opus, uniquement si l'Impact Map le justifie   |
+| Targeted exploration            | economical model (session default)             |
+| Test execution                  | Haiku (`test-runner`)                          |
+| Test writing                    | inherited model (`test-author`)                |
+| Server probe                    | Sonnet (`server-prober`)                       |
+| Standard review                 | Sonnet (`invariant-reviewer`)                  |
+| Architecture review             | Opus, only if the Impact Map justifies it      |
 
-Opus est réservé aux changements d'architecture, de persistance, de sécurité,
-de concurrence, de packaging complexe, ou explicitement désignés comme tels
-dans l'Impact Map. Il se demande à `invariant-reviewer` via le message de
-délégation (« review Opus »), sans créer un second reviewer.
+Opus is reserved for changes touching architecture, persistence,
+security, concurrency, complex packaging, or explicitly flagged as such
+in the Impact Map. Request it from `invariant-reviewer` via the
+delegation message ("review Opus"), without creating a second
+reviewer.

@@ -16,10 +16,22 @@ from __future__ import annotations
 import os
 import sys
 import threading
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
-from PySide6.QtCore import QSize, Qt, QThread, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QAbstractTableModel,
+    QCoreApplication,
+    QModelIndex,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
     QColor,
@@ -40,6 +52,7 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -52,6 +65,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSpinBox,
     QSystemTrayIcon,
+    QTableView,
+    QTabWidget,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -75,6 +90,7 @@ from Glaneur.config import (
 )
 from Glaneur.engine import (
     Engine,
+    EngineEvent,
     Options,
     RunResult,
     delete_image,
@@ -103,6 +119,264 @@ PERIODE_ECHEANCE = 30_000   # ms between two due-time checks
 PERIODE_AFFICHAGE = 1_000   # ms between two countdown refreshes
 
 DEPOT_URL = "https://github.com/penoud/Glaneur"
+
+
+# --------------------------------------------------------------------------- #
+# Engine event rendering
+# --------------------------------------------------------------------------- #
+
+def _render_ui(event: EngineEvent) -> str:
+    """Render a structured engine event for the UI (English source strings).
+
+    The context ``UiJournal`` is intentionally new: it isolates these
+    translations from the historical ``Moteur`` context (removed by
+    US-VERIF-04) so old ``.qm`` files never accidentally resolve stale
+    keys against the new codes.
+
+    Each ``translate()`` call passes literal context and source so that
+    ``lupdate`` can extract them; a dict lookup would be more compact but
+    would break the translation extractor.
+
+    Unknown codes fall back to ``"<code> <params>"`` — a missing entry
+    never silently drops information.
+    """
+    p = event.params
+    match event.code:
+        case "source-message":
+            # Source adapters still emit already-French free text; pass
+            # it through unchanged (their migration is a future US).
+            return str(p.get("text", ""))
+        case "manifest-unreadable":
+            return QCoreApplication.translate(
+                "UiJournal", "Manifest unreadable, full rebuild.")
+        case "already-known":
+            return QCoreApplication.translate(
+                "UiJournal", "{count} image(s) already known.").format(**p)
+        case "cache-since-date":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "Cache: only asking the API for media newer than {date}.",
+            ).format(**p)
+        case "discarded-below-min-width":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{count} thumbnail(s)/logo(s) discarded (below {min_width} px).",
+            ).format(**p)
+        case "nothing-matches":
+            return QCoreApplication.translate(
+                "UiJournal", "No image matches the criteria.")
+        case "known-and-todo":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{known} already up-to-date, {todo} to process.",
+            ).format(**p)
+        case "n-files-erased-locally":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{count} image(s) erased from disk, will not be re-downloaded.",
+            ).format(**p)
+        case "all-up-to-date":
+            return QCoreApplication.translate(
+                "UiJournal", "Everything is already up to date.")
+        case "identifying-galleries":
+            return QCoreApplication.translate(
+                "UiJournal", "Identifying galleries…")
+        case "file-not-found":
+            return QCoreApplication.translate(
+                "UiJournal", "{filename}: not found").format(**p)
+        case "file-failed":
+            return QCoreApplication.translate(
+                "UiJournal", "{filename}: {error}").format(**p)
+        case "n-new-images":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "{count} new image(s), {size} downloaded.",
+            ).format(**p)
+        case "interrupted":
+            return QCoreApplication.translate(
+                "UiJournal", "Interrupted — the resume will start here.")
+        case "runtime-error":
+            return QCoreApplication.translate(
+                "UiJournal", "Error: {error}").format(**p)
+        case "write-problem":
+            return QCoreApplication.translate(
+                "UiJournal", "Write problem: {error}").format(**p)
+        case "defer-with-time":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "Server unavailable or quota reached — resume after {until}.",
+            ).format(**p)
+        case "defer-no-time":
+            return QCoreApplication.translate(
+                "UiJournal",
+                "Server unavailable or quota reached — resume deferred.",
+            )
+        case _:
+            return f"{event.code} {dict(p)}"
+
+
+# --------------------------------------------------------------------------- #
+# Profile list (lot 5.0 E2)
+#
+# The main window's "Site / Folder" banner used to be two QLabels. It is
+# now a one-row QTableView fed by ``ProfileTableModel``. With a single
+# implicit profile, the user sees the same information laid out in a
+# table; the model is the shape lot 5.1 (multiple profiles) will
+# populate.
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class ProfileRow:
+    """One row of the profile list: what the user sees at a glance."""
+
+    name: str
+    source_type: str
+    site: str
+    folder: str
+    last_run: str
+    status: str
+
+
+def _profile_row_from(profile, status: str = "") -> ProfileRow:
+    """Build the display row for one :class:`Glaneur.config.Profile`.
+
+    Args:
+        profile: The profile to render.
+        status: The status string to show in the last column. Empty by
+            default so an idle app shows an em dash.
+
+    Returns:
+        A frozen :class:`ProfileRow`. Empty fields become an em dash so
+        the table looks intentional even before the user has entered
+        anything.
+    """
+    tiret = "—"
+    site = profile.site or ""
+    # Fall back to the display name when the site is empty — a profile
+    # can carry a name (e.g. "gallery-2") even before its URL is set.
+    nom = urlparse(site).netloc or site or profile.name or tiret
+    # Reverse lookup of the display label for the source type.
+    type_label = next(
+        (label for label, val in SOURCE_TYPES.items()
+         if val == profile.source_type),
+        profile.source_type or tiret,
+    )
+    # `last_run` is an ISO 8601 string with second precision; keep the
+    # minute for display and drop seconds/timezone.
+    dernier = (profile.last_run or "")[:16].replace("T", " ") or tiret
+    return ProfileRow(
+        name=nom,
+        source_type=type_label,
+        site=site or tiret,
+        folder=profile.target_dir or tiret,
+        last_run=dernier,
+        status=status or tiret,
+    )
+
+
+def _profile_row(cfg: Config, status: str = "") -> ProfileRow:
+    """Build the display row for the default (index 0) profile.
+
+    Thin forward-compat wrapper — most callers now go through
+    :func:`_profile_row_from` on the whole ``cfg.profiles()`` list.
+    """
+    return _profile_row_from(cfg.default_profile(), status)
+
+
+class ProfileTableModel(QAbstractTableModel):
+    """Read-only model for the profile list.
+
+    Six columns matching :class:`ProfileRow` (name, type, site, folder,
+    last run, status) and one row today. When lot 5.1 lands, the
+    single-row hardcoding is replaced by a real ``list[Profile]``.
+    """
+
+    #: Column order matches ``ProfileRow`` field order.
+    _COLONNES: tuple[str, ...] = (
+        "name", "source_type", "site", "folder", "last_run", "status",
+    )
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._rows: list[ProfileRow] = []
+
+    # -- Qt read API --------------------------------------------------------
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: B008
+        return 0 if parent.isValid() else len(self._rows)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:  # noqa: ARG002, B008
+        return len(self._COLONNES)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole):
+        if not index.isValid() or role != Qt.DisplayRole:
+            return None
+        if not 0 <= index.row() < len(self._rows):
+            return None
+        row = self._rows[index.row()]
+        return getattr(row, self._COLONNES[index.column()])
+
+    def headerData(self, section: int, orientation: Qt.Orientation,
+                   role: int = Qt.DisplayRole):
+        if role != Qt.DisplayRole or orientation != Qt.Horizontal:
+            return None
+        # Translation happens at display time via QCoreApplication so
+        # lupdate picks up the literals. Same "UiTable" context is used
+        # for every header of this model.
+        libelles = {
+            "name": QCoreApplication.translate("UiTable", "Name"),
+            "source_type": QCoreApplication.translate("UiTable", "Type"),
+            "site": QCoreApplication.translate("UiTable", "Site"),
+            "folder": QCoreApplication.translate("UiTable", "Folder"),
+            "last_run": QCoreApplication.translate("UiTable", "Last run"),
+            "status": QCoreApplication.translate("UiTable", "Status"),
+        }
+        return libelles.get(self._COLONNES[section])
+
+    # -- mutators -----------------------------------------------------------
+
+    def set_single_row(self, row: ProfileRow) -> None:
+        """Replace the (single) row with ``row``.
+
+        Emits ``layoutChanged`` when the row is added for the first
+        time; otherwise ``dataChanged`` across every column so the view
+        repaints in place.
+        """
+        self.set_rows([row])
+
+    def set_rows(self, rows: list[ProfileRow]) -> None:
+        """Replace the full list of rows with ``rows``.
+
+        Emits ``modelReset`` when the row count changes (a profile was
+        added or removed); otherwise ``dataChanged`` across every cell
+        so the view repaints in place. That distinction matters for
+        the ``QTableView`` — a reset scrolls to the top and drops the
+        selection, an in-place update does not.
+        """
+        if len(rows) != len(self._rows):
+            self.beginResetModel()
+            self._rows = list(rows)
+            self.endResetModel()
+            return
+        self._rows = list(rows)
+        if self._rows:
+            haut = self.index(0, 0)
+            bas = self.index(len(self._rows) - 1, self.columnCount() - 1)
+            self.dataChanged.emit(haut, bas, [Qt.DisplayRole])
+
+    def set_status(self, status: str, row: int = 0) -> None:
+        """Update the status column of ``row`` without rebuilding it.
+
+        Args:
+            status: Text to show in the ``Status`` column.
+            row: Row index to update. Defaults to 0 (the default
+                profile — the one the engine runs today).
+        """
+        if not 0 <= row < len(self._rows):
+            return
+        self._rows[row] = replace(self._rows[row], status=status)
+        cell = self.index(row, self.columnCount() - 1)
+        self.dataChanged.emit(cell, cell, [Qt.DisplayRole])
 
 
 # --------------------------------------------------------------------------- #
@@ -141,29 +415,33 @@ def icone_application() -> QIcon:
 class Travailleur(QThread):
     """Run the engine off the UI thread."""
 
-    journal = Signal(str)
+    #: Structured engine event to render in the journal widget. Emitted
+    #: with the raw :class:`EngineEvent` so the UI (main thread) is the
+    #: one that calls :func:`_render_ui`, i.e. Qt's translation stack is
+    #: only touched from the main thread.
+    journal_event = Signal(object)
     progres = Signal(int, int, str)
     fini = Signal(object)
 
-    def __init__(self, options: Options, arret: threading.Event) -> None:
+    def __init__(self, options: Options, stop_event: threading.Event) -> None:
         """Prepare the thread with its ``options`` and shared stop event.
 
         Args:
             options: Engine parameters (folder, site, filters, ...).
-            arret: ``threading.Event`` set from the UI to interrupt the
-                run cooperatively.
+            stop_event: ``threading.Event`` set from the UI to interrupt
+                the run cooperatively.
         """
         super().__init__()
         self.options = options
-        self.arret = arret
+        self.stop_event = stop_event
 
     def run(self) -> None:
         """Instantiate the engine and start the run; emit ``fini(RunResult)`` on exit."""
         moteur = Engine(
             self.options,
-            journal=self.journal.emit,
+            journal=self.journal_event.emit,
             progression=lambda fait, total, etq: self.progres.emit(fait, total, etq),
-            arret=self.arret,
+            stop_event=self.stop_event,
         )
         self.fini.emit(moteur.run())
 
@@ -184,27 +462,27 @@ class DialogueSupprimees(QDialog):
                 :func:`Glaneur.engine.list_deleted`.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Images supprimées"))
+        self.setWindowTitle(self.tr("Deleted images"))
         self.resize(540, 380)
         self.entrees = entrees
 
         colonne = QVBoxLayout(self)
         colonne.addWidget(QLabel(self.tr(
-            "Ces images ont été téléchargées puis effacées du dossier.\n"
-            "Cochez celles à retélécharger à la prochaine mise à jour.")))
+            "These images were downloaded then erased from the folder.\n"
+            "Tick the ones to re-download at the next update.")))
 
         self.liste = QListWidget()
         for e in entrees:
-            item = QListWidgetItem(self.tr("{fichier}    (effacée le {date})").format(
-                fichier=e.get("fichier", "?"),
-                date=e.get("supprime", "")[:10]))
+            item = QListWidgetItem(self.tr("{filename}    (deleted on {date})").format(
+                filename=e.get("filename", "?"),
+                date=e.get("deleted", "")[:10]))
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
             self.liste.addItem(item)
         colonne.addWidget(self.liste, 1)
 
         boutons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
-        boutons.addButton(self.tr("Tout cocher"), QDialogButtonBox.ActionRole).clicked.connect(
+        boutons.addButton(self.tr("Tick all"), QDialogButtonBox.ActionRole).clicked.connect(
             self._tout_cocher)
         boutons.accepted.connect(self.accept)
         boutons.rejected.connect(self.reject)
@@ -228,6 +506,128 @@ class DialogueSupprimees(QDialog):
 # Preferences dialog
 # --------------------------------------------------------------------------- #
 
+class DialogueProfilEdition(QDialog):
+    """Edit a single :class:`Glaneur.config.Profile` in isolation.
+
+    Kept intentionally small: only the fields that meaningfully differ
+    between profiles (name, source type, site, target dir, image
+    format, sort mode). The inheritable settings (``min_width``,
+    ``verify_integrity``) stay on the "Site" tab of
+    :class:`DialoguePreferences` — they are shared defaults, not
+    per-profile overrides in the current UX.
+
+    The dialog does not touch the caller's :class:`Profile` instance;
+    call :meth:`profile` after :meth:`exec` to get the edited copy.
+    """
+
+    def __init__(self, parent, profile) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(self.tr("Edit profile"))
+        self.setMinimumWidth(420)
+        self._source_profile = profile
+
+        col = QVBoxLayout(self)
+        col.setContentsMargins(14, 14, 14, 14)
+        col.setSpacing(10)
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignLeft)
+
+        self.champ_nom = QLineEdit(profile.name)
+        form.addRow(self.tr("Name:"), self.champ_nom)
+
+        self.combo_type = QComboBox()
+        self.combo_type.addItems(list(SOURCE_TYPES))
+        libelle_type = next(
+            (label for label, val in SOURCE_TYPES.items()
+             if val == profile.source_type),
+            next(iter(SOURCE_TYPES)),
+        )
+        self.combo_type.setCurrentText(libelle_type)
+        form.addRow(self.tr("Type:"), self.combo_type)
+
+        self.champ_site = QLineEdit(profile.site)
+        self.champ_site.setPlaceholderText(self.tr("https://example.com"))
+        form.addRow(self.tr("URL:"), self.champ_site)
+
+        self.combo_format = QComboBox()
+        self.combo_format.addItems(list(DJANGOPLICITY_FORMATS))
+        libelle_format = next(
+            (label for label, val in DJANGOPLICITY_FORMATS.items()
+             if val == profile.image_format),
+            next(iter(DJANGOPLICITY_FORMATS)),
+        )
+        self.combo_format.setCurrentText(libelle_format)
+        self.label_format = QLabel(self.tr("Format:"))
+        form.addRow(self.label_format, self.combo_format)
+
+        ligne_dest = QHBoxLayout()
+        self.champ_dossier = QLineEdit(profile.target_dir)
+        ligne_dest.addWidget(self.champ_dossier, 1)
+        bouton = QPushButton(self.tr("Browse…"))
+        bouton.clicked.connect(self._choisir_dossier)
+        ligne_dest.addWidget(bouton)
+        form.addRow(self.tr("Destination:"), ligne_dest)
+
+        self.combo_classement = QComboBox()
+        self.combo_classement.addItems(list(SORT_MODES))
+        libelle_classement = next(
+            (label for label, val in SORT_MODES.items()
+             if val == profile.sort_mode),
+            next(iter(SORT_MODES)),
+        )
+        self.combo_classement.setCurrentText(libelle_classement)
+        form.addRow(self.tr("Sort:"), self.combo_classement)
+
+        col.addLayout(form)
+
+        # Format visibility mirrors the "Site" tab: only for Djangoplicity.
+        self.combo_type.currentTextChanged.connect(self._sur_changement_type)
+        self._sur_changement_type(self.combo_type.currentText())
+
+        boutons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        col.addWidget(boutons)
+
+    def _choisir_dossier(self) -> None:
+        choix = QFileDialog.getExistingDirectory(
+            self, self.tr("Where to save the images?"),
+            self.champ_dossier.text() or str(Path.home()))
+        if choix:
+            self.champ_dossier.setText(choix)
+
+    def _sur_changement_type(self, libelle: str) -> None:
+        est_djangoplicity = (SOURCE_TYPES.get(libelle) == "djangoplicity")
+        for widget in (self.label_format, self.combo_format):
+            widget.setVisible(est_djangoplicity)
+
+    def profile(self):
+        """Return a fresh :class:`Profile` reflecting the edited values.
+
+        The source profile (passed in the constructor) is not mutated.
+        Non-editable fields (id, per-profile scheduler state, override
+        placeholders) are copied verbatim.
+        """
+        from dataclasses import replace as dc_replace
+        return dc_replace(
+            self._source_profile,
+            name=self.champ_nom.text().strip() or self._source_profile.name,
+            source_type=SOURCE_TYPES.get(
+                self.combo_type.currentText(),
+                self._source_profile.source_type),
+            site=self.champ_site.text().strip(),
+            target_dir=self.champ_dossier.text(),
+            image_format=DJANGOPLICITY_FORMATS.get(
+                self.combo_format.currentText(),
+                self._source_profile.image_format),
+            sort_mode=SORT_MODES.get(
+                self.combo_classement.currentText(),
+                self._source_profile.sort_mode),
+        )
+
+
 class DialoguePreferences(QDialog):
     """Edit the configuration. Values are only written to ``cfg`` when the
     user validates, through ``appliquer()``. Cancel = everything is discarded."""
@@ -241,7 +641,7 @@ class DialoguePreferences(QDialog):
                 only be modified on the call to :meth:`appliquer`.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Préférences"))
+        self.setWindowTitle(self.tr("Preferences"))
         self.setMinimumSize(560, 420)
         self.cfg = cfg
 
@@ -249,10 +649,115 @@ class DialoguePreferences(QDialog):
         colonne.setContentsMargins(14, 14, 14, 14)
         colonne.setSpacing(10)
 
-        # --- site ---------------------------------------------------------
-        boite = QGroupBox(self.tr("Site"))
-        forme_site = QFormLayout(boite)
-        forme_site.setLabelAlignment(Qt.AlignLeft)
+        # Tabbed layout, keyed off `Glaneur.config.PROFILE_FIELDS`. The
+        # "General" tab holds application-level preferences; the "Site"
+        # tab holds every field listed in PROFILE_FIELDS. "Filters" and
+        # "Images" are created hidden — they get their widgets in E5
+        # (lot 11.2) and E6 (lot 11.5). See design docs
+        # `evolution-multi-sources.md` §3.2 and `roadmap.md` §5.0.
+        # Pending mutations to `cfg._extra_profiles`, applied only if
+        # the user accepts the dialog. Cancel discards them.
+        self._pending_add_profiles: list = []
+        self._pending_remove_ids: set = set()
+        #: id → edited Profile replacement. Applied in :meth:`appliquer`.
+        self._pending_edits: dict = {}
+
+        self.onglets = QTabWidget(self)
+        self.onglets.addTab(self._build_general_tab(), self.tr("General"))
+        self.onglets.addTab(self._build_site_tab(), self.tr("Site"))
+        self.onglets.addTab(self._build_profiles_tab(), self.tr("Profiles"))
+        self._idx_filters = self.onglets.addTab(
+            self._build_filters_tab(), self.tr("Filters"))
+        self._idx_images = self.onglets.addTab(
+            self._build_images_tab(), self.tr("Images"))
+        self.onglets.setTabVisible(self._idx_filters, False)
+        self.onglets.setTabVisible(self._idx_images, False)
+        colonne.addWidget(self.onglets, 1)
+
+        # `_sur_changement_type` needs both combos in place; run it once
+        # now that every widget has been created.
+        self._sur_changement_type(self.combo_type.currentText())
+
+        # --- buttons ------------------------------------------------------
+        boutons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
+        boutons.accepted.connect(self.accept)
+        boutons.rejected.connect(self.reject)
+        colonne.addWidget(boutons)
+
+    # -- tabs ---------------------------------------------------------------
+
+    def _build_general_tab(self) -> QWidget:
+        """Application-level preferences: cadence, system integration,
+        notification-area behaviour, updates check, language.
+
+        Every field in this tab lives outside :data:`Glaneur.config.PROFILE_FIELDS`,
+        so it survives the v1 → v2 migration (roadmap §5.1) as an
+        application-level key.
+        """
+        cfg = self.cfg
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setLabelAlignment(Qt.AlignLeft)
+
+        self.combo_intervalle = QComboBox()
+        self.combo_intervalle.addItems(list(INTERVALS))
+        self.combo_intervalle.setCurrentText(cfg.interval_label)
+        form.addRow(self.tr("Update:"), self.combo_intervalle)
+
+        self.case_diaporama = QCheckBox(self.tr(
+            "Use this folder for the Windows slideshow"))
+        self.case_diaporama.setChecked(cfg.slideshow_dir)
+        self.case_diaporama.setEnabled(sys.platform == "win32")
+        self.case_diaporama.setToolTip(self.tr(
+            "Configures the Windows wallpaper slideshow to pick from\n"
+            "the download folder."))
+        form.addRow("", self.case_diaporama)
+
+        self.case_barre = QCheckBox(self.tr("Minimise to the notification area when closed"))
+        self.case_barre.setChecked(cfg.close_to_tray)
+        form.addRow("", self.case_barre)
+
+        self.case_demarrage = QCheckBox(self.tr("Run at Windows startup"))
+        self.case_demarrage.setChecked(autostart_active())
+        self.case_demarrage.setEnabled(sys.platform == "win32")
+        form.addRow("", self.case_demarrage)
+
+        self.case_maj_demarrage = QCheckBox(self.tr("Check for updates at startup"))
+        self.case_maj_demarrage.setChecked(cfg.check_updates_on_start)
+        self.case_maj_demarrage.setEnabled(sys.platform == "win32")
+        self.case_maj_demarrage.setToolTip(self.tr(
+            "Queries GitHub in the background at application launch\n"
+            "to offer the latest stable version if it is newer."))
+        form.addRow("", self.case_maj_demarrage)
+
+        from Glaneur.i18n import AVAILABLE_LANGUAGES
+        self.combo_langue = QComboBox()
+        self.combo_langue.addItem(self.tr("System language"), "")
+        for code, libelle in AVAILABLE_LANGUAGES.items():
+            self.combo_langue.addItem(libelle, code)
+        for i in range(self.combo_langue.count()):
+            if self.combo_langue.itemData(i) == cfg.language:
+                self.combo_langue.setCurrentIndex(i)
+                break
+        self.combo_langue.setToolTip(self.tr(
+            "Language change takes effect at the next launch."))
+        form.addRow(self.tr("Language:"), self.combo_langue)
+
+        return page
+
+    def _build_site_tab(self) -> QWidget:
+        """Per-profile preferences — the fields in
+        :data:`Glaneur.config.PROFILE_FIELDS`.
+
+        Today one implicit profile is stored flat on :class:`Config`.
+        When the v1 → v2 migration lands (roadmap §5.1), everything in
+        this tab moves into a `Profile` entry.
+        """
+        cfg = self.cfg
+        page = QWidget()
+        form = QFormLayout(page)
+        form.setLabelAlignment(Qt.AlignLeft)
 
         self.combo_type = QComboBox()
         self.combo_type.addItems(list(SOURCE_TYPES))
@@ -263,15 +768,15 @@ class DialoguePreferences(QDialog):
         )
         self.combo_type.setCurrentText(libelle_type_courant)
         self.combo_type.setToolTip(self.tr(
-            "Type de site à interroger. WordPress lit l'API REST /wp-json,\n"
-            "Djangoplicity lit le flux JSON /images/d2d/ (ESO, ESA/Hubble…)."))
-        forme_site.addRow(self.tr("Type :"), self.combo_type)
+            "Site type to query. WordPress reads the /wp-json REST API,\n"
+            "Djangoplicity reads the /images/d2d/ JSON feed (ESO, ESA/Hubble…)."))
+        form.addRow(self.tr("Type:"), self.combo_type)
 
         self.champ_site = QLineEdit(cfg.site)
-        self.champ_site.setPlaceholderText(self.tr("https://exemple.com"))
+        self.champ_site.setPlaceholderText(self.tr("https://example.com"))
         self.champ_site.setToolTip(self.tr(
-            "URL de base du site (sans /wp-json ni /images/d2d selon le type)."))
-        forme_site.addRow(self.tr("URL :"), self.champ_site)
+            "Base URL of the site (without /wp-json or /images/d2d depending on the type)."))
+        form.addRow(self.tr("URL:"), self.champ_site)
 
         # Format visible only for Djangoplicity: `Original` files are
         # TIFFs of several hundred MB, the warning lives in the option
@@ -285,44 +790,28 @@ class DialoguePreferences(QDialog):
         )
         self.combo_format.setCurrentText(libelle_format_courant)
         self.combo_format.setToolTip(self.tr(
-            "Résolution téléchargée pour Djangoplicity. Original = TIFF (souvent >100 Mo)."))
-        self.label_format = QLabel(self.tr("Format :"))
-        forme_site.addRow(self.label_format, self.combo_format)
+            "Resolution downloaded from Djangoplicity. Original = TIFF (often >100 MB)."))
+        self.label_format = QLabel(self.tr("Format:"))
+        form.addRow(self.label_format, self.combo_format)
 
         self.combo_type.currentTextChanged.connect(self._sur_changement_type)
-        colonne.addWidget(boite)
 
-        # --- destination --------------------------------------------------
-        boite = QGroupBox(self.tr("Destination"))
-        ligne = QHBoxLayout(boite)
+        # --- destination (inline row, not a group) -------------------------
+        ligne_dest = QHBoxLayout()
         self.champ_dossier = QLineEdit(cfg.target_dir)
-        ligne.addWidget(self.champ_dossier, 1)
-        bouton = QPushButton(self.tr("Parcourir…"))
+        ligne_dest.addWidget(self.champ_dossier, 1)
+        bouton = QPushButton(self.tr("Browse…"))
         bouton.clicked.connect(self._choisir_dossier)
-        ligne.addWidget(bouton)
-        colonne.addWidget(boite)
-
-        # --- options ------------------------------------------------------
-        boite = QGroupBox(self.tr("Options"))
-        form = QFormLayout(boite)
-        form.setLabelAlignment(Qt.AlignLeft)
-
-        self.combo_intervalle = QComboBox()
-        self.combo_intervalle.addItems(list(INTERVALS))
-        self.combo_intervalle.setCurrentText(cfg.interval_label)
-        form.addRow(self.tr("Mise à jour :"), self.combo_intervalle)
+        ligne_dest.addWidget(bouton)
+        form.addRow(self.tr("Destination:"), ligne_dest)
 
         self.combo_classement = QComboBox()
         self.combo_classement.addItems(list(SORT_MODES))
         self.combo_classement.setCurrentText(cfg.sort_mode_label)
         self.combo_classement.setToolTip(self.tr(
-            "Change la destination des nouvelles images. Les images déjà\n"
-            "téléchargées restent là où elles sont."))
-        form.addRow(self.tr("Classement :"), self.combo_classement)
-
-        # Adjusts the format's visibility and the sort mode's greying
-        # according to the initial type.
-        self._sur_changement_type(self.combo_type.currentText())
+            "Changes the destination of new images. Images already\n"
+            "downloaded stay where they are."))
+        form.addRow(self.tr("Sort:"), self.combo_classement)
 
         self.spin_largeur = QSpinBox()
         self.spin_largeur.setRange(0, 10000)
@@ -330,69 +819,180 @@ class DialoguePreferences(QDialog):
         self.spin_largeur.setSuffix(self.tr(" px"))
         self.spin_largeur.setValue(cfg.min_width)
         self.spin_largeur.setToolTip(self.tr(
-            "Écarte les logos et vignettes sous cette largeur. 0 pour tout garder."))
-        form.addRow(self.tr("Largeur minimale :"), self.spin_largeur)
+            "Discard logos and thumbnails below this width. 0 to keep everything."))
+        form.addRow(self.tr("Minimum width:"), self.spin_largeur)
 
-        self.case_verifier = QCheckBox(self.tr("Vérifier l'intégrité des fichiers existants"))
+        self.case_verifier = QCheckBox(self.tr("Verify integrity of existing files"))
         self.case_verifier.setChecked(cfg.verify_integrity)
         self.case_verifier.setToolTip(self.tr(
-            "Interroge le serveur sur chaque fichier connu (réponse 304 si identique).\n"
-            "Plus lent, à réserver à un contrôle ponctuel."))
+            "Queries the server for each known file (304 response if identical).\n"
+            "Slower, reserve for a one-off check."))
         form.addRow("", self.case_verifier)
 
-        self.case_diaporama = QCheckBox(self.tr(
-            "Utiliser ce dossier pour le diaporama Windows"))
-        self.case_diaporama.setChecked(cfg.slideshow_dir)
-        self.case_diaporama.setEnabled(sys.platform == "win32")
-        self.case_diaporama.setToolTip(self.tr(
-            "Configure le diaporama de fond d'écran Windows pour piocher\n"
-            "dans le dossier de téléchargement."))
-        form.addRow("", self.case_diaporama)
+        return page
 
-        self.case_barre = QCheckBox(self.tr("Réduire dans la zone de notification à la fermeture"))
-        self.case_barre.setChecked(cfg.close_to_tray)
-        form.addRow("", self.case_barre)
+    def _build_profiles_tab(self) -> QWidget:
+        """Profile management: add / remove extra profiles.
 
-        self.case_demarrage = QCheckBox(self.tr("Lancer au démarrage de Windows"))
-        self.case_demarrage.setChecked(autostart_active())
-        self.case_demarrage.setEnabled(sys.platform == "win32")
-        form.addRow("", self.case_demarrage)
+        The default profile lives in the "Site" tab and cannot be
+        removed. Extra profiles show up here as a plain list; the user
+        can add one by name (fields are seeded to Config defaults; the
+        per-profile edit dialog for extras arrives later) or remove one
+        by selecting the row.
 
-        self.case_maj_demarrage = QCheckBox(self.tr("Vérifier les mises à jour au démarrage"))
-        self.case_maj_demarrage.setChecked(cfg.check_updates_on_start)
-        self.case_maj_demarrage.setEnabled(sys.platform == "win32")
-        self.case_maj_demarrage.setToolTip(self.tr(
-            "Interroge GitHub en arrière-plan au lancement de l'application\n"
-            "pour proposer la dernière version stable si elle est plus récente."))
-        form.addRow("", self.case_maj_demarrage)
+        Mutations are deferred: they only touch ``self.cfg`` when
+        :meth:`appliquer` runs. Cancelling the dialog throws them away.
+        """
+        page = QWidget()
+        col = QVBoxLayout(page)
+        col.setSpacing(8)
+        col.addWidget(QLabel(self.tr(
+            "Additional profiles run alongside the one configured in the "
+            "“Site” tab. Add, remove and (later) reorder them here.")))
 
-        # --- language -----------------------------------------------------
-        from Glaneur.i18n import AVAILABLE_LANGUAGES
-        self.combo_langue = QComboBox()
-        self.combo_langue.addItem(self.tr("Langue du système"), "")
-        for code, libelle in AVAILABLE_LANGUAGES.items():
-            self.combo_langue.addItem(libelle, code)
-        for i in range(self.combo_langue.count()):
-            if self.combo_langue.itemData(i) == cfg.language:
-                self.combo_langue.setCurrentIndex(i)
-                break
-        self.combo_langue.setToolTip(self.tr(
-            "Le changement de langue prend effet au prochain lancement."))
-        form.addRow(self.tr("Langue :"), self.combo_langue)
+        self.liste_profils = QListWidget()
+        self.liste_profils.setSelectionMode(QListWidget.SingleSelection)
+        col.addWidget(self.liste_profils, 1)
 
-        colonne.addWidget(boite)
-        colonne.addStretch(1)
+        boutons = QHBoxLayout()
+        self.bouton_ajouter_profil = QPushButton(self.tr("Add…"))
+        self.bouton_ajouter_profil.clicked.connect(self._ajouter_profil)
+        boutons.addWidget(self.bouton_ajouter_profil)
 
-        # --- buttons ------------------------------------------------------
-        boutons = QDialogButtonBox(
-            QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
-        boutons.accepted.connect(self.accept)
-        boutons.rejected.connect(self.reject)
-        colonne.addWidget(boutons)
+        self.bouton_editer_profil = QPushButton(self.tr("Edit…"))
+        self.bouton_editer_profil.clicked.connect(self._editer_profil)
+        boutons.addWidget(self.bouton_editer_profil)
+
+        self.bouton_supprimer_profil = QPushButton(self.tr("Remove"))
+        self.bouton_supprimer_profil.clicked.connect(self._supprimer_profil)
+        boutons.addWidget(self.bouton_supprimer_profil)
+        boutons.addStretch(1)
+        col.addLayout(boutons)
+
+        # Double-clicking a row opens the edit dialog for that profile.
+        self.liste_profils.itemDoubleClicked.connect(
+            lambda _item: self._editer_profil())
+
+        self._rafraichir_liste_profils()
+        return page
+
+    def _rafraichir_liste_profils(self) -> None:
+        """Repopulate the extras list from cfg + pending mutations.
+
+        Display order: still-persisted extras first (in cfg order,
+        minus anything in ``_pending_remove_ids``), pending additions
+        after. A profile with a pending edit is displayed with the
+        edited values. Each item stores the profile as it will be
+        after apply on ``Qt.UserRole`` so the remove/edit handlers
+        can key off it directly.
+        """
+        self.liste_profils.clear()
+        existants = [self._pending_edits.get(p.id, p)
+                     for p in self.cfg._extra_profiles
+                     if p.id not in self._pending_remove_ids]
+        for profil in [*existants, *self._pending_add_profiles]:
+            libelle = profil.name
+            if profil.site:
+                libelle = f"{profil.name} — {profil.site}"
+            item = QListWidgetItem(libelle)
+            item.setData(Qt.UserRole, profil)
+            self.liste_profils.addItem(item)
+
+    def _editer_profil(self) -> None:
+        """Open :class:`DialogueProfilEdition` for the selected row.
+
+        A pending addition is mutated in place (it isn't persisted
+        yet, so direct edit is fine); an existing profile has its
+        edited replacement queued in :attr:`_pending_edits`. Nothing
+        touches the live :class:`Config` until :meth:`appliquer` runs.
+        """
+        item = self.liste_profils.currentItem()
+        if item is None:
+            return
+        profil = item.data(Qt.UserRole)
+        dlg = DialogueProfilEdition(self, profil)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        edited = dlg.profile()
+        if profil in self._pending_add_profiles:
+            i = self._pending_add_profiles.index(profil)
+            self._pending_add_profiles[i] = edited
+        else:
+            self._pending_edits[profil.id] = edited
+        self._rafraichir_liste_profils()
+
+    def _ajouter_profil(self) -> None:
+        """Prompt for a name and queue an add.
+
+        The full per-profile edit dialog arrives later; for now the new
+        profile is seeded to Config defaults (source type / site /
+        target_dir all copied from the default profile) and gets a
+        fresh uuid — enough that the user can already run it from the
+        CLI or the main-window table.
+        """
+        nom, ok = QInputDialog.getText(
+            self, self.tr("Add a profile"),
+            self.tr("Profile name:"))
+        if not ok:
+            return
+        nom = nom.strip()
+        if not nom:
+            return
+        # Build the Profile without touching self.cfg — it lives in
+        # _pending_add_profiles until appliquer() commits.
+        from Glaneur.config import Profile
+        default = self.cfg.default_profile()
+        import uuid
+        nouveau = Profile(
+            id=uuid.uuid4().hex,
+            name=nom,
+            source_type=default.source_type,
+            site=default.site,
+            target_dir=default.target_dir,
+            image_format=default.image_format,
+            sort_mode=default.sort_mode,
+        )
+        self._pending_add_profiles.append(nouveau)
+        self._rafraichir_liste_profils()
+
+    def _supprimer_profil(self) -> None:
+        """Queue a removal for the selected row.
+
+        Selecting nothing is a no-op. If the selected row is a pending
+        addition (never persisted), it is dropped from
+        ``_pending_add_profiles``; if it is a still-persisted profile,
+        its id joins ``_pending_remove_ids``.
+        """
+        item = self.liste_profils.currentItem()
+        if item is None:
+            return
+        profil = item.data(Qt.UserRole)
+        if profil in self._pending_add_profiles:
+            self._pending_add_profiles.remove(profil)
+        else:
+            self._pending_remove_ids.add(profil.id)
+        self._rafraichir_liste_profils()
+
+    def _build_filters_tab(self) -> QWidget:
+        """Placeholder for the filter fields introduced by E5 / lot 11.2.
+
+        Created hidden today so the migration to the widgets landing
+        there does not need to touch the outer :class:`QTabWidget`.
+        """
+        return QWidget()
+
+    def _build_images_tab(self) -> QWidget:
+        """Placeholder for the image-resizing fields introduced by E6 /
+        lot 11.5.
+
+        Created hidden today for the same reason as
+        :meth:`_build_filters_tab`.
+        """
+        return QWidget()
 
     def _choisir_dossier(self) -> None:
         choix = QFileDialog.getExistingDirectory(
-            self, self.tr("Où enregistrer les images ?"),
+            self, self.tr("Where to save the images?"),
             self.champ_dossier.text() or str(Path.home()))
         if choix:
             self.champ_dossier.setText(choix)
@@ -435,10 +1035,26 @@ class DialoguePreferences(QDialog):
         and propagate to system integrations. Returns a non-blocking
         error message or None."""
         c = self.cfg
+        # Extras: apply pending remove / edit / add queued on the
+        # Profiles tab. Remove first so an id in both remove and edit
+        # ends up removed (no phantom edit for a deleted profile);
+        # edit before add so a fresh addition isn't accidentally
+        # replaced by a stale edit under the same id (id collisions
+        # cannot happen today, but the ordering is the safe one).
+        for ident in self._pending_remove_ids:
+            c.remove_profile(ident)
+        for i, profil in enumerate(c._extra_profiles):
+            if profil.id in self._pending_edits:
+                c._extra_profiles[i] = self._pending_edits[profil.id]
+        for profil in self._pending_add_profiles:
+            c._extra_profiles.append(profil)
+        self._pending_add_profiles = []
+        self._pending_remove_ids = set()
+        self._pending_edits = {}
         c.site = self.champ_site.text().strip()
         c.target_dir = self.champ_dossier.text()
         c.interval_hours = INTERVALS.get(self.combo_intervalle.currentText(), 24)
-        c.sort_mode = SORT_MODES.get(self.combo_classement.currentText(), "galerie")
+        c.sort_mode = SORT_MODES.get(self.combo_classement.currentText(), "gallery")
         c.source_type = SOURCE_TYPES.get(self.combo_type.currentText(), "wordpress")
         c.image_format = DJANGOPLICITY_FORMATS.get(
             self.combo_format.currentText(), "Large")
@@ -458,7 +1074,7 @@ class DialoguePreferences(QDialog):
             obtenu = autostart(voulu)
             if obtenu != voulu:
                 problemes.append(self.tr(
-                    "Impossible de modifier le démarrage automatique de Windows."))
+                    "Cannot change Windows autostart."))
             c.run_at_startup = obtenu
             c.save()
 
@@ -471,12 +1087,12 @@ class DialoguePreferences(QDialog):
                     dossier.mkdir(parents=True, exist_ok=True)
                 except OSError as e:
                     problemes.append(
-                        self.tr("Dossier de destination inaccessible : {erreur}").format(erreur=e))
+                        self.tr("Destination folder unavailable: {error}").format(error=e))
                 else:
                     if not set_slideshow_dir(dossier):
                         problemes.append(self.tr(
-                            "Impossible de configurer le diaporama Windows "
-                            "(dossier vide ou COM indisponible)."))
+                            "Cannot configure the Windows slideshow "
+                            "(empty folder or COM unavailable)."))
                         c.slideshow_dir = False
                         c.save()
         return "\n".join(problemes) if problemes else None
@@ -503,7 +1119,7 @@ class DialogueSignalerBug(QDialog):
                 report, or ``None`` to attach nothing.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("Signaler un bug"))
+        self.setWindowTitle(self.tr("Report a bug"))
         self.setMinimumSize(560, 460)
         self._chemin_log = chemin_log
 
@@ -512,45 +1128,45 @@ class DialogueSignalerBug(QDialog):
         colonne.setSpacing(8)
 
         intro = QLabel(self.tr(
-            "Décris le problème ci-dessous. « Ouvrir sur GitHub » composera "
-            "l'issue et l'ouvrira dans ton navigateur : tu n'auras plus qu'à "
-            "cliquer « Submit new issue » sur la page GitHub.\n\n"
-            "Un compte GitHub est nécessaire pour soumettre l'issue. Si tu "
-            "n'en as pas encore, tu pourras t'en créer un gratuitement à "
-            "l'étape « Sign in » depuis la même page."))
+            "Describe the problem below. “Open on GitHub” will "
+            "compose the issue and open it in your browser: you will only "
+            "need to click “Submit new issue” on the GitHub page.\n\n"
+            "A GitHub account is required to submit the issue. If you do "
+            "not have one yet, you can create one for free at the "
+            "“Sign in” step from the same page."))
         intro.setWordWrap(True)
         colonne.addWidget(intro)
 
         self.champ_titre = QLineEdit()
-        self.champ_titre.setPlaceholderText(self.tr("Résumé court du problème"))
-        colonne.addWidget(QLabel(self.tr("Titre :")))
+        self.champ_titre.setPlaceholderText(self.tr("Short summary of the problem"))
+        colonne.addWidget(QLabel(self.tr("Title:")))
         colonne.addWidget(self.champ_titre)
 
         self.zone_desc = QTextEdit()
         self.zone_desc.setPlaceholderText(self.tr(
-            "Ce qui se passe, ce que tu attendais, comment reproduire."))
-        colonne.addWidget(QLabel(self.tr("Description :")))
+            "What happens, what you expected, how to reproduce."))
+        colonne.addWidget(QLabel(self.tr("Description:")))
         colonne.addWidget(self.zone_desc, 1)
 
         self.case_contexte = QCheckBox(self.tr(
-            "Joindre la version, la plateforme et les 50 dernières lignes de log"))
+            "Attach the version, platform and the last 50 log lines"))
         self.case_contexte.setChecked(True)
         colonne.addWidget(self.case_contexte)
 
         boutons = QDialogButtonBox(self)
-        bouton_go = boutons.addButton(self.tr("Ouvrir sur GitHub"), QDialogButtonBox.AcceptRole)
+        bouton_go = boutons.addButton(self.tr("Open on GitHub"), QDialogButtonBox.AcceptRole)
         boutons.addButton(QDialogButtonBox.Cancel)
         bouton_go.clicked.connect(self._envoyer)
         boutons.rejected.connect(self.reject)
         colonne.addWidget(boutons)
 
     def _envoyer(self) -> None:
-        titre = self.champ_titre.text().strip() or self.tr("Rapport de bug")
+        titre = self.champ_titre.text().strip() or self.tr("Bug report")
         description = self.zone_desc.toPlainText().strip()
         if not description:
             QMessageBox.warning(
-                self, self.tr("Signaler un bug"),
-                self.tr("Merci d'ajouter une description avant d'ouvrir l'issue."))
+                self, self.tr("Report a bug"),
+                self.tr("Please add a description before opening the issue."))
             return
         corps = description
         contexte_joint = self.case_contexte.isChecked()
@@ -559,18 +1175,18 @@ class DialogueSignalerBug(QDialog):
         url = build_issue_url(GITHUB_OWNER, GITHUB_REPOSITORY, titre, corps)
         if is_url_too_long(url):
             piste = (
-                self.tr("Décoche « Joindre la version, la plateforme et les 50 dernières "
-                        "lignes de log » (tu pourras coller le log dans un commentaire), "
-                        "ou raccourcis la description.")
+                self.tr("Uncheck “Attach the version, platform and the last "
+                        "50 log lines” (you can paste the log in a comment), "
+                        "or shorten the description.")
                 if contexte_joint
-                else self.tr("Raccourcis la description avant de réessayer.")
+                else self.tr("Shorten the description before trying again.")
             )
             QMessageBox.warning(
-                self, self.tr("Signaler un bug"),
-                self.tr("Ton rapport est trop long pour être pré-rempli via l'URL "
-                        "GitHub ({longueur} caractères, maximum {plafond}).\n\n"
-                        "{piste}").format(
-                    longueur=len(url), plafond=MAX_URL_LENGTH, piste=piste))
+                self, self.tr("Report a bug"),
+                self.tr("Your report is too long to be pre-filled via the "
+                        "GitHub URL ({length} characters, maximum {cap}).\n\n"
+                        "{hint}").format(
+                    length=len(url), cap=MAX_URL_LENGTH, hint=piste))
             return
         QDesktopServices.openUrl(QUrl(url))
         self.accept()
@@ -586,7 +1202,7 @@ class DialogueAPropos(QDialog):
             parent: Qt parent widget.
         """
         super().__init__(parent)
-        self.setWindowTitle(self.tr("À propos de Glaneur"))
+        self.setWindowTitle(self.tr("About Glaneur"))
         self.setFixedSize(440, 320)
 
         colonne = QVBoxLayout(self)
@@ -611,8 +1227,8 @@ class DialogueAPropos(QDialog):
         colonne.addSpacing(6)
 
         desc = QLabel(self.tr(
-            "Télécharge et synchronise en local les images publiées par un site "
-            "distant (WordPress, Djangoplicity…)."))
+            "Downloads and locally syncs images published by a remote "
+            "site (WordPress, Djangoplicity…)."))
         desc.setWordWrap(True)
         desc.setAlignment(Qt.AlignCenter)
         colonne.addWidget(desc)
@@ -623,7 +1239,7 @@ class DialogueAPropos(QDialog):
         colonne.addWidget(lien)
 
         licence = QLabel(self.tr(
-            "Distribué sous licence GNU GPL v3. Voir le fichier LICENSE."))
+            "Distributed under the GNU GPL v3 licence. See the LICENSE file."))
         licence.setStyleSheet("color: #666; font-size: 11px;")
         licence.setAlignment(Qt.AlignCenter)
         licence.setWordWrap(True)
@@ -654,7 +1270,7 @@ class Fenetre(QMainWindow):
     def __init__(self) -> None:
         """Load the config, build the UI, and start the deadline timer."""
         super().__init__()
-        self.setWindowTitle(self.tr("Glaneur — Téléchargeur d'images {version}").format(
+        self.setWindowTitle(self.tr("Glaneur — Image downloader {version}").format(
             version=__version__))
         self.setWindowIcon(icone_application())
         self.resize(760, 520)
@@ -662,9 +1278,12 @@ class Fenetre(QMainWindow):
 
         self.cfg = Config.load()
         self.planificateur = Scheduler(self.cfg)
-        self.arret = threading.Event()
+        self.stop_event = threading.Event()
         self.travailleur: Travailleur | None = None
         self.auto_en_cours = False
+        #: Index of the profile row the engine is currently updating.
+        #: Set by :meth:`_lancer`; consumed by :meth:`_terminer`.
+        self._row_en_cours: int = 0
         self._quitter_demande = False
         self.verification_mise_a_jour: UpdateCheck | None = None
         self.telechargement_mise_a_jour: UpdateDownload | None = None
@@ -693,45 +1312,45 @@ class Fenetre(QMainWindow):
     def _construire_menu(self) -> None:
         barre = self.menuBar()
 
-        menu_fichier = barre.addMenu(self.tr("&Fichier"))
-        self.action_maj = menu_fichier.addAction(self.tr("&Mettre à jour maintenant"))
+        menu_fichier = barre.addMenu(self.tr("&File"))
+        self.action_maj = menu_fichier.addAction(self.tr("&Update now"))
         self.action_maj.setShortcut(QKeySequence("Ctrl+R"))
         self.action_maj.triggered.connect(self._lancer)
 
-        self.action_arreter_menu = menu_fichier.addAction(self.tr("&Arrêter"))
+        self.action_arreter_menu = menu_fichier.addAction(self.tr("&Stop"))
         self.action_arreter_menu.setEnabled(False)
         self.action_arreter_menu.triggered.connect(self._arreter)
 
         menu_fichier.addSeparator()
-        action_ouvrir = menu_fichier.addAction(self.tr("&Ouvrir le dossier"))
+        action_ouvrir = menu_fichier.addAction(self.tr("&Open the folder"))
         action_ouvrir.triggered.connect(self._ouvrir_dossier)
 
         menu_fichier.addSeparator()
-        action_supprimees = menu_fichier.addAction(self.tr("&Images supprimées…"))
+        action_supprimees = menu_fichier.addAction(self.tr("&Deleted images…"))
         action_supprimees.triggered.connect(self._gerer_supprimees)
 
-        self.action_supprimer_fond = menu_fichier.addAction(self.tr("Supprimer ce &fond d'écran"))
+        self.action_supprimer_fond = menu_fichier.addAction(self.tr("Remove this &wallpaper"))
         self.action_supprimer_fond.triggered.connect(self._supprimer_fond)
         self.action_supprimer_fond.setEnabled(sys.platform == "win32")
 
         menu_fichier.addSeparator()
-        action_quitter = menu_fichier.addAction(self.tr("&Quitter"))
+        action_quitter = menu_fichier.addAction(self.tr("&Quit"))
         action_quitter.setShortcut(QKeySequence("Ctrl+Q"))
         action_quitter.triggered.connect(self._quitter)
 
         menu_conf = barre.addMenu(self.tr("&Configuration"))
-        action_prefs = menu_conf.addAction(self.tr("&Préférences…"))
+        action_prefs = menu_conf.addAction(self.tr("&Preferences…"))
         action_prefs.setShortcut(QKeySequence("Ctrl+,"))
         action_prefs.triggered.connect(self._ouvrir_preferences)
 
-        menu_aide = barre.addMenu(self.tr("&Aide"))
-        action_check_maj = menu_aide.addAction(self.tr("&Rechercher des mises à jour…"))
+        menu_aide = barre.addMenu(self.tr("&Help"))
+        action_check_maj = menu_aide.addAction(self.tr("&Check for updates…"))
         action_check_maj.triggered.connect(
             lambda: self._verifier_mise_a_jour(manuel=True))
         action_check_maj.setEnabled(sys.platform == "win32")
-        action_signaler = menu_aide.addAction(self.tr("&Signaler un bug…"))
+        action_signaler = menu_aide.addAction(self.tr("&Report a bug…"))
         action_signaler.triggered.connect(self._ouvrir_signaler_bug)
-        action_apropos = menu_aide.addAction(self.tr("&À propos…"))
+        action_apropos = menu_aide.addAction(self.tr("&About…"))
         action_apropos.triggered.connect(self._ouvrir_apropos)
 
     def _construire(self) -> None:
@@ -774,43 +1393,58 @@ class Fenetre(QMainWindow):
         racine.setContentsMargins(14, 14, 14, 14)
         racine.setSpacing(10)
 
-        titre = QLabel(self.tr("Glaneur — Téléchargeur d'images"))
+        titre = QLabel(self.tr("Glaneur — Image downloader"))
         titre.setStyleSheet(f"font-size: 17px; font-weight: 700; color: {GRENAT};")
         racine.addWidget(titre)
 
-        self.label_site = QLabel()
-        self.label_site.setStyleSheet("color: #666;")
-        self.label_site.setToolTip(self.tr("Modifiable dans Configuration → Préférences…"))
-        racine.addWidget(self.label_site)
+        # Profile list (lot 5.0 E2): one row today, keyed off the flat
+        # `Config`. Lot 5.1 promotes it to a real per-profile list.
+        self.profils_model = ProfileTableModel(self)
+        self.table_profils = QTableView()
+        self.table_profils.setModel(self.profils_model)
+        self.table_profils.setToolTip(self.tr("Editable via Configuration → Preferences…"))
+        self.table_profils.setSelectionMode(QTableView.SingleSelection)
+        self.table_profils.setSelectionBehavior(QTableView.SelectRows)
+        self.table_profils.setEditTriggers(QTableView.NoEditTriggers)
+        self.table_profils.verticalHeader().setVisible(False)
+        self.table_profils.horizontalHeader().setStretchLastSection(True)
+        # Height range: enough for one row plus header (typical case),
+        # capped so several extra profiles do not eat the journal area
+        # — the internal scrollbar kicks in beyond the cap.
+        self.table_profils.setMinimumHeight(60)
+        self.table_profils.setMaximumHeight(160)
+        racine.addWidget(self.table_profils)
 
-        self.label_dossier = QLabel()
-        self.label_dossier.setStyleSheet("color: #666;")
-        self.label_dossier.setToolTip(self.tr("Modifiable dans Configuration → Préférences…"))
-        racine.addWidget(self.label_dossier)
+        # Legacy aliases kept as None so any stray reference to the old
+        # labels raises AttributeError instead of silently going through
+        # a leftover widget. (`_rafraichir_bandeau` alias still routes
+        # updates to the model.)
+        self.label_site = None
+        self.label_dossier = None
 
         # --- actions -------------------------------------------------------
         ligne = QHBoxLayout()
-        self.bouton_lancer = QPushButton(self.tr("Mettre à jour maintenant"))
+        self.bouton_lancer = QPushButton(self.tr("Update now"))
         self.bouton_lancer.setObjectName("principal")
         self.bouton_lancer.clicked.connect(self._lancer)
         ligne.addWidget(self.bouton_lancer)
 
-        self.bouton_arreter = QPushButton(self.tr("Arrêter"))
+        self.bouton_arreter = QPushButton(self.tr("Stop"))
         self.bouton_arreter.setEnabled(False)
         self.bouton_arreter.clicked.connect(self._arreter)
         ligne.addWidget(self.bouton_arreter)
 
-        self.bouton_supprimer_fond = QPushButton(self.tr("Supprimer le fond actuel"))
+        self.bouton_supprimer_fond = QPushButton(self.tr("Remove current wallpaper"))
         self.bouton_supprimer_fond.setToolTip(self.tr(
-            "Efface l'image actuellement affichée par le diaporama Windows\n"
-            "et l'exclut des prochaines mises à jour."))
+            "Erases the image currently shown by the Windows slideshow\n"
+            "and excludes it from future updates."))
         self.bouton_supprimer_fond.clicked.connect(self._supprimer_fond)
         self.bouton_supprimer_fond.setEnabled(sys.platform == "win32")
         ligne.addWidget(self.bouton_supprimer_fond)
 
-        self.bouton_supprimees = QPushButton(self.tr("Images supprimées…"))
+        self.bouton_supprimees = QPushButton(self.tr("Deleted images…"))
         self.bouton_supprimees.setToolTip(self.tr(
-            "Images effacées du dossier, que l'application ne retélécharge plus."))
+            "Images erased from the folder that the application will no longer re-download."))
         self.bouton_supprimees.clicked.connect(self._gerer_supprimees)
         ligne.addWidget(self.bouton_supprimees)
         ligne.addStretch(1)
@@ -826,7 +1460,7 @@ class Fenetre(QMainWindow):
         self.barre.setValue(0)
         racine.addWidget(self.barre)
 
-        self.label_statut = QLabel(self.tr("Prêt."))
+        self.label_statut = QLabel(self.tr("Ready."))
         racine.addWidget(self.label_statut)
 
         # --- journal -------------------------------------------------------
@@ -845,11 +1479,11 @@ class Fenetre(QMainWindow):
         # Actions referenced elsewhere (setEnabled during/after a run): we
         # create them in every case, even if we do not attach them to a
         # menu when no tray is available.
-        self.action_afficher = QAction(self.tr("Afficher la fenêtre"), self)
+        self.action_afficher = QAction(self.tr("Show window"), self)
         self.action_afficher.triggered.connect(self._afficher)
-        self.action_maj_tray = QAction(self.tr("Mettre à jour maintenant"), self)
+        self.action_maj_tray = QAction(self.tr("Update now"), self)
         self.action_maj_tray.triggered.connect(self._lancer)
-        self.action_supprimer_fond_tray = QAction(self.tr("Supprimer ce fond d'écran"), self)
+        self.action_supprimer_fond_tray = QAction(self.tr("Remove this wallpaper"), self)
         self.action_supprimer_fond_tray.triggered.connect(self._supprimer_fond)
         self.action_supprimer_fond_tray.setEnabled(sys.platform == "win32")
 
@@ -864,24 +1498,24 @@ class Fenetre(QMainWindow):
             return
 
         self.tray = QSystemTrayIcon(icone_application(), self)
-        self.tray.setToolTip(self.tr("Glaneur — Téléchargeur d'images"))
+        self.tray.setToolTip(self.tr("Glaneur — Image downloader"))
 
         menu = QMenu()
         menu.addAction(self.action_afficher)
         menu.addAction(self.action_maj_tray)
         menu.addAction(self.action_supprimer_fond_tray)
 
-        action = QAction(self.tr("Ouvrir le dossier"), self)
+        action = QAction(self.tr("Open the folder"), self)
         action.triggered.connect(self._ouvrir_dossier)
         menu.addAction(action)
         menu.addSeparator()
 
-        action = QAction(self.tr("Préférences…"), self)
+        action = QAction(self.tr("Preferences…"), self)
         action.triggered.connect(self._ouvrir_preferences)
         menu.addAction(action)
         menu.addSeparator()
 
-        action = QAction(self.tr("Quitter"), self)
+        action = QAction(self.tr("Quit"), self)
         action.triggered.connect(self._quitter)
         menu.addAction(action)
 
@@ -889,11 +1523,58 @@ class Fenetre(QMainWindow):
         self.tray.activated.connect(self._clic_barre)
         self.tray.show()
 
+    def _rafraichir_table_profils(self, status: str | None = None) -> None:
+        """Push fresh :class:`ProfileRow` entries for every profile.
+
+        The default profile is at row 0; extra profiles land in the
+        order :meth:`Glaneur.config.Config.profiles` returns them.
+
+        Args:
+            status: Optional status override for the default (row-0)
+                profile. When ``None`` (default), the current row-0
+                status column is preserved so a background refresh
+                does not clobber an in-flight run label. Extra
+                profiles are always shown with an em-dash status
+                today — the engine only runs the default one.
+        """
+        if status is None and self.profils_model.rowCount() > 0:
+            current = self.profils_model.data(
+                self.profils_model.index(0, 5), Qt.DisplayRole)
+            status = current if current and current != "—" else ""
+        profiles = self.cfg.profiles()
+        rows = [_profile_row_from(profiles[0], status or "")]
+        rows.extend(_profile_row_from(p) for p in profiles[1:])
+        self.profils_model.set_rows(rows)
+
     def _rafraichir_bandeau(self) -> None:
-        """Refresh the site and folder display labels."""
-        self.label_site.setText(self.tr("Site : {site}").format(site=self.cfg.site or "—"))
-        self.label_dossier.setText(self.tr("Dossier : {dossier}").format(
-            dossier=self.cfg.target_dir or "—"))
+        """Kept as a single-line forwarder so existing callers
+        (``_ouvrir_preferences``) do not have to know about the table
+        rename. Will be dropped once every caller uses the new name."""
+        self._rafraichir_table_profils()
+
+    @staticmethod
+    def _status_from_result(res: RunResult) -> str:
+        """Terminal status derived from a :class:`RunResult`.
+
+        Args:
+            res: The result the engine emitted.
+
+        Returns:
+            A short translated string ready for the ``Status`` column of
+            the profile list.
+        """
+        if res.deferred:
+            if res.retry_after:
+                return QCoreApplication.translate(
+                    "UiTable", "Deferred until {until}").format(
+                    until=res.retry_after[:16].replace("T", " "))
+            return QCoreApplication.translate("UiTable", "Deferred")
+        if res.interrupted:
+            return QCoreApplication.translate("UiTable", "Interrupted")
+        if res.failures and not res.downloaded:
+            return QCoreApplication.translate("UiTable", "Failed")
+        return QCoreApplication.translate(
+            "UiTable", "Done — {n} downloaded").format(n=res.downloaded)
 
     def _appliquer_diaporama_au_demarrage(self) -> None:
         """Reconfigure the slideshow on every launch when the option is on
@@ -913,7 +1594,7 @@ class Fenetre(QMainWindow):
             self._rafraichir_bandeau()
             self._rafraichir_echeance()
             if probleme:
-                QMessageBox.warning(self, self.tr("Préférences"), probleme)
+                QMessageBox.warning(self, self.tr("Preferences"), probleme)
 
     def _ouvrir_apropos(self) -> None:
         DialogueAPropos(self).exec()
@@ -957,33 +1638,33 @@ class Fenetre(QMainWindow):
     def _aucune_mise_a_jour_manuel(self, info) -> None:
         QMessageBox.information(
             self,
-            self.tr("Rechercher des mises à jour"),
-            self.tr("Vous utilisez déjà la dernière version ({version}).").format(
+            self.tr("Check for updates"),
+            self.tr("You are already on the latest version ({version}).").format(
                 version=info.current),
         )
 
     def _erreur_verification_manuel(self, message: str) -> None:
         self._ecrire(message)
-        QMessageBox.warning(self, self.tr("Rechercher des mises à jour"), message)
+        QMessageBox.warning(self, self.tr("Check for updates"), message)
 
     def _mise_a_jour_disponible(self, info) -> None:
         release = info.latest
         reponse = QMessageBox.question(
             self,
-            self.tr("Mise à jour disponible"),
-            self.tr("Une nouvelle version est disponible.\n\n"
-                    "Version actuelle : {actuelle}\n"
-                    "Nouvelle version : {nouvelle}\n\n"
-                    "Télécharger et installer maintenant ?").format(
-                actuelle=info.current, nouvelle=release.version),
+            self.tr("Update available"),
+            self.tr("A new version is available.\n\n"
+                    "Current version: {current}\n"
+                    "New version: {new}\n\n"
+                    "Download and install now?").format(
+                current=info.current, new=release.version),
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes,
         )
         if reponse != QMessageBox.Yes:
-            self._ecrire(self.tr("Mise à jour {version} reportée.").format(
+            self._ecrire(self.tr("Update {version} deferred.").format(
                 version=release.version))
             return
-        self._ecrire(self.tr("Téléchargement de la mise à jour {version}…").format(
+        self._ecrire(self.tr("Downloading update {version}…").format(
             version=release.version))
         self.telechargement_mise_a_jour = UpdateDownload(release)
         self.telechargement_mise_a_jour.completed.connect(self._mise_a_jour_telechargee)
@@ -1031,11 +1712,11 @@ class Fenetre(QMainWindow):
             )
         except OSError as error:
             log.exception("Lancement de l'installateur impossible")
-            self._ecrire(self.tr("Lancement de l'installateur impossible : {erreur}").format(
-                erreur=error))
+            self._ecrire(self.tr("Cannot launch the installer: {error}").format(
+                error=error))
             return
         log.info("Installateur lancé, log Inno attendu ici : %s. Fermeture de l'app.", log_inno)
-        self._ecrire(self.tr("Mise à jour lancée, fermeture pour installation…"))
+        self._ecrire(self.tr("Update launched, closing for installation…"))
         self._quitter_demande = True
         self.close()
 
@@ -1043,30 +1724,30 @@ class Fenetre(QMainWindow):
         try:
             open_dir(Path(self.cfg.target_dir))
         except OSError as e:
-            QMessageBox.warning(self, self.tr("Dossier inaccessible"), str(e))
+            QMessageBox.warning(self, self.tr("Folder unavailable"), str(e))
 
     def _gerer_supprimees(self) -> None:
         dossier = Path(self.cfg.target_dir).expanduser()
         entrees = list_deleted(dossier)
         if not entrees:
             QMessageBox.information(
-                self, self.tr("Images supprimées"),
-                self.tr("Aucune image effacée n'est mémorisée pour ce dossier."))
+                self, self.tr("Deleted images"),
+                self.tr("No deleted image is recorded for this folder."))
             return
         dialogue = DialogueSupprimees(self, entrees)
         if dialogue.exec() != QDialog.Accepted or not dialogue.choix():
             return
         n = restore(dossier, dialogue.choix())
-        self._ecrire(self.tr("{n} image(s) seront retéléchargées à la prochaine mise à jour.").format(n=n))
+        self._ecrire(self.tr("{n} image(s) will be re-downloaded at the next update.").format(n=n))
 
     def _supprimer_fond(self) -> None:
         fond = current_wallpaper()
         if fond is None:
             QMessageBox.information(
-                self, self.tr("Fond d'écran"),
-                self.tr("Impossible de déterminer l'image actuellement affichée.\n"
-                        "Fonction disponible uniquement sous Windows, avec un\n"
-                        "diaporama de fond d'écran actif."))
+                self, self.tr("Wallpaper"),
+                self.tr("Cannot determine the image currently shown.\n"
+                        "Feature only available on Windows, with an\n"
+                        "active wallpaper slideshow."))
             return
         dossier = Path(self.cfg.target_dir).expanduser()
         # simple ownership check for the message; the engine will run
@@ -1079,69 +1760,106 @@ class Fenetre(QMainWindow):
             interne = False
         if not interne:
             QMessageBox.information(
-                self, self.tr("Fond d'écran hors du dossier suivi"),
-                self.tr("L'image affichée n'appartient pas au dossier suivi :\n{fond}\n\n"
-                        "Rien n'a été supprimé.").format(fond=fond))
+                self, self.tr("Wallpaper outside the tracked folder"),
+                self.tr("The displayed image does not belong to the tracked folder:\n{wallpaper}\n\n"
+                        "Nothing was deleted.").format(wallpaper=fond))
             return
         reponse = QMessageBox.question(
-            self, self.tr("Supprimer le fond actuel"),
-            self.tr("Supprimer définitivement cette image ?\n{fond}\n\n"
-                    "Elle ne sera plus retéléchargée par les mises à jour suivantes.").format(
-                fond=fond))
+            self, self.tr("Remove current wallpaper"),
+            self.tr("Permanently delete this image?\n{wallpaper}\n\n"
+                    "It will no longer be re-downloaded by future updates.").format(
+                wallpaper=fond))
         if reponse != QMessageBox.Yes:
             return
         if delete_image(dossier, fond):
             advance_slideshow()
-            self._ecrire(self.tr("Fond d'écran supprimé : {fond}").format(fond=fond))
+            self._ecrire(self.tr("Wallpaper removed: {wallpaper}").format(wallpaper=fond))
         else:
-            self._ecrire(self.tr("Échec de suppression du fond : {fond}").format(fond=fond))
+            self._ecrire(self.tr("Wallpaper removal failed: {wallpaper}").format(wallpaper=fond))
 
-    def _lancer(self, auto: bool = False) -> None:
+    def _selected_profile_row(self) -> int:
+        """Return the row index of the currently selected profile.
+
+        Falls back to row 0 (the default profile) when no row is
+        selected or the selection is out of bounds. Auto-triggered
+        runs (:meth:`_verifier_echeance`) also come through here and
+        get the default profile, matching the pre-multi-profile
+        behaviour every existing scheduled setup depends on.
+        """
+        rows_ok = self.profils_model.rowCount()
+        if rows_ok <= 0:
+            return 0
+        indexes = self.table_profils.selectionModel().selectedRows()
+        if indexes and 0 <= indexes[0].row() < rows_ok:
+            return indexes[0].row()
+        return 0
+
+    def _lancer(self, auto: bool = False, auto_row: int = 0) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        dossier = Path(self.cfg.target_dir).expanduser()
+        # Pick the profile to run: auto-triggered runs get the row the
+        # scheduler picked (:meth:`_verifier_echeance`); a user click
+        # respects the table selection; interactive auto-free paths
+        # (menu action without a selection) still fall back to the
+        # default profile.
+        row = auto_row if auto else self._selected_profile_row()
+        profile = self.cfg.profiles()[row]
+        defaults = self.cfg.defaults()
+        dossier = Path(profile.target_dir).expanduser()
         try:
             dossier.mkdir(parents=True, exist_ok=True)
         except OSError as e:
-            message = self.tr("Impossible d'utiliser ce dossier :\n{erreur}").format(erreur=e)
+            message = self.tr("Cannot use this folder:\n{error}").format(error=e)
             if auto:
                 self._ecrire(message.replace("\n", " "))
                 return
-            QMessageBox.critical(self, self.tr("Dossier invalide"), message)
+            QMessageBox.critical(self, self.tr("Invalid folder"), message)
             return
 
         self.auto_en_cours = bool(auto)
-        self.arret.clear()
+        self._row_en_cours = row
+        self.stop_event.clear()
         self.bouton_lancer.setEnabled(False)
         self.action_maj.setEnabled(False)
         self.action_maj_tray.setEnabled(False)
         self.bouton_arreter.setEnabled(True)
         self.action_arreter_menu.setEnabled(True)
         self.barre.setRange(0, 0)          # indeterminate during inventory
-        self._ecrire(self.tr("--- {horodatage} — début de la mise à jour").format(
-            horodatage=f"{datetime.now():%d/%m/%Y %H:%M}"))
+        self._ecrire(self.tr("--- {timestamp} — update started").format(
+            timestamp=f"{datetime.now():%d/%m/%Y %H:%M}"))
 
+        # Per-profile fields go through the picked profile; the two
+        # inheritable settings (min_width, verify_integrity) resolve
+        # via the None-inheritance rule against `defaults()`. The
+        # request delay is application-level and stays on `cfg`.
         options = Options(
             target_dir=dossier,
-            site=self.cfg.site,
-            sort_mode=self.cfg.sort_mode,
-            min_width=self.cfg.min_width,
+            site=profile.site,
+            sort_mode=profile.sort_mode,
+            min_width=profile.effective_min_width(defaults),
             delay=self.cfg.request_delay,
-            verify=self.cfg.verify_integrity,
-            source_type=self.cfg.source_type,
-            image_format=self.cfg.image_format,
+            verify=profile.effective_verify_integrity(defaults),
+            source_type=profile.source_type,
+            image_format=profile.image_format,
         )
-        self.travailleur = Travailleur(options, self.arret)
-        self.travailleur.journal.connect(self._ecrire)
+        self.travailleur = Travailleur(options, self.stop_event)
+        self.travailleur.journal_event.connect(self._journal_evenement)
         self.travailleur.progres.connect(self._progres)
         self.travailleur.fini.connect(self._terminer)
+        self.profils_model.set_status(
+            QCoreApplication.translate("UiTable", "Running…"),
+            row=self._row_en_cours)
         self.travailleur.start()
 
+    def _journal_evenement(self, event: EngineEvent) -> None:
+        """Render an engine event and append it to the journal widget."""
+        self._ecrire(_render_ui(event))
+
     def _arreter(self) -> None:
-        self.arret.set()
+        self.stop_event.set()
         self.bouton_arreter.setEnabled(False)
         self.action_arreter_menu.setEnabled(False)
-        self.label_statut.setText(self.tr("Arrêt en cours…"))
+        self.label_statut.setText(self.tr("Stopping…"))
 
     def _quitter(self) -> None:
         self._quitter_demande = True
@@ -1161,8 +1879,8 @@ class Fenetre(QMainWindow):
     def _progres(self, fait: int, total: int, etiquette: str) -> None:
         self.barre.setRange(0, max(total, 1))
         self.barre.setValue(fait)
-        self.label_statut.setText(self.tr("{fait}/{total} — {etiquette}").format(
-            fait=fait, total=total, etiquette=etiquette))
+        self.label_statut.setText(self.tr("{done}/{total} — {label}").format(
+            done=fait, total=total, label=etiquette))
 
     def _terminer(self, res: RunResult) -> None:
         self.bouton_lancer.setEnabled(True)
@@ -1173,25 +1891,30 @@ class Fenetre(QMainWindow):
         self.barre.setRange(0, 100)
         self.barre.setValue(0 if res.interrupted else 100)
 
-        self.label_statut.setText(res.message)
-        self._ecrire(res.message)
+        # Prefer the structured event when the engine set one, so the
+        # summary is translated on the fly rather than shown in English.
+        rendu = _render_ui(res.message_event) if res.message_event else res.message
+        self.label_statut.setText(rendu)
+        self._ecrire(rendu)
+        self.profils_model.set_status(self._status_from_result(res),
+                                      row=self._row_en_cours)
         if res.already_present:
-            self._ecrire(self.tr("{n} image(s) déjà présentes, non retéléchargées.").format(
+            self._ecrire(self.tr("{n} image(s) already present, not re-downloaded.").format(
                 n=res.already_present))
         if res.skipped:
             self._ecrire(self.tr(
-                "{n} image(s) que vous aviez supprimée(s), ignorée(s) — "
-                "bouton « Images supprimées… » pour en recharger.").format(n=res.skipped))
+                "{n} image(s) that you had deleted, skipped — "
+                "use the “Deleted images…” button to re-queue them.").format(n=res.skipped))
         if res.failures and not res.deferred:
             # On defer, `res.message` already explains the cut and gives
             # the deadline — no redundant/misleading "will be retried".
-            self._ecrire(self.tr("{n} échec(s) — seront retentés à la prochaine mise à jour.").format(
+            self._ecrire(self.tr("{n} failure(s) — will be retried at the next update.").format(
                 n=res.failures))
 
         if res.deferred:
-            self.planificateur.defer(res)
+            self.planificateur.defer_for(self._row_en_cours, res)
         elif not res.interrupted:
-            self.planificateur.mark_run()
+            self.planificateur.mark_run_for(self._row_en_cours)
         self._rafraichir_echeance()
 
         # info bubble only if the user was not watching
@@ -1199,23 +1922,40 @@ class Fenetre(QMainWindow):
                 and res.downloaded and not self.isVisible()):
             self.tray.showMessage(
                 "Glaneur",
-                self.tr("{n} nouvelle(s) image(s) — {taille}").format(
-                    n=res.downloaded, taille=format_bytes(res.bytes)),
+                self.tr("{n} new image(s) — {size}").format(
+                    n=res.downloaded, size=format_bytes(res.bytes)),
                 icone_application(), 5000)
+        was_auto = self.auto_en_cours
         self.auto_en_cours = False
+        # Chain the next overdue profile right away, so a queue of
+        # several profiles due at startup runs back-to-back instead
+        # of waiting one timer tick (PERIODE_ECHEANCE) between each.
+        # Skipped on user interruption: the Stop button is a hard
+        # stop that must not spawn the next automatic run; the just-
+        # interrupted profile's last_run is unchanged, so without
+        # this guard the chain would re-trigger it in a loop.
+        if was_auto and not res.interrupted:
+            QTimer.singleShot(0, self._verifier_echeance)
 
     def _verifier_echeance(self) -> None:
         if self.travailleur and self.travailleur.isRunning():
             return
-        if self.planificateur.is_due():
-            self._ecrire(self.tr("Mise à jour automatique déclenchée."))
-            self._lancer(auto=True)
+        # Multi-profile scheduler: pick the first profile whose grid
+        # slot has passed, if any. Falls back to the default profile
+        # (index 0) when nothing extra is due, matching the
+        # pre-multi-profile cadence for every existing single-profile
+        # setup.
+        k = self.planificateur.next_due_index(self.cfg.profiles())
+        if k is None:
+            return
+        self._ecrire(self.tr("Automatic update triggered."))
+        self._lancer(auto=True, auto_row=k)
 
     def _rafraichir_echeance(self) -> None:
         texte = next_run_text(self.planificateur)
         self.label_echeance.setText(texte)
         if self.tray:
-            self.tray.setToolTip(self.tr("Glaneur — {texte}").format(texte=texte))
+            self.tray.setToolTip(self.tr("Glaneur — {text}").format(text=texte))
 
     def _ecrire(self, message: str) -> None:
         self.journal.appendPlainText(f"{datetime.now():%H:%M:%S}  {message}")
@@ -1245,7 +1985,7 @@ class Fenetre(QMainWindow):
             self.hide()
             self.tray.showMessage(
                 "Glaneur",
-                self.tr("L'application continue en arrière-plan. Clic droit sur l'icône pour quitter."),
+                self.tr("The application keeps running in the background. Right-click the icon to quit."),
                 icone_application(), 4000)
             return
 
@@ -1258,25 +1998,25 @@ class Fenetre(QMainWindow):
                 and not self._avertissement_tray_montre):
             self._avertissement_tray_montre = True
             QMessageBox.information(
-                self, self.tr("Fermeture de Glaneur"),
+                self, self.tr("Closing Glaneur"),
                 self.tr(
-                    "Aucun indicateur système n'est disponible sur cette session Linux, "
-                    "l'application ne peut pas rester en arrière-plan et va se fermer.\n\n"
-                    "Pour qu'elle continue à tourner icône dans la barre système, installer "
-                    "l'extension « AppIndicator and KStatusNotifierItem Support » "
-                    "(GNOME Shell) ou l'équivalent de votre environnement, puis relancer "
-                    "l'application."))
+                    "No system tray indicator is available on this Linux session, "
+                    "the application cannot stay in the background and will close.\n\n"
+                    "For it to keep running as an icon in the system tray, install "
+                    "the “AppIndicator and KStatusNotifierItem Support” extension "
+                    "(GNOME Shell) or the equivalent for your environment, then relaunch "
+                    "the application."))
 
         if self.travailleur and self.travailleur.isRunning():
             reponse = QMessageBox.question(
-                self, self.tr("Quitter"),
-                self.tr("Une mise à jour est en cours. Elle reprendra au prochain lancement.\n"
-                        "Quitter maintenant ?"))
+                self, self.tr("Quit"),
+                self.tr("An update is running. It will resume at the next launch.\n"
+                        "Quit now?"))
             if reponse != QMessageBox.Yes:
                 self._quitter_demande = False
                 event.ignore()
                 return
-            self.arret.set()
+            self.stop_event.set()
             self.travailleur.wait(5000)
 
         if self.tray:

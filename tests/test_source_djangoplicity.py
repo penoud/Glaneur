@@ -11,6 +11,8 @@ from __future__ import annotations
 import threading
 from unittest.mock import patch
 
+import pytest
+
 from Glaneur.engine import Engine, Options, read_manifest
 from Glaneur.sources import Transport
 from Glaneur.sources.djangoplicity import Djangoplicity
@@ -22,16 +24,16 @@ from Glaneur.sources.djangoplicity import Djangoplicity
 def _source(*, format_image="Large", base="https://www.eso.org/public"):
     return Djangoplicity(
         base=base,
-        transport=Transport(delay=0, arret=threading.Event()),
+        transport=Transport(delay=0, stop_event=threading.Event()),
         settings={"format_image": format_image},
     )
 
 
-def _ressource(rtype, url, taille=1234, dims=(1600, 900)):
+def _ressource(rtype, url, size=1234, dims=(1600, 900)):
     return {
         "ResourceType": rtype,
         "URL": url,
-        "FileSize": taille,
+        "FileSize": size,
         "Dimensions": list(dims),
     }
 
@@ -42,11 +44,11 @@ def _entree(ident, pubdate="2026-06-15T12:00:00",
     if ressources is None:
         ressources = [
             _ressource("Original", f"https://cdn.eso.org/original/{ident}.tif",
-                       taille=50_000_000, dims=(4096, 2160)),
+                       size=50_000_000, dims=(4096, 2160)),
             _ressource("Large", f"https://cdn.eso.org/large/{ident}.jpg",
-                       taille=3_500_000, dims=(1600, 900)),
+                       size=3_500_000, dims=(1600, 900)),
             _ressource("Small", f"https://cdn.eso.org/small/{ident}.jpg",
-                       taille=200_000, dims=(1280.0, 720.0)),
+                       size=200_000, dims=(1280.0, 720.0)),
         ]
     entree = {
         "ID": ident,
@@ -88,17 +90,17 @@ class FauxServeur:
 # --------------------------------------------------------------------------- #
 
 class TestBase:
-    def test_type_et_classements(self):
+    def test_type_and_sort_modes(self):
         assert Djangoplicity.type == "djangoplicity"
-        # doc §3: "galerie" has no natural equivalent
-        assert "galerie" not in Djangoplicity.sort_modes
-        assert {"date", "plat"} <= Djangoplicity.sort_modes
+        # doc §3: "gallery" has no natural equivalent
+        assert "gallery" not in Djangoplicity.sort_modes
+        assert {"date", "flat"} <= Djangoplicity.sort_modes
 
-    def test_endpoint_derive_de_la_base(self):
+    def test_endpoint_derived_from_base(self):
         s = _source(base="https://www.eso.org/public/")
         assert s.endpoint == "https://www.eso.org/public/images/d2d/"
 
-    def test_convertir_depuis(self):
+    def test_convert_from(self):
         s = _source()
         assert s.convert_from("2026-06-15T12:00:00") == "20260615120000"
         # tolerant: YYYY-MM-DD is enough, the time is zero-padded
@@ -111,30 +113,30 @@ class TestBase:
 # --------------------------------------------------------------------------- #
 
 class TestToElement:
-    def test_format_par_defaut_large(self):
+    def test_default_format_is_large(self):
         s = _source()
         e = s._to_element(_entree("eso1907a"))
         assert e.ident == "eso1907a:Large"
         assert e.url == "https://cdn.eso.org/large/eso1907a.jpg"
-        assert e.nom_fichier == "eso1907a.jpg"
-        assert e.mois == "2026-06"
-        assert e.taille == 3_500_000
+        assert e.filename == "eso1907a.jpg"
+        assert e.month == "2026-06"
+        assert e.size == 3_500_000
 
-    def test_repli_sur_small_si_large_absent(self):
+    def test_falls_back_to_small_when_large_absent(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[
             _ressource("Original", "https://cdn.eso.org/original/eso1907a.tif"),
             _ressource("Small", "https://cdn.eso.org/small/eso1907a.jpg",
-                       taille=200_000, dims=(1280.0, 720.0)),
+                       size=200_000, dims=(1280.0, 720.0)),
         ])
         e = s._to_element(entree)
         # the ident keeps the format actually downloaded
         assert e.ident == "eso1907a:Small"
         assert e.url == "https://cdn.eso.org/small/eso1907a.jpg"
         # float `Dimensions` → int
-        assert e.largeur == 1280
+        assert e.width == 1280
 
-    def test_aucun_format_disponible_url_none(self):
+    def test_no_format_available_url_is_none(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[
             _ressource("Thumbnail", "https://cdn.eso.org/thumb/eso1907a.jpg"),
@@ -145,20 +147,20 @@ class TestToElement:
         # the ident keeps the requested format (not the effective one)
         assert e.ident.endswith(":Large")
 
-    def test_original_choisi_si_configure(self):
+    def test_original_chosen_when_configured(self):
         s = _source(format_image="Original")
         e = s._to_element(_entree("eso1907a"))
         assert e.ident == "eso1907a:Original"
         assert e.url.endswith(".tif")
 
-    def test_credit_et_rights_dans_extra(self):
+    def test_credit_and_rights_in_extra(self):
         s = _source()
         e = s._to_element(_entree("eso1907a", credit="ESO/T. Preibisch",
                                   rights="CC BY 4.0"))
         assert e.extra["credit"] == "ESO/T. Preibisch"
         assert e.extra["rights"] == "CC BY 4.0"
 
-    def test_checksum_reporte_dans_extra_si_present(self):
+    def test_checksum_carried_into_extra_when_present(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[
             _ressource("Large", "https://cdn.eso.org/large/eso1907a.jpg"),
@@ -167,7 +169,7 @@ class TestToElement:
         e = s._to_element(entree)
         assert e.extra["checksum"] == "a" * 64
 
-    def test_dimensions_manquantes_largeur_none(self):
+    def test_missing_dimensions_width_none(self):
         s = _source()
         entree = _entree("eso1907a", ressources=[{
             "ResourceType": "Large",
@@ -176,7 +178,7 @@ class TestToElement:
             "Dimensions": [],
         }])
         e = s._to_element(entree)
-        assert e.largeur is None
+        assert e.width is None
 
     def test_sanitizer_byte_repr(self):
         # Known bug (djangoplicity issue #147): Credit rendered as
@@ -185,7 +187,7 @@ class TestToElement:
         e = s._to_element(_entree("eso1907a", credit="b'ESO/T. Preibisch'"))
         assert e.extra["credit"] == "ESO/T. Preibisch"
 
-    def test_sanitizer_sur_id(self):
+    def test_sanitizer_on_id(self):
         # same bug applied to the ID: the name must come out intact.
         s = _source()
         entree = _entree("eso1907a")
@@ -198,8 +200,8 @@ class TestToElement:
 # Inventory (pagination via Next)
 # --------------------------------------------------------------------------- #
 
-class TestInventaire:
-    def test_pagination_suit_next(self):
+class TestInventory:
+    def test_pagination_follows_next(self):
         s = _source(base="https://x.example")
         page1 = _reponse([_entree("a"), _entree("b")],
                          next_url="https://x.example/images/d2d/?page=2",
@@ -215,7 +217,7 @@ class TestInventaire:
         # exactly two requests, not three
         assert len(faux.appels) == 2
 
-    def test_arret_sur_absence_de_next_meme_page_courte(self):
+    def test_stop_on_missing_next_even_short_page(self):
         # page returning fewer entries than `count` but no `Next`:
         # the adapter must stop (doc §7).
         s = _source(base="https://x.example")
@@ -225,7 +227,7 @@ class TestInventaire:
             r = list(s.inventory(None, None))
         assert [e.ident for e in r] == ["a:Large"]
 
-    def test_deduplication_par_id(self):
+    def test_deduplication_by_id(self):
         # cross-page duplicate: silently ignored
         s = _source(base="https://x.example")
         page1 = _reponse([_entree("a"), _entree("b")],
@@ -239,7 +241,7 @@ class TestInventaire:
             r = list(s.inventory(None, None))
         assert sorted(e.ident for e in r) == ["a:Large", "b:Large", "c:Large"]
 
-    def test_after_est_transmis_en_params(self):
+    def test_after_is_passed_via_params(self):
         s = _source(base="https://x.example")
         capture = {}
 
@@ -257,8 +259,8 @@ class TestInventaire:
 # downloads by the engine; the manifest flags it as "already up to date".
 # --------------------------------------------------------------------------- #
 
-class TestAfterInclusif:
-    def test_element_frontiere_non_retelecharge(self, tmp_path):
+class TestAfterInclusive:
+    def test_boundary_element_not_redownloaded(self, tmp_path):
         # Simulate: a previous run downloaded `a` (id "a:Large"). A second
         # run with inclusive `after` returns `a` first, then a new `b`.
         # The manifest must report `a` → already up to date (1 deja_presentes),
@@ -267,8 +269,8 @@ class TestAfterInclusif:
         fichier_a.write_bytes(b"contenu-a-attendu")
         from Glaneur.engine import write_manifest
         write_manifest(tmp_path, {
-            "a:Large": {"fichier": "a.jpg",
-                        "taille": len(b"contenu-a-attendu")},
+            "a:Large": {"filename": "a.jpg",
+                        "size": len(b"contenu-a-attendu")},
         })
 
         options = Options(
@@ -281,11 +283,11 @@ class TestAfterInclusif:
         # Build the entries as the fake server would supply them.
         entree_a = _entree("a", ressources=[
             _ressource("Large", "https://cdn.eso.org/large/a.jpg",
-                       taille=len(b"contenu-a-attendu")),
+                       size=len(b"contenu-a-attendu")),
         ])
         entree_b = _entree("b", ressources=[
             _ressource("Large", "https://cdn.eso.org/large/b.jpg",
-                       taille=42),
+                       size=42),
         ])
         page = _reponse([entree_a, entree_b], next_url=None)
         faux = FauxServeur({"https://x.example/images/d2d/": page})
@@ -293,8 +295,9 @@ class TestAfterInclusif:
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 42, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                          return_value=("ok", {"size": 42, "etag": "",
+                                               "modified": "", "url": "u"},
+                                        None, None)):
             res = moteur.run()
 
         # `a` recognized as already present; only `b` downloaded.
@@ -306,11 +309,127 @@ class TestAfterInclusif:
 
 
 # --------------------------------------------------------------------------- #
+# Lot 0.2 — Next URL must stay on the configured origin
+# --------------------------------------------------------------------------- #
+
+class TestNextOriginCheck:
+    """Per docs/design/evolution-multi-sources.md §8: a `Next` that
+    switches host or scheme relative to the configured base is refused,
+    not crawled. A relative `Next` (no netloc) stays on origin by
+    construction and is allowed.
+    """
+
+    def test_next_on_same_host_is_followed(self):
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="https://x.example/images/d2d/?page=2")
+        page2 = _reponse([_entree("b")], next_url=None)
+        faux = FauxServeur({
+            "https://x.example/images/d2d/": page1,
+            "https://x.example/images/d2d/?page=2": page2,
+        })
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json):
+            r = list(s.inventory(None, None))
+        assert [e.ident for e in r] == ["a:Large", "b:Large"]
+
+    def test_next_on_different_host_raises(self):
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="https://evil.example/images/d2d/?page=2")
+        faux = FauxServeur({"https://x.example/images/d2d/": page1})
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json), \
+             pytest.raises(RuntimeError, match="leaves the configured origin"):
+            list(s.inventory(None, None))
+
+    def test_next_with_different_scheme_raises(self):
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="http://x.example/images/d2d/?page=2")
+        faux = FauxServeur({"https://x.example/images/d2d/": page1})
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json), \
+             pytest.raises(RuntimeError, match="leaves the configured origin"):
+            list(s.inventory(None, None))
+
+    def test_relative_next_is_allowed(self):
+        """A `Next` without an explicit netloc stays on origin by
+        construction (the HTTP client resolves it against the base)."""
+        s = _source(base="https://x.example")
+        page1 = _reponse([_entree("a")],
+                         next_url="/images/d2d/?page=2")
+        page2 = _reponse([_entree("b")], next_url=None)
+        faux = FauxServeur({
+            "https://x.example/images/d2d/": page1,
+            "/images/d2d/?page=2": page2,
+        })
+        with patch.object(s.transport, "get_json", side_effect=faux.get_json):
+            r = list(s.inventory(None, None))
+        assert [e.ident for e in r] == ["a:Large", "b:Large"]
+
+
+# --------------------------------------------------------------------------- #
+# Lot 0.3 — format fallback must be visible (never silent)
+# --------------------------------------------------------------------------- #
+
+class TestFormatFallback:
+    """Per roadmap lot 0.3: when the requested format is missing and the
+    adapter falls back to Large or Small, the fallback is journalled so
+    the user sees it. `Original` is never picked as an automatic
+    fallback (existing behaviour re-asserted here).
+    """
+
+    def test_no_journal_when_requested_format_matches(self):
+        journal: list[str] = []
+        s = _source(format_image="Large")
+        s._journal = journal.append
+        el = s._to_element(_entree("a"))
+        assert el.ident == "a:Large"
+        assert not any("falling back" in m for m in journal)
+
+    def test_fallback_from_small_to_large_is_journalled(self):
+        """If the source only exposes Large and Original, and the user
+        asked for Small, the adapter falls back to Large and journals
+        the substitution with both formats named."""
+        journal: list[str] = []
+        s = _source(format_image="Small")
+        s._journal = journal.append
+        entree = _entree("a", ressources=[
+            _ressource("Original", "https://cdn.eso.org/original/a.tif",
+                       size=50_000_000, dims=(4096, 2160)),
+            _ressource("Large", "https://cdn.eso.org/large/a.jpg",
+                       size=3_500_000, dims=(1600, 900)),
+        ])
+        el = s._to_element(entree)
+        assert el.ident == "a:Large"   # fell back to Large
+        assert any("'Small'" in m and "'Large'" in m and "falling back" in m
+                   for m in journal), journal
+
+    def test_original_never_picked_as_fallback(self):
+        """If the user asked for Small and only Original is available,
+        the adapter refuses: `Original` is not in the automatic
+        fallback list — pulling down a one-GB TIFF is not a friendly
+        surprise. The Element comes back without a URL, which the
+        engine counts as skipped.
+        """
+        journal: list[str] = []
+        s = _source(format_image="Small")
+        s._journal = journal.append
+        entree = _entree("a", ressources=[
+            _ressource("Original", "https://cdn.eso.org/original/a.tif",
+                       size=50_000_000, dims=(4096, 2160)),
+        ])
+        el = s._to_element(entree)
+        assert el.url is None
+        # No misleading fallback message when there is nothing to fall
+        # back to.
+        assert not any("falling back" in m for m in journal)
+
+
+# --------------------------------------------------------------------------- #
 # Missing resource → ignored by the engine
 # --------------------------------------------------------------------------- #
 
-class TestRessourceManquante:
-    def test_element_sans_url_est_ignoree(self, tmp_path):
+class TestMissingResource:
+    def test_element_without_url_is_ignored(self, tmp_path):
         options = Options(
             target_dir=tmp_path, site="https://x.example", delay=0,
             sort_mode="date", source_type="djangoplicity",
@@ -331,8 +450,9 @@ class TestRessourceManquante:
         with patch.object(moteur.transport, "get_json",
                           side_effect=faux.get_json), \
              patch.object(moteur, "download",
-                          return_value=("ok", {"taille": 3_500_000, "etag": "",
-                                               "modifie": "", "url": "u"}, None)):
+                          return_value=("ok", {"size": 3_500_000, "etag": "",
+                                               "modified": "", "url": "u"},
+                                        None, None)):
             res = moteur.run()
         # good: downloaded; bad: ignored
         assert res.downloaded == 1

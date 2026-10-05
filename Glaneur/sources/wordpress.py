@@ -31,8 +31,8 @@ def _clean(titre: str, defaut: str = "divers") -> str:
 class WordPress(Source):
     """Adapter for a WordPress site exposing ``/wp-json/wp/v2/``.
 
-    Supports the three sort modes (``galerie``, ``date``, ``plat``). The
-    ``galerie`` mode queries ``/wp-json/wp/v2/types`` to list the
+    Supports the three sort modes (``gallery``, ``date``, ``flat``). The
+    ``gallery`` mode queries ``/wp-json/wp/v2/types`` to list the
     available post types then resolves the parent identifiers into
     titles via the matching endpoint.
     """
@@ -40,7 +40,7 @@ class WordPress(Source):
     #: Key used in ``Glaneur.sources.SOURCES``.
     type = "wordpress"
     #: Set of supported sort modes.
-    sort_modes = frozenset({"galerie", "date", "plat"})
+    sort_modes = frozenset({"gallery", "date", "flat"})
 
     def __init__(self, base, transport, settings, journal=None, progression=None):
         """Instantiate the adapter and compute the v2 API URL.
@@ -126,19 +126,19 @@ class WordPress(Source):
         url = m.get("source_url") or ""
         details = m.get("media_details") or {}
         chemin = urlparse(url).path
-        mois: str | None = None
+        month: str | None = None
         match = re.search(r"/uploads/(\d{4})/(\d{2})/", chemin)
         if match:
-            mois = f"{match.group(1)}-{match.group(2)}"
+            month = f"{match.group(1)}-{match.group(2)}"
         return Element(
             ident=str(m["id"]),
             url=url,
-            nom_fichier=chemin.rsplit("/", 1)[-1] if chemin else "",
+            filename=chemin.rsplit("/", 1)[-1] if chemin else "",
             date=m.get("date"),
-            mois=mois,
-            largeur=details.get("width"),
-            taille=details.get("filesize"),
-            groupe=str(m["post"]) if m.get("post") else None,
+            month=month,
+            width=details.get("width"),
+            size=details.get("filesize"),
+            group=str(m["post"]) if m.get("post") else None,
         )
 
     # -- Grouping (gallery) ----------------------------------------------- #
@@ -205,5 +205,5 @@ class WordPress(Source):
 
         if restants:
             self._journal(
-                f"{len(restants)} galerie(s) non identifiée(s), classées par date.")
+                f"{len(restants)} gallery/galleries not identified, sorted by date.")
         return titres

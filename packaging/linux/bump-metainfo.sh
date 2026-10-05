@@ -1,11 +1,11 @@
 #!/bin/sh
-# Réécrit la ligne <release ... /> du fichier metainfo AppStream avec la
-# version en cours (Glaneur.__version__ par défaut) et la date
-# UTC du jour. Idempotent, à appeler avant flatpak-builder et dpkg-deb
-# pour éviter que la version affichée par les gestionnaires ne s'écarte
-# de celle réellement embarquée dans les paquets.
+# Rewrites the <release ... /> line of the AppStream metainfo file with
+# the current version (Glaneur.__version__ by default) and today's UTC
+# date. Idempotent, to be called before flatpak-builder and dpkg-deb so
+# the version shown by package managers stays in sync with the one
+# actually shipped in the packages.
 #
-# Usage : bump-metainfo.sh [version]
+# Usage: bump-metainfo.sh [version]
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
@@ -14,8 +14,8 @@ FICHIER="$ROOT/packaging/linux/org.glaneur.Glaneur.metainfo.xml"
 VERSION=${1:-$(python -c 'from Glaneur import __version__; print(__version__)')}
 DATE=$(date -u +%Y-%m-%d)
 
-# Un placeholder d'un seul <release> — le format doit rester exactement
-# celui-là dans le fichier source pour que ce sed reste stable.
+# A single <release> placeholder — the format must stay exactly this
+# one in the source file so this sed remains stable.
 python - "$FICHIER" "$VERSION" "$DATE" <<'PY'
 import re
 import sys
@@ -30,8 +30,8 @@ nouveau = re.sub(
     count=1,
 )
 if nouveau == texte:
-    raise SystemExit("bump-metainfo : balise <release ... /> introuvable")
+    raise SystemExit("bump-metainfo: <release ... /> tag not found")
 with open(chemin, "w", encoding="utf-8") as f:
     f.write(nouveau)
-print(f"metainfo mis à jour : version={version} date={date}")
+print(f"metainfo updated: version={version} date={date}")
 PY

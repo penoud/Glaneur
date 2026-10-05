@@ -1,81 +1,130 @@
 # Impact Map
 
 <!--
-Gabarit temporaire, propre à la tâche courante. Remets-le à cet état vide
-entre deux lots. N'y stocke ni copie de fichiers, ni logs, ni résultats de
-tests volumineux, ni informations déjà présentes dans CLAUDE.md. Voir
-CLAUDE.md section « Impact Map » et « Politique de contexte minimal ».
+Temporary scratchpad, one story at a time. Reset to this empty state
+between two stories. Do not store copies of files, logs, bulky test
+output, or information that already lives in CLAUDE.md. See CLAUDE.md
+sections "Impact Map" and "Minimal context policy".
 -->
 
 ## Task
 
-**Sprint « CI — Valider l'exe avant de tagger ». US-CI-07.**
+**Lot 5.2 — Per-profile scheduler grid (pure computation).**
 
-Actuellement, `release.yml` tag puis lance `build.yml` par
-`gh workflow run`. Si le build casse, un tag existe sans release.
-US-CI-07 remplace cette chaîne par : `tests → version → build (+ smoke)
-→ [approbation manuelle] → tag + publish`, tout dans une seule exécution
-de `release.yml`.
+Adds the multi-profile scheduling algorithm from
+`docs/design/evolution-multi-sources.md` §3.1 and roadmap §5.2 as
+pure methods on :class:`Glaneur.scheduler.Scheduler`. No wiring into
+:class:`app.Fenetre` or :class:`Glaneur.config.Config`'s state
+yet — that follows in a next commit once the core computation has
+its own tests and reviewer sign-off.
 
-- `build.yml` devient réutilisable (`workflow_call`) et perd `push: tags`.
-- Le job `publish` est déplacé de `build.yml` vers `release.yml`.
-- Le tag est posé sur `$GITHUB_SHA` juste avant la publication.
-- Un job `publish` sous environnement `release` (relecteurs requis)
-  fait pauser l'exécution après le build ; le mainteneur télécharge
-  l'installateur, le teste, puis approuve ou rejette.
-- Un smoke test `--controle-bundle` est ajouté à `build.yml` avant la
-  signature.
+### Grid formula
+
+For ``n`` scheduled profiles, ``k`` = profile rank (0 to n-1),
+``I`` = ``interval_hours``, the grid of slots for profile ``k`` is:
+
+    anchor + k × I/n + m × I,  m ∈ ℤ
+
+The **anchor** is a time-of-day (``HH:MM``) stored on
+:attr:`Config.schedule_anchor` (already added in E3 part A). Empty
+anchor falls back to midnight.
+
+Due-time for a profile:
+
+- ``threshold = last_run + I/2`` (or ``now`` when ``last_run`` is
+  empty — a fresh profile fires immediately);
+- slot = first grid slot ≥ threshold;
+- if a ``retry_after`` is set and it is later than the slot,
+  ``retry_after`` wins (the deferral pushes the run out further).
+
+The **I/2 rule** is what makes the computation robust — a run made
+on time lands on the next slot exactly ``+I`` later, a late catch-up
+realigns within 0.5–1.5 intervals without a double run, and adding
+or reordering profiles never restarts a profile less than ``I/2``
+after its last run. That last invariant is already documented in
+CLAUDE.md's multi-source section.
+
+### API added
+
+- `Scheduler._parse_anchor()` — parses
+  ``config.schedule_anchor`` into a naive ``time`` object,
+  fallback ``00:00`` on empty/malformed.
+- `Scheduler._grid_slot(anchor_dt, k, n, threshold)` — pure
+  computation returning the first slot ≥ threshold.
+- `Scheduler.next_run_for(profile, k, n)` — the runtime entry
+  point. Reads scheduler state (``last_run`` /
+  ``retry_after``) from the passed :class:`Glaneur.config.Profile`;
+  ``k`` / ``n`` come from the caller iterating
+  :meth:`Glaneur.config.Config.profiles`.
+- `Scheduler.is_due_for(profile, k, n)` — boolean wrapper.
+- `Scheduler.next_due_index(profiles)` — walks a list of profiles
+  and returns the index of the first one that is due, or ``None``.
 
 ## Directly modified
 
-- `.github/workflows/release.yml` (remplacement complet)
-- `.github/workflows/build.yml` (triggers + smoke test + suppression job publish)
-- `docs/sprints/sprint-ci-validation-avant-tag.md` (nouveau, sprint doc)
-- `docs/sprints/sprint-ci-workflows.md` (procédure de reprise)
-- `README.md` (mentions de publication par push de tag)
+- `Glaneur/scheduler.py` — five new methods (four private + one
+  public helper). Existing single-profile API
+  (`next_run`, `is_due`, `mark_run`, `defer`) unchanged; still
+  drives the default-profile auto-run cadence.
+- `tests/test_scheduler.py` — new `TestGridSlot` and
+  `TestNextRunFor` classes locking the math.
 
 ## Direct dependencies
 
-- `app.py` : `--controle-bundle` (existe déjà, ligne 1312) — non modifié.
-- `.github/workflows/tests.yml` : appelé par `release.yml` via
-  `workflow_call` (déjà en place depuis US-CI-04).
-- `.github/workflows/build-check.yml` : hors périmètre US-CI-07 ;
-  couvert par US-CI-08 (PR séparée), non entreprise ici.
+- Uses :attr:`Config.schedule_anchor`, :attr:`Config.interval_hours`,
+  and reads `profile.last_run` / `profile.retry_after` — all already
+  in place.
 
 ## Explicitly out of scope
 
-- **`__version__`** : ne change pas. Les PR de ce sprint ne publient rien.
-- **US-CI-08** : PR séparée, non traitée dans ce lot.
-- **Réactivation Linux/macOS** : les blocs restent commentés, seul le
-  commentaire pointe désormais vers `release.yml`.
-- **Réglage GitHub `environment: release`** : responsabilité du
-  mainteneur avant la fusion.
-- **Signature `WINDOWS_PFX_*`** : inchangée (relève du lot 9).
-- **AppStream metainfo** : inchangé (en attente avec Linux).
-- **Frontière 1 (`QCoreApplication`)** : distinct du sprint.
+- Wiring `Fenetre._verifier_echeance` to iterate profiles — next
+  commit.
+- Per-profile `mark_run` / `defer` mutators on Scheduler — next
+  commit (they touch how per-profile state gets persisted, since
+  the default profile's state is flat on Config while extras'
+  state is on the Profile object in `_extra_profiles`).
+- Multi-profile queueing / one-profile-at-a-time worker — E3 part
+  B step 11 (queue) and lot 5.3.
+- `__version__` — unchanged.
 
 ## Tests
 
-Aucun test unitaire à ajouter — les workflows ne s'exécutent pas contre
-le faux serveur. Vérifications :
+- `TestGridSlot`:
+  - single-profile grid == single-slot walk;
+  - two-profile grid staggered by I/2;
+  - three-profile grid staggered by I/3;
+  - threshold before base returns base (m=0);
+  - threshold exactly at base returns base;
+  - threshold exactly at a future slot returns that slot;
+  - anchor midnight vs. non-midnight give parallel grids.
+- `TestNextRunFor`:
+  - empty last_run + fresh profile → due immediately;
+  - manual mode (interval 0) returns None;
+  - deferral pushes past the nominal slot;
+  - I/2 rule: last_run == just now, next slot is exactly +I later;
+  - N=1 case matches today's single-profile Scheduler.next_run().
 
-- `actionlint` local si disponible (non installé sur ce poste).
-- Critères d'acceptation observés après fusion (voir sprint doc).
+Verification:
+
+- `pytest -q` → 634 + new tests.
+- `python tools/check_coverage.py` → floors held.
+- `ruff check` clean on touched files.
 
 ## Invariants
 
-- `__version__` inchangé.
-- Aucun code applicatif Python modifié.
-- La release publie **exactement les octets testés** au smoke test et
-  à l'essai manuel.
-- Le tag désigne le commit qui a été construit (`GITHUB_SHA`), jamais
-  un commit plus récent.
-- Un rejet ne consomme pas la version : ni tag ni release.
+- `__version__` unchanged.
+- Existing Scheduler behaviour unchanged.
+- I/2-no-double-run invariant enforced (already documented in
+  CLAUDE.md).
+- All new methods pure (no side-effects, no persistence, no
+  clock — every "now" value is a parameter, matching the existing
+  scheduler pattern for testability).
 
 ## Validation
 
-Niveau `local`. Édition workflows + docs. Pas de pytest, pas de
-`invariant-reviewer` (aucun invariant du moteur ou de la persistance
-n'est touché ; le sprint ne modifie ni `Glaneur/`, ni le format des
-fichiers persistés). Relecture manuelle des YAML et cohérence avec la
-procédure de reprise documentée.
+Level `subsystem` per lot 5.2's engine-scheduler footprint. No
+persisted-format touched, no boundary crossed.
+
+- `pytest -q --cov=Glaneur --cov-branch` green.
+- `python tools/check_coverage.py` green.
+- `ruff check` clean on touched files.

@@ -73,7 +73,7 @@ The `engine` package exposes its public API (`Engine`, `Options`, `RunResult`,
 Callers import from `Glaneur.engine` and stay decoupled from the internal
 module split.
 
-**Engine contract.** `Engine(options, journal, progression, arret).run()`
+**Engine contract.** `Engine(options, journal, progression, stop_event).run()`
 returns a `RunResult`. The engine imports neither Qt nor any widget: callbacks
 are wired to Qt signals emitted from a `QThread`, and Qt marshals them
 automatically back to the main thread through its queued connections. That is
@@ -204,7 +204,7 @@ last 50 lines of log).
 | `target_dir` | image destination | user's Pictures folder |
 | `interval_hours` | 0, 6, 12, 24 or 168 | `24` |
 | `min_width` | width threshold in pixels | `800` |
-| `sort_mode` | `galerie`, `date` or `plat` | `galerie` |
+| `sort_mode` | `gallery`, `date` or `flat` | `gallery` |
 | `image_format` | Djangoplicity: `Large` / `Small` / `Original` | `Large` |
 | `verify_integrity` | conditional revalidation | `false` |
 | `check_updates_on_start` | queries GitHub Releases at launch | `true` |
@@ -471,7 +471,7 @@ Le paquet `engine` réexporte son API publique (`Engine`, `Options`,
 `Glaneur/engine/__init__.py`. Les appelants importent depuis
 `Glaneur.engine` sans dépendre du découpage interne.
 
-**Contrat du moteur.** `Engine(options, journal, progression, arret).run()`
+**Contrat du moteur.** `Engine(options, journal, progression, stop_event).run()`
 renvoie un `RunResult`. Le moteur n'importe ni Qt ni aucun widget : les
 callbacks sont branchés sur des signaux Qt émis depuis un `QThread`, et Qt les
 marshale automatiquement vers le thread principal via ses connexions en file.
