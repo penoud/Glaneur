@@ -1925,7 +1925,17 @@ class Fenetre(QMainWindow):
                 self.tr("{n} new image(s) — {size}").format(
                     n=res.downloaded, size=format_bytes(res.bytes)),
                 icone_application(), 5000)
+        was_auto = self.auto_en_cours
         self.auto_en_cours = False
+        # Chain the next overdue profile right away, so a queue of
+        # several profiles due at startup runs back-to-back instead
+        # of waiting one timer tick (PERIODE_ECHEANCE) between each.
+        # Skipped on user interruption: the Stop button is a hard
+        # stop that must not spawn the next automatic run; the just-
+        # interrupted profile's last_run is unchanged, so without
+        # this guard the chain would re-trigger it in a loop.
+        if was_auto and not res.interrupted:
+            QTimer.singleShot(0, self._verifier_echeance)
 
     def _verifier_echeance(self) -> None:
         if self.travailleur and self.travailleur.isRunning():

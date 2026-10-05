@@ -307,3 +307,81 @@ class TestStatusPipeline:
     def test_failures_but_partial_success_is_still_done(self, qapp):
         res = RunResult(failures=3, downloaded=1, message="mixed")
         assert app_module.Fenetre._status_from_result(res) == "Done — 1 downloaded"
+
+
+# --------------------------------------------------------------------------- #
+# Auto-run chain: back-to-back overdue profiles (lot 5.2 wiring)
+# --------------------------------------------------------------------------- #
+
+class TestAutoRunChain:
+    """When an auto-triggered run finishes, the next overdue profile
+    picks up immediately (no 30-s timer-tick gap). Interrupted runs
+    break the chain so Stop stays a hard stop."""
+
+    def _stub_fenetre(self, auto_en_cours: bool, row_en_cours: int = 0):
+        """Minimal Fenetre stand-in with just what _terminer's chain
+        branch reads: auto_en_cours flag and a stubbed planificateur
+        so no real file is touched. Everything else is MagicMocked."""
+        from unittest.mock import MagicMock
+        stub = MagicMock()
+        stub.auto_en_cours = auto_en_cours
+        stub._row_en_cours = row_en_cours
+        stub.tray = None
+        stub.cfg = MagicMock()
+        stub.cfg.notifications = False
+        stub.isVisible.return_value = True
+        return stub
+
+    def test_chain_fires_after_normal_auto_run(self, qtbot, monkeypatch):
+        """auto_en_cours=True, no interrupt, no defer → the single-shot
+        timer schedules the next _verifier_echeance call."""
+        stub = self._stub_fenetre(auto_en_cours=True)
+        res = RunResult(downloaded=5, message="ok")
+        calls: list = []
+        monkeypatch.setattr(
+            app_module.QTimer, "singleShot",
+            lambda delay, cb: calls.append((delay, cb)))
+        app_module.Fenetre._terminer(stub, res)
+        assert len(calls) == 1
+        assert calls[0][0] == 0
+        assert calls[0][1] == stub._verifier_echeance
+
+    def test_chain_does_not_fire_after_interrupt(self, qtbot, monkeypatch):
+        """A user Stop interrupts the engine; the chain MUST NOT fire
+        or the same profile would re-trigger immediately (its last_run
+        was left unchanged on interrupt — infinite loop guard)."""
+        stub = self._stub_fenetre(auto_en_cours=True)
+        res = RunResult(interrupted=True, message="stopped")
+        calls: list = []
+        monkeypatch.setattr(
+            app_module.QTimer, "singleShot",
+            lambda delay, cb: calls.append((delay, cb)))
+        app_module.Fenetre._terminer(stub, res)
+        assert calls == []
+
+    def test_chain_does_not_fire_after_manual_run(self, qtbot, monkeypatch):
+        """A user click on Update now sets auto_en_cours=False; the
+        chain is for automatic cadence only."""
+        stub = self._stub_fenetre(auto_en_cours=False)
+        res = RunResult(downloaded=3, message="ok")
+        calls: list = []
+        monkeypatch.setattr(
+            app_module.QTimer, "singleShot",
+            lambda delay, cb: calls.append((delay, cb)))
+        app_module.Fenetre._terminer(stub, res)
+        assert calls == []
+
+    def test_chain_fires_after_deferred_auto_run(self, qtbot, monkeypatch):
+        """A deferral on the current profile does not stop the chain
+        — the just-deferred profile's retry_after is in the future
+        (next_due_index skips it), but other profiles may still be
+        due and should run now rather than waiting a timer tick."""
+        stub = self._stub_fenetre(auto_en_cours=True)
+        res = RunResult(deferred=True, retry_after="",
+                        message="deferred")
+        calls: list = []
+        monkeypatch.setattr(
+            app_module.QTimer, "singleShot",
+            lambda delay, cb: calls.append((delay, cb)))
+        app_module.Fenetre._terminer(stub, res)
+        assert len(calls) == 1
