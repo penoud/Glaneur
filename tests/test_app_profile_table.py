@@ -13,6 +13,8 @@ Requires `pytest-qt` and a Qt display: on headless CI, set
 
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import QModelIndex, Qt
 
 import app as app_module
@@ -26,13 +28,15 @@ from Glaneur.engine import RunResult
 class TestProfileRowFromConfig:
     def test_populates_every_field(self, tmp_path):
         chemin = tmp_path / "c.json"
-        chemin.write_text(
-            '{"site": "https://example.test",'
-            f' "target_dir": "{tmp_path / "photos"}",'
-            ' "source_type": "wordpress",'
-            ' "last_run": "2026-09-29T15:30:00"}',
-            encoding="utf-8",
-        )
+        # json.dumps handles backslash escaping — a hand-crafted
+        # f-string breaks on Windows where `str(tmp_path / "photos")`
+        # embeds backslashes that JSON then rejects.
+        chemin.write_text(json.dumps({
+            "site": "https://example.test",
+            "target_dir": str(tmp_path / "photos"),
+            "source_type": "wordpress",
+            "last_run": "2026-09-29T15:30:00",
+        }), encoding="utf-8")
         cfg = Config.load(chemin)
         row = app_module._profile_row(cfg, status="Idle")
 
