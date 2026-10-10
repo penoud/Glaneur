@@ -14,7 +14,7 @@ mkdir -p "$PACKAGE/DEBIAN" \
     "$PACKAGE/usr/share/icons/hicolor/scalable/apps"
 
 cp -a "$ROOT/dist/Glaneur/." "$PACKAGE/opt/Glaneur/"
-cp "$ROOT/packaging/linux/Glaneur-launcher" "$PACKAGE/usr/bin/Glaneur"
+cp "$ROOT/packaging/linux/Glaneur-launcher-deb" "$PACKAGE/usr/bin/Glaneur"
 cp "$ROOT/packaging/linux/Glaneur.desktop" \
     "$PACKAGE/usr/share/applications/org.glaneur.Glaneur.desktop"
 cp "$ROOT/packaging/linux/org.glaneur.Glaneur.svg" \
