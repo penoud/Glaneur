@@ -95,16 +95,23 @@ jobs:
           python-version: "3.11"
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt pyinstaller
+      - name: Resolve version
+        # GITHUB_REF_NAME is the branch name (e.g. "main") when build.yml is
+        # called from release.yml, since publish tags the commit AFTER build.
+        # Read the version from the source instead, like the windows job does.
+        run: |
+          version=$(python -c 'from Glaneur import __version__; print(__version__)')
+          echo "VERSION=$version" >> "$GITHUB_ENV"
       - name: Build application bundle
         run: python -m PyInstaller build/Glaneur.spec --noconfirm --clean
       - name: Bump AppStream metainfo version
         run: |
           chmod +x packaging/linux/bump-metainfo.sh
-          packaging/linux/bump-metainfo.sh "${GITHUB_REF_NAME#v}"
+          packaging/linux/bump-metainfo.sh "$VERSION"
       - name: Build Debian package
         run: |
           chmod +x packaging/linux/build-deb.sh
-          packaging/linux/build-deb.sh "${GITHUB_REF_NAME#v}"
+          packaging/linux/build-deb.sh "$VERSION"
       - name: Install Flatpak tooling
         # flatpak-builder d'apt (1.2.x sur ubuntu-22.04) invoque encore
         # `appstream-compose`, retiré de freedesktop-sdk >= 24.08. On
@@ -128,12 +135,12 @@ jobs:
             --repo=flatpak-repo flatpak-build \
             packaging/linux/org.glaneur.Glaneur.yml
           flatpak build-bundle flatpak-repo \
-            "dist/Glaneur-${GITHUB_REF_NAME#v}.flatpak" \
+            "dist/Glaneur-${VERSION}.flatpak" \
             org.glaneur.Glaneur
       - name: Build AppImage
         run: |
           chmod +x packaging/linux/build-appimage.sh
-          packaging/linux/build-appimage.sh "${GITHUB_REF_NAME#v}"
+          packaging/linux/build-appimage.sh "$VERSION"
       - name: Generate Linux checksums
         run: sha256sum dist/*.deb dist/*.flatpak dist/*.AppImage > dist/SHA256SUMS-linux
       - uses: actions/upload-artifact@v7
