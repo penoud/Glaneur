@@ -80,7 +80,18 @@ if [ ! -f "$APPIMAGETOOL" ]; then
 fi
 
 # ── 3. Build the AppImage ──────────────────────────────────────────
+# Pass the output path as the second positional argument: APPIMAGE_OUTPUT
+# is not honored by the continuous appimagetool build we download, which
+# otherwise writes "<Name>-<arch>.AppImage" in the current directory and
+# leaves dist/ empty. No -s: we don't sign the AppImage. --no-appstream
+# skips the appstreamcli check (the tool is not installed on the runner
+# and the metainfo is already bundled under usr/share/metainfo).
+mkdir -p "$OUT"
 echo "Building AppImage: $APPIMAGE"
-APPIMAGE_OUTPUT="$APPIMAGE" "$APPIMAGETOOL" -s "$APPDIR"
+"$APPIMAGETOOL" --no-appstream "$APPDIR" "$APPIMAGE"
 
-echo "AppImage ready: $(ls -lh "$APPIMAGE" | awk '{print $5}')"
+if [ ! -f "$APPIMAGE" ]; then
+    echo "AppImage not produced at $APPIMAGE" >&2
+    exit 1
+fi
+echo "AppImage ready: $(ls -lh "$APPIMAGE")"
