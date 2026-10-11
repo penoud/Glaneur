@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -155,3 +157,51 @@ class TestInstallTranslator:
         assert i18n.install_translator(app) == "fr"
         app.installTranslator.assert_called_once()
         assert i18n._translator is not None
+
+
+# --------------------------------------------------------------------------- #
+# translation data integrity
+# --------------------------------------------------------------------------- #
+
+
+class TestPlaceholderIntegrity:
+    """Every translated string that uses `str.format` placeholders must
+    carry the SAME field names as the English source.
+
+    A translator that renders `{text}` as `{texte}` turns the next
+    `self.tr("…{text}").format(text=…)` call into a `KeyError` at
+    runtime — exactly the regression that crashed Windows startup in
+    the i18n pass following US-EN-07.
+    """
+
+    # Keys of `str.format` fields only — the format spec after `:` is
+    # not part of the key.
+    _FIELD = re.compile(r"\{([^{}:!]*)(?:[:!][^{}]*)?\}")
+
+    @pytest.mark.parametrize("ts_name", ["glaneur_fr.ts", "glaneur_en.ts"])
+    def test_translation_placeholders_match_source(self, ts_name):
+        ts_path = i18n.translations_dir() / ts_name
+        tree = ET.parse(ts_path)
+        offenders = []
+        for message in tree.getroot().iter("message"):
+            source = (message.findtext("source") or "")
+            translation_el = message.find("translation")
+            if translation_el is None:
+                continue
+            if translation_el.get("type") == "unfinished":
+                continue
+            translation = translation_el.text or ""
+            if not translation:
+                continue
+            src_fields = sorted(self._FIELD.findall(source))
+            trn_fields = sorted(self._FIELD.findall(translation))
+            if src_fields != trn_fields:
+                offenders.append((source, translation, src_fields, trn_fields))
+        assert not offenders, (
+            "Translated placeholders drifted from the source — "
+            "`str.format(**kwargs)` will raise KeyError at runtime:\n"
+            + "\n".join(
+                f"  {src!r} -> {trn!r}  (src={s}, trn={t})"
+                for src, trn, s, t in offenders
+            )
+        )
