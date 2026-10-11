@@ -23,7 +23,7 @@ copyright = "2026, Glaneur contributors"
 release = _version
 version = ".".join(_version.split(".")[:2])
 
-language = "fr"
+language = "en"
 
 extensions = [
     "sphinx.ext.autodoc",

@@ -1,21 +1,27 @@
-Glaneur — documentation API
-============================
+Glaneur — API documentation
+===========================
 
-Glaneur télécharge et synchronise des médias depuis des sites de type
-WordPress ou Djangoplicity via un moteur générique. Cette documentation
-couvre l'API interne des modules Python ; elle est générée à partir des
-docstrings du code par Sphinx (`autodoc` + `napoleon`).
+Glaneur downloads and synchronises media from WordPress and Djangoplicity
+sites through a generic engine. This documentation covers the internal
+Python API; it is generated from the code's docstrings by Sphinx
+(``autodoc`` + ``napoleon``).
 
-Pour l'usage utilisateur (installation, configuration, packaging), voir
-le ``README.md`` à la racine du dépôt.
+For user-facing instructions (installation, configuration, packaging),
+see the top-level ``README.md`` of the repository.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contenu
+   :caption: Overview
+
+   architecture
+
+.. toctree::
+   :maxdepth: 2
+   :caption: API reference
 
    api/modules
 
-Index et recherche
+Indices and search
 ------------------
 
 * :ref:`genindex`
