@@ -9,122 +9,128 @@ sections "Impact Map" and "Minimal context policy".
 
 ## Task
 
-**Lot 5.2 — Per-profile scheduler grid (pure computation).**
+**fix(i18n): restore French UI post US-EN-07.**
 
-Adds the multi-profile scheduling algorithm from
-`docs/design/evolution-multi-sources.md` §3.1 and roadmap §5.2 as
-pure methods on :class:`Glaneur.scheduler.Scheduler`. No wiring into
-:class:`app.Fenetre` or :class:`Glaneur.config.Config`'s state
-yet — that follows in a next commit once the core computation has
-its own tests and reviewer sign-off.
+US-EN-07 (commit `b4dd8ad`) flipped Qt's source language from French to
+English across every `tr()` / `translate()` call and regenerated
+`glaneur_fr.ts` as the (EN → FR) translation. Two bugs slipped through
+and together caused the user-visible regression — "la traduction ne
+fonctionne plus pour la majorité de l'UI, il y a bien certains qui
+changent mais pas tous":
 
-### Grid formula
+1. **`Glaneur/i18n.py` was never updated.** It still treats French as
+   the source: when the configured or system language is `"fr"`,
+   `install_translator` returns early without loading
+   `glaneur_fr.qm`, so FR users see the raw English source strings
+   instead of the French UI. Only hardcoded-FR dict labels in
+   `Glaneur/config.py` (`SORT_MODES`, `SOURCE_TYPES`,
+   `INTERVAL_LABELS`) still appear in French — those are the "some
+   strings" the user noticed.
 
-For ``n`` scheduled profiles, ``k`` = profile rank (0 to n-1),
-``I`` = ``interval_hours``, the grid of slots for profile ``k`` is:
+2. **`glaneur_fr.ts` carries a positional-pairing drift.** The
+   US-EN-07 commit message describes how the regenerated .ts was
+   populated by positional pairing against the old (FR-sourced) .ts.
+   In two contexts the entry order changed between old and new .ts,
+   so the pairing is off by one over a contiguous prefix:
+   - `Fenetre`: entries 0..13 are cyclically rotated by one
+     (translation at position *i* actually belongs to position
+     *i+1*; the last entry wraps back to position 0). The main
+     window title, every &File/&Update now/… menu item, and the
+     tray menu top entries are affected.
+   - `Updater`: entries 0..4 are cyclically rotated by one (same
+     pattern). The "Update check failed", "Windows installer missing",
+     "SHA-256 verification failed", "Update download failed", and
+     "Invalid GitHub Releases response" messages are affected.
 
-    anchor + k × I/n + m × I,  m ∈ ℤ
+   Without fix 1 these pairings were never visible (no translator
+   loaded). Shipping fix 1 alone would make the main menu read in
+   wrong French. Both must land together.
 
-The **anchor** is a time-of-day (``HH:MM``) stored on
-:attr:`Config.schedule_anchor` (already added in E3 part A). Empty
-anchor falls back to midnight.
+The fixes:
 
-Due-time for a profile:
-
-- ``threshold = last_run + I/2`` (or ``now`` when ``last_run`` is
-  empty — a fresh profile fires immediately);
-- slot = first grid slot ≥ threshold;
-- if a ``retry_after`` is set and it is later than the slot,
-  ``retry_after`` wins (the deferral pushes the run out further).
-
-The **I/2 rule** is what makes the computation robust — a run made
-on time lands on the next slot exactly ``+I`` later, a late catch-up
-realigns within 0.5–1.5 intervals without a double run, and adding
-or reordering profiles never restarts a profile less than ``I/2``
-after its last run. That last invariant is already documented in
-CLAUDE.md's multi-source section.
-
-### API added
-
-- `Scheduler._parse_anchor()` — parses
-  ``config.schedule_anchor`` into a naive ``time`` object,
-  fallback ``00:00`` on empty/malformed.
-- `Scheduler._grid_slot(anchor_dt, k, n, threshold)` — pure
-  computation returning the first slot ≥ threshold.
-- `Scheduler.next_run_for(profile, k, n)` — the runtime entry
-  point. Reads scheduler state (``last_run`` /
-  ``retry_after``) from the passed :class:`Glaneur.config.Profile`;
-  ``k`` / ``n`` come from the caller iterating
-  :meth:`Glaneur.config.Config.profiles`.
-- `Scheduler.is_due_for(profile, k, n)` — boolean wrapper.
-- `Scheduler.next_due_index(profiles)` — walks a list of profiles
-  and returns the index of the first one that is due, or ``None``.
+- **i18n.py** — invert the special case: `langue == "en"` is the
+  no-op (source language); any other language loads
+  `glaneur_<code>.qm`; load failure falls back to the English source.
+- **glaneur_fr.ts** — rotate the FR translations one position UP
+  within the two affected blocks (``Fenetre`` first 14 entries;
+  ``Updater`` first 5 entries), so FR[*i*] ends up on the EN
+  source it semantically translates. Then regenerate
+  `glaneur_fr.qm` via `pyside6-lrelease`.
 
 ## Directly modified
 
-- `Glaneur/scheduler.py` — five new methods (four private + one
-  public helper). Existing single-profile API
-  (`next_run`, `is_due`, `mark_run`, `defer`) unchanged; still
-  drives the default-profile auto-run cadence.
-- `tests/test_scheduler.py` — new `TestGridSlot` and
-  `TestNextRunFor` classes locking the math.
+- `Glaneur/i18n.py` — invert the special case, update the module and
+  function docstrings. `translations_dir()` and `resolve_language()`
+  shape unchanged; `resolve_language`'s last-resort fallback moves
+  from `"fr"` to `"en"` (the current source language).
+- `tests/test_i18n.py` — flip `TestInstallTranslator` (`fr` now loads
+  the real `glaneur_fr.qm`; `en` is the no-op) and
+  `TestResolveLanguage::test_last_resort_is_fr` becomes
+  `_is_en`.
+- `translations/build_translations.py` — fix the stale comment that
+  claims "FR est la langue source".
+- `translations/glaneur_fr.ts` — rotate the FR translations in the
+  `Fenetre` (14 entries) and `Updater` (5 entries) misaligned
+  prefixes so each sits on its correct EN source. Nothing else in
+  the file changes.
 
 ## Direct dependencies
 
-- Uses :attr:`Config.schedule_anchor`, :attr:`Config.interval_hours`,
-  and reads `profile.last_run` / `profile.retry_after` — all already
-  in place.
+- `glaneur_fr.qm` must be present at runtime. It is produced by
+  `python translations/build_translations.py release`; the file is
+  gitignored (per `.gitignore`) so dev/package builds already assume
+  the release step runs. No change needed there.
 
 ## Explicitly out of scope
 
-- Wiring `Fenetre._verifier_echeance` to iterate profiles — next
-  commit.
-- Per-profile `mark_run` / `defer` mutators on Scheduler — next
-  commit (they touch how per-profile state gets persisted, since
-  the default profile's state is flat on Config while extras'
-  state is on the Profile object in `_extra_profiles`).
-- Multi-profile queueing / one-profile-at-a-time worker — E3 part
-  B step 11 (queue) and lot 5.3.
+- The hardcoded French labels in `Glaneur/config.py`
+  (`SORT_MODES`, `SOURCE_TYPES`, `INTERVAL_LABELS`) — US-EN-07
+  explicitly left those for a later rename story; untouched here.
+- `glaneur_en.ts` content (intentionally empty, Qt falls back to the
+  source) — untouched.
 - `__version__` — unchanged.
+- README's i18n §4 wording — the policy sentence still reads "source
+  = French"; a doc-only follow-up, not part of this fix.
 
 ## Tests
 
-- `TestGridSlot`:
-  - single-profile grid == single-slot walk;
-  - two-profile grid staggered by I/2;
-  - three-profile grid staggered by I/3;
-  - threshold before base returns base (m=0);
-  - threshold exactly at base returns base;
-  - threshold exactly at a future slot returns that slot;
-  - anchor midnight vs. non-midnight give parallel grids.
-- `TestNextRunFor`:
-  - empty last_run + fresh profile → due immediately;
-  - manual mode (interval 0) returns None;
-  - deferral pushes past the nominal slot;
-  - I/2 rule: last_run == just now, next slot is exactly +I later;
-  - N=1 case matches today's single-profile Scheduler.next_run().
+- `TestInstallTranslator::test_en_is_source_language_loads_nothing`
+  — the new no-op case.
+- `TestInstallTranslator::test_fr_loads_the_real_qm` — the real
+  `glaneur_fr.qm` loads end-to-end.
+- `TestInstallTranslator::test_unknown_language_falls_back_to_en`
+  — unknown code → fallback to English source.
+- `TestInstallTranslator::test_empty_language_delegated_to_resolve`
+  — empty configured + system `fr_FR` → `fr` AND the fr translator is
+  installed (previously asserted `assert_not_called`).
+- `TestResolveLanguage::test_last_resort_is_en` — empty name →
+  `"en"`.
 
 Verification:
 
-- `pytest -q` → 634 + new tests.
-- `python tools/check_coverage.py` → floors held.
+- `pytest -q tests/test_i18n.py` green.
+- Full suite via `test-runner` to confirm no caller regressed.
 - `ruff check` clean on touched files.
 
 ## Invariants
 
 - `__version__` unchanged.
-- Existing Scheduler behaviour unchanged.
-- I/2-no-double-run invariant enforced (already documented in
-  CLAUDE.md).
-- All new methods pure (no side-effects, no persistence, no
-  clock — every "now" value is a parameter, matching the existing
-  scheduler pattern for testability).
+- The configured language code stored in `Config.language` keeps the
+  same accepted values (`""`, `"fr"`, `"en"`); only runtime behavior
+  changes.
+- No boundary moved: the engine still emits structured events, the UI
+  still owns rendering via `UiJournal`.
 
 ## Validation
 
-Level `subsystem` per lot 5.2's engine-scheduler footprint. No
-persisted-format touched, no boundary crossed.
+Level `local` per CLAUDE.md's conditional-validation table (local
+Python module, no boundary/invariant touched, no persisted format
+changed, no public API shape changed).
 
-- `pytest -q --cov=Glaneur --cov-branch` green.
-- `python tools/check_coverage.py` green.
-- `ruff check` clean on touched files.
+- `pytest tests/test_i18n.py` green.
+- Full suite via `test-runner` (one shot, to confirm no caller of
+  `install_translator` depended on the old early-return).
+- `ruff check Glaneur/i18n.py tests/test_i18n.py translations/build_translations.py`
+  clean.
+- No invariant-reviewer: no boundary, no invariant from the
+  CLAUDE.md table touched.

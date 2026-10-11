@@ -36,8 +36,8 @@ def _outil(nom: str) -> str:
         f"{nom} introuvable. Installe PySide6 dans le venv actif "
         f"(`pip install PySide6-Essentials`).")
 
-# Langues cibles — FR est la langue source du code, on la garde en .ts pour
-# uniformité mais le runtime n'a pas besoin de son .qm.
+# Langues cibles — EN est la langue source du code (US-EN-07), on la garde
+# en .ts pour uniformité mais le runtime n'a pas besoin de son .qm.
 LANGUES = ["fr", "en"]
 
 # Fichiers à scanner. On veut app.py et le paquet Python (bug_report.py, etc.),

@@ -1,12 +1,13 @@
 """Install the Qt translator at startup.
 
-Policy: the source language in the code is French. Translations are
-compiled from ``translations/glaneur_<code>.ts`` to ``.qm`` by
-``pyside6-lrelease``. The choice is made at launch, before the window is
-built — no hot swap (see the i18n decision in the README §4).
+Policy: the source language in the code is English (US-EN-07).
+Translations are compiled from ``translations/glaneur_<code>.ts`` to
+``.qm`` by ``pyside6-lrelease``. The choice is made at launch, before
+the window is built — no hot swap (see the i18n decision in the
+README §4).
 
-- No configured language -> system locale (``en_US`` -> ``en``, etc.).
-- Language = "fr" or translation missing -> UI shows the French source.
+- No configured language -> system locale (``fr_FR`` -> ``fr``, etc.).
+- Language = "en" or translation missing -> UI shows the English source.
 """
 
 from __future__ import annotations
@@ -60,11 +61,11 @@ def resolve_language(langue_configuree: str) -> str:
     Returns:
         The configured code if not empty, otherwise the short code of
         the system locale (for example ``fr_CH`` -> ``fr``), with
-        ``fr`` as a last resort.
+        ``en`` (the source language) as a last resort.
     """
     if langue_configuree:
         return langue_configuree
-    return QLocale.system().name().split("_")[0] or "fr"
+    return QLocale.system().name().split("_")[0] or "en"
 
 
 def install_translator(app, langue_configuree: str = "") -> str:
@@ -83,22 +84,22 @@ def install_translator(app, langue_configuree: str = "") -> str:
     Returns:
         The language code actually active after the call. May differ
         from the request when the translation is missing: we fall back
-        on the French source in that case.
+        on the English source in that case.
     """
     global _translator
     langue = resolve_language(langue_configuree)
     dossier = translations_dir()
     logger.info("i18n: language=%s folder=%s exists=%s",
                 langue, dossier, dossier.is_dir())
-    if langue == "fr":
-        return "fr"
+    if langue == "en":
+        return "en"
     _translator = QTranslator()
     fichier = f"glaneur_{langue}"
     if _translator.load(fichier, str(dossier)):
         app.installTranslator(_translator)
         logger.info("i18n: translation %s loaded from %s", fichier, dossier)
         return langue
-    logger.warning("i18n: translation %s not found in %s — falling back to FR",
+    logger.warning("i18n: translation %s not found in %s — falling back to EN",
                    fichier, dossier)
     _translator = None
-    return "fr"
+    return "en"
