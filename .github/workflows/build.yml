@@ -103,7 +103,7 @@ jobs:
           packaging/linux/bump-metainfo.sh "${GITHUB_REF_NAME#v}"
       - name: Build Debian package
         run: |
-          chmod +x packaging/linux/build-deb.sh packaging/linux/Glaneur-launcher
+          chmod +x packaging/linux/build-deb.sh
           packaging/linux/build-deb.sh "${GITHUB_REF_NAME#v}"
       - name: Install Flatpak tooling
         # flatpak-builder d'apt (1.2.x sur ubuntu-22.04) invoque encore

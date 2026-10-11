@@ -26,7 +26,10 @@ APPIMAGE="$OUT/Glaneur-${VERSION}-${ARCH}.AppImage"
 #     AppDir/usr/bin/Glaneur          → executable (shim)
 #     AppDir/usr/lib/Glaneur/         → real PyInstaller bundle
 #     AppDir/usr/bin/Glaneur → ../lib/Glaneur/ → symlinks for resources
-rm -rf "$APPDIR"
+# Clean only the generated usr/ subtree so the committed AppRun at
+# "$APPDIR/AppRun" survives — appimagetool requires it and nothing in
+# this script would recreate it.
+rm -rf "$APPDIR/usr"
 mkdir -p "$APPDIR/usr/bin" \
          "$APPDIR/usr/lib/Glaneur" \
          "$APPDIR/usr/share/applications" \
