@@ -207,7 +207,7 @@ pour proposer la dernière version stable si elle est plus récente.</translatio
     <message>
         <location filename="../app.py" line="573" />
         <source>Destination folder unavailable: {error}</source>
-        <translation>Dossier de destination inaccessible : {erreur}</translation>
+        <translation>Dossier de destination inaccessible : {error}</translation>
     </message>
     <message>
         <location filename="../app.py" line="577" />
@@ -288,9 +288,9 @@ Un compte GitHub est nécessaire pour soumettre l'issue. Si tu n'en as pas encor
         <source>Your report is too long to be pre-filled via the GitHub URL ({length} characters, maximum {cap}).
 
 {hint}</source>
-        <translation>Ton rapport est trop long pour être pré-rempli via l'URL GitHub ({longueur} caractères, maximum {plafond}).
+        <translation>Ton rapport est trop long pour être pré-rempli via l'URL GitHub ({length} caractères, maximum {cap}).
 
-{piste}</translation>
+{hint}</translation>
     </message>
 </context>
 <context>
@@ -311,7 +311,7 @@ Cochez celles à retélécharger à la prochaine mise à jour.</translation>
     <message>
         <location filename="../app.py" line="297" />
         <source>{filename}    (deleted on {date})</source>
-        <translation>{fichier}    (effacée le {date})</translation>
+        <translation>{filename}    (effacée le {date})</translation>
     </message>
     <message>
         <location filename="../app.py" line="306" />
@@ -481,7 +481,7 @@ et l'exclut des prochaines mises à jour.</translation>
     <message>
         <location filename="../app.py" line="994" />
         <source>Folder: {folder}</source>
-        <translation>Dossier : {dossier}</translation>
+        <translation>Dossier : {folder}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1015" />
@@ -514,8 +514,8 @@ New version: {new}
 Download and install now?</source>
         <translation>Une nouvelle version est disponible.
 
-Version actuelle : {actuelle}
-Nouvelle version : {nouvelle}
+Version actuelle : {current}
+Nouvelle version : {new}
 
 Télécharger et installer maintenant ?</translation>
     </message>
@@ -532,7 +532,7 @@ Télécharger et installer maintenant ?</translation>
     <message>
         <location filename="../app.py" line="1133" />
         <source>Cannot launch the installer: {error}</source>
-        <translation>Lancement de l'installateur impossible : {erreur}</translation>
+        <translation>Lancement de l'installateur impossible : {error}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1137" />
@@ -585,7 +585,7 @@ diaporama de fond d'écran actif.</translation>
 
 Nothing was deleted.</source>
         <translation>L'image affichée n'appartient pas au dossier suivi :
-{fond}
+{wallpaper}
 
 Rien n'a été supprimé.</translation>
     </message>
@@ -596,26 +596,26 @@ Rien n'a été supprimé.</translation>
 
 It will no longer be re-downloaded by future updates.</source>
         <translation>Supprimer définitivement cette image ?
-{fond}
+{wallpaper}
 
 Elle ne sera plus retéléchargée par les mises à jour suivantes.</translation>
     </message>
     <message>
         <location filename="../app.py" line="1194" />
         <source>Wallpaper removed: {wallpaper}</source>
-        <translation>Fond d'écran supprimé : {fond}</translation>
+        <translation>Fond d'écran supprimé : {wallpaper}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1196" />
         <source>Wallpaper removal failed: {wallpaper}</source>
-        <translation>Échec de suppression du fond : {fond}</translation>
+        <translation>Échec de suppression du fond : {wallpaper}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1205" />
         <source>Cannot use this folder:
 {error}</source>
         <translation>Impossible d'utiliser ce dossier :
-{erreur}</translation>
+{error}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1209" />
@@ -625,7 +625,7 @@ Elle ne sera plus retéléchargée par les mises à jour suivantes.</translation
     <message>
         <location filename="../app.py" line="1220" />
         <source>--- {timestamp} — update started</source>
-        <translation>--- {horodatage} — début de la mise à jour</translation>
+        <translation>--- {timestamp} — début de la mise à jour</translation>
     </message>
     <message>
         <location filename="../app.py" line="1247" />
@@ -635,7 +635,7 @@ Elle ne sera plus retéléchargée par les mises à jour suivantes.</translation
     <message>
         <location filename="../app.py" line="1267" />
         <source>{done}/{total} — {label}</source>
-        <translation>{fait}/{total} — {etiquette}</translation>
+        <translation>{done}/{total} — {label}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1285" />
@@ -655,7 +655,7 @@ Elle ne sera plus retéléchargée par les mises à jour suivantes.</translation
     <message>
         <location filename="../app.py" line="1308" />
         <source>{n} new image(s) — {size}</source>
-        <translation>{n} nouvelle(s) image(s) — {taille}</translation>
+        <translation>{n} nouvelle(s) image(s) — {size}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1317" />
@@ -665,7 +665,7 @@ Elle ne sera plus retéléchargée par les mises à jour suivantes.</translation
     <message>
         <location filename="../app.py" line="1324" />
         <source>Glaneur — {text}</source>
-        <translation>Glaneur — {texte}</translation>
+        <translation>Glaneur — {text}</translation>
     </message>
     <message>
         <location filename="../app.py" line="1354" />
@@ -826,7 +826,7 @@ Quitter maintenant ?</translation>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="57" />
         <source>Update check failed: {error}</source>
-        <translation>Vérification de mise à jour impossible : {erreur}</translation>
+        <translation>Vérification de mise à jour impossible : {error}</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="92" />
@@ -841,7 +841,7 @@ Quitter maintenant ?</translation>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="104" />
         <source>Update download failed: {error}</source>
-        <translation>Téléchargement de la mise à jour impossible : {erreur}</translation>
+        <translation>Téléchargement de la mise à jour impossible : {error}</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/github_release.py" line="74" />
@@ -851,7 +851,7 @@ Quitter maintenant ?</translation>
     <message>
         <location filename="../Glaneur/updater/downloader.py" line="56" />
         <source>Download failed: {error}</source>
-        <translation>Téléchargement impossible : {erreur}</translation>
+        <translation>Téléchargement impossible : {error}</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/downloader.py" line="61" />
