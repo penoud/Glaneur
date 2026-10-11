@@ -100,15 +100,16 @@ class TestResolveLanguage:
         )
         assert i18n.resolve_language("") == "en"
 
-    def test_last_resort_is_fr(self, monkeypatch):
+    def test_last_resort_is_en(self, monkeypatch):
         # `QLocale.system().name()` returning an empty string leads to
-        # the `or "fr"` fallback.
+        # the `or "en"` fallback (English is the source language since
+        # US-EN-07).
         faux_locale = MagicMock()
         faux_locale.name.return_value = ""
         monkeypatch.setattr(
             "Glaneur.i18n.QLocale.system", staticmethod(lambda: faux_locale),
         )
-        assert i18n.resolve_language("") == "fr"
+        assert i18n.resolve_language("") == "en"
 
 
 # --------------------------------------------------------------------------- #
@@ -117,25 +118,29 @@ class TestResolveLanguage:
 
 
 class TestInstallTranslator:
-    def test_fr_loads_nothing(self, qapp):
+    def test_en_is_source_language_loads_nothing(self, qapp):
+        # English is the source language since US-EN-07: no translator
+        # is loaded, Qt simply shows the strings as written in the code.
         app = MagicMock(spec=QCoreApplication)
-        assert i18n.install_translator(app, "fr") == "fr"
+        assert i18n.install_translator(app, "en") == "en"
         app.installTranslator.assert_not_called()
         assert i18n._translator is None
 
-    def test_en_loads_the_real_qm(self, qapp):
-        # `translations/glaneur_en.qm` ships in the repo — load it end
-        # to end, then confirm the translator was installed.
+    def test_fr_loads_the_real_qm(self, qapp):
+        # `translations/glaneur_fr.qm` is produced by
+        # `build_translations.py release` and is required at runtime
+        # for French users — load it end to end and confirm the
+        # translator was installed.
         app = MagicMock(spec=QCoreApplication)
-        assert i18n.install_translator(app, "en") == "en"
+        assert i18n.install_translator(app, "fr") == "fr"
         app.installTranslator.assert_called_once()
         assert i18n._translator is not None
 
-    def test_unknown_language_falls_back_to_fr(self, qapp):
+    def test_unknown_language_falls_back_to_en(self, qapp):
         app = MagicMock(spec=QCoreApplication)
-        # `zz` has no `.qm`: fall back to French and clear the
-        # module-level translator.
-        assert i18n.install_translator(app, "zz") == "fr"
+        # `zz` has no `.qm`: fall back to the English source and clear
+        # the module-level translator.
+        assert i18n.install_translator(app, "zz") == "en"
         app.installTranslator.assert_not_called()
         assert i18n._translator is None
 
@@ -148,4 +153,5 @@ class TestInstallTranslator:
         )
         app = MagicMock(spec=QCoreApplication)
         assert i18n.install_translator(app) == "fr"
-        app.installTranslator.assert_not_called()
+        app.installTranslator.assert_called_once()
+        assert i18n._translator is not None

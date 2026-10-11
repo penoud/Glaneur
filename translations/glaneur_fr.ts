@@ -324,72 +324,72 @@ Cochez celles à retélécharger à la prochaine mise à jour.</translation>
     <message>
         <location filename="../app.py" line="756" />
         <source>Glaneur — Image downloader {version}</source>
-        <translation>&amp;Fichier</translation>
+        <translation>Glaneur — Téléchargeur d'images {version}</translation>
     </message>
     <message>
         <location filename="../app.py" line="795" />
         <source>&amp;File</source>
-        <translation>&amp;Mettre à jour maintenant</translation>
+        <translation>&amp;Fichier</translation>
     </message>
     <message>
         <location filename="../app.py" line="796" />
         <source>&amp;Update now</source>
-        <translation>&amp;Arrêter</translation>
+        <translation>&amp;Mettre à jour maintenant</translation>
     </message>
     <message>
         <location filename="../app.py" line="800" />
         <source>&amp;Stop</source>
-        <translation>&amp;Ouvrir le dossier</translation>
+        <translation>&amp;Arrêter</translation>
     </message>
     <message>
         <location filename="../app.py" line="805" />
         <source>&amp;Open the folder</source>
-        <translation>&amp;Images supprimées…</translation>
+        <translation>&amp;Ouvrir le dossier</translation>
     </message>
     <message>
         <location filename="../app.py" line="809" />
         <source>&amp;Deleted images…</source>
-        <translation>Supprimer ce &amp;fond d'écran</translation>
+        <translation>&amp;Images supprimées…</translation>
     </message>
     <message>
         <location filename="../app.py" line="812" />
         <source>Remove this &amp;wallpaper</source>
-        <translation>&amp;Quitter</translation>
+        <translation>Supprimer ce &amp;fond d'écran</translation>
     </message>
     <message>
         <location filename="../app.py" line="817" />
         <source>&amp;Quit</source>
-        <translation>&amp;Configuration</translation>
+        <translation>&amp;Quitter</translation>
     </message>
     <message>
         <location filename="../app.py" line="821" />
         <source>&amp;Configuration</source>
-        <translation>&amp;Préférences…</translation>
+        <translation>&amp;Configuration</translation>
     </message>
     <message>
         <location filename="../app.py" line="822" />
         <source>&amp;Preferences…</source>
-        <translation>&amp;Aide</translation>
+        <translation>&amp;Préférences…</translation>
     </message>
     <message>
         <location filename="../app.py" line="826" />
         <source>&amp;Help</source>
-        <translation>&amp;Rechercher des mises à jour…</translation>
+        <translation>&amp;Aide</translation>
     </message>
     <message>
         <location filename="../app.py" line="827" />
         <source>&amp;Check for updates…</source>
-        <translation>&amp;Signaler un bug…</translation>
+        <translation>&amp;Rechercher des mises à jour…</translation>
     </message>
     <message>
         <location filename="../app.py" line="831" />
         <source>&amp;Report a bug…</source>
-        <translation>&amp;À propos…</translation>
+        <translation>&amp;Signaler un bug…</translation>
     </message>
     <message>
         <location filename="../app.py" line="833" />
         <source>&amp;About…</source>
-        <translation>Glaneur — Téléchargeur d'images {version}</translation>
+        <translation>&amp;À propos…</translation>
     </message>
     <message>
         <location filename="../app.py" line="876" />
@@ -826,27 +826,27 @@ Quitter maintenant ?</translation>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="57" />
         <source>Update check failed: {error}</source>
-        <translation>Réponse GitHub Releases invalide</translation>
+        <translation>Vérification de mise à jour impossible : {erreur}</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="92" />
         <source>Windows installer or checksum missing from the release</source>
-        <translation>Vérification de mise à jour impossible : {erreur}</translation>
+        <translation>Installateur Windows ou checksum absent de la release</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="99" />
         <source>SHA-256 verification failed</source>
-        <translation>Installateur Windows ou checksum absent de la release</translation>
+        <translation>Vérification SHA-256 échouée</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="104" />
         <source>Update download failed: {error}</source>
-        <translation>Vérification SHA-256 échouée</translation>
+        <translation>Téléchargement de la mise à jour impossible : {erreur}</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/github_release.py" line="74" />
         <source>Invalid GitHub Releases response</source>
-        <translation>Téléchargement de la mise à jour impossible : {erreur}</translation>
+        <translation>Réponse GitHub Releases invalide</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/downloader.py" line="56" />
