@@ -55,6 +55,16 @@ cp "$ROOT/packaging/linux/org.glaneur.Glaneur.svg" \
 cp "$ROOT/packaging/linux/org.glaneur.Glaneur.metainfo.xml" \
    "$APPDIR/usr/share/metainfo/org.glaneur.Glaneur.metainfo.xml"
 
+# appimagetool requires the .desktop file and the icon referenced by its
+# Icon= key at the AppDir root, in addition to the FHS copies that end
+# up installed on the user's system. Without the root .desktop,
+# appimagetool fails with "Desktop file not found, aborting".
+ln -sf usr/share/applications/org.glaneur.Glaneur.desktop \
+       "$APPDIR/org.glaneur.Glaneur.desktop"
+ln -sf usr/share/icons/hicolor/scalable/apps/org.glaneur.Glaneur.svg \
+       "$APPDIR/org.glaneur.Glaneur.svg"
+ln -sf org.glaneur.Glaneur.svg "$APPDIR/.DirIcon"
+
 chmod +x "$APPDIR/AppRun"
 
 # ── 2. Download appimagetool (cached) ────────────────────────────────
