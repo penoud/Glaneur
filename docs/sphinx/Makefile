@@ -1,5 +1,6 @@
-# Makefile Sphinx minimal — voir `docs/sphinx/README.md` pour les
-# conventions. La cible `html` est la seule tenue verte à chaque commit.
+# Minimal Sphinx Makefile — see `docs/sphinx/README.md` for the
+# conventions. The `html` target is the only one kept green at every
+# commit.
 
 SPHINXOPTS    ?= -W -n
 SPHINXBUILD   ?= sphinx-build
@@ -17,11 +18,11 @@ html:
 clean:
 	@rm -rf "$(BUILDDIR)"
 
-# Régénère `api/*.rst` à partir du paquet Glaneur. À relancer quand un
-# module Python est ajouté, renommé ou supprimé. Le post-traitement
-# supprime les blocs « Module contents » des rst de paquet : ils ne font
-# que ré-inclure les re-exports d'`__init__.py`, ce qui déclenche des
-# doublons d'index (warnings `ref.python` en `-W`).
+# Regenerate `api/*.rst` from the Glaneur package. Rerun whenever a
+# Python module is added, renamed or removed. The post-processing step
+# strips the "Module contents" blocks from the package rst files: they
+# merely re-include the `__init__.py` re-exports, which triggers index
+# duplicates (`ref.python` warnings under `-W`).
 apidoc:
 	@sphinx-apidoc -f -e -o api ../../Glaneur
 	@for f in api/Glaneur.rst api/Glaneur.engine.rst api/Glaneur.sources.rst api/Glaneur.updater.rst; do \

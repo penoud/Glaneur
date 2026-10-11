@@ -1,0 +1,5 @@
+#!/bin/sh
+# AppRun for Glaneur AppImage — resolves the real binary path at runtime
+# regardless of whether the AppImage is mounted loopback or extracted.
+SELF="$(cd "$(dirname "$0")" && pwd)"
+exec "$SELF/usr/bin/Glaneur" "$@"

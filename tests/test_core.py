@@ -31,6 +31,7 @@ from Glaneur.engine import (
     write_cache,
     write_manifest,
 )
+from Glaneur.engine.read_manifest import _translate_entry
 from Glaneur.sources import Element
 from Glaneur.sources.base import ErrorClassification
 
@@ -217,6 +218,14 @@ class TestManifestLegacyKeyMigration:
         manifest_path(tmp_path).write_text(
             json.dumps(["not", "a", "dict"]), encoding="utf-8")
         assert read_manifest(tmp_path) == {}
+
+    def test_translate_entry_non_dict(self):
+        """Non-dict entries pass through unchanged — the shim never
+        crashes on corrupted per-entry values."""
+        assert _translate_entry("just a string") == "just a string"
+        assert _translate_entry([1, 2, 3]) == [1, 2, 3]
+        assert _translate_entry(42) == 42
+        assert _translate_entry(None) is None
 
 
 # --------------------------------------------------------------------------- #

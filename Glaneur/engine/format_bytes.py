@@ -17,4 +17,3 @@ def format_bytes(n: int) -> str:
         if n < 1024 or unite == "Go":
             return f"{n:.0f} {unite}" if unite == "o" else f"{n:.1f} {unite}"
         n /= 1024
-    return f"{n:.1f} Go"

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Launcher for Debian package — the path is set at build time by build-deb.sh
+# because the Glaneur bundle lives under /opt/Glaneur on Debian.
+exec /opt/Glaneur/Glaneur "$@"

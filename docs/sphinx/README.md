@@ -1,46 +1,47 @@
-# Documentation Sphinx — Glaneur
+# Sphinx documentation — Glaneur
 
-Ce dossier accueille la doc API générée par Sphinx (US-02 du sprint courant).
-Il contiendra `conf.py`, `index.rst`, l'arborescence `api/` produite par
-`sphinx-apidoc`, et `_build/` (ignoré par git).
+This folder holds the Sphinx-generated API docs (US-02 of the current
+sprint). It contains `conf.py`, `index.rst`, `architecture.rst`, the
+`api/` tree produced by `sphinx-apidoc`, and `_build/` (git-ignored).
 
-## Style de docstring
+## Docstring style
 
-**Décision : Napoleon (Google-style).**
+**Decision: Napoleon (Google-style).**
 
-- Extension activée dans `conf.py` : `sphinx.ext.napoleon`.
-- Sections attendues, dans cet ordre quand elles s'appliquent :
+- Extension enabled in `conf.py`: `sphinx.ext.napoleon`.
+- Sections, in this order when they apply:
 
   ```python
-  def resoudre(url: str, timeout: float = 30) -> RunResult:
-      """Résout une URL vers un `RunResult`.
+  def resolve(url: str, timeout: float = 30) -> RunResult:
+      """Resolve a URL into a ``RunResult``.
 
-      La résolution suit les redirections HTTP puis vérifie l'ETag.
-      Voir `Glaneur.engine.RunResult` pour la sémantique du champ `message`.
+      Resolution follows HTTP redirects then checks the ETag. See
+      ``Glaneur.engine.RunResult`` for the semantics of the ``message``
+      field.
 
       Args:
-          url: URL absolue à résoudre.
-          timeout: Délai maximum en secondes.
+          url: Absolute URL to resolve.
+          timeout: Maximum delay in seconds.
 
       Returns:
-          Le `RunResult` construit à partir de la réponse.
+          The ``RunResult`` built from the response.
 
       Raises:
-          Interrupted: Si l'utilisateur a demandé l'arrêt pendant l'appel.
-          requests.RequestException: En cas d'échec réseau irrémédiable.
+          Interrupted: If the user requested a stop during the call.
+          requests.RequestException: On an unrecoverable network failure.
       """
   ```
 
-- Une ligne résumé, ligne vide, description longue si utile, ligne vide,
+- One summary line, blank line, long description if useful, blank line,
   sections `Args:` / `Returns:` / `Yields:` / `Raises:` / `Attributes:`.
-- Types dans les annotations Python, **pas** dans les sections
-  (`Args: url: URL...`, pas `Args: url (str): URL...`).
+- Types belong in the Python annotations, **not** in the sections
+  (`Args: url: URL...`, not `Args: url (str): URL...`).
 
-Pourquoi Napoleon et pas rST natif ? Les docstrings existants sont tous en
-prose française lisible ; Napoleon permet de les enrichir progressivement
-sans les démolir. Le rendu final HTML est équivalent.
+Why Napoleon rather than native rST? The existing docstrings are all
+readable prose; Napoleon lets us enrich them incrementally without
+rewriting them. The rendered HTML is equivalent.
 
-## État de départ (mesure US-01, 2026-09-25)
+## Starting point (US-01 measurement, 2026-09-25)
 
 | Module                             | Doc / total | Style   |
 |-----------------------------------|:-----------:|---------|
@@ -66,31 +67,32 @@ sans les démolir. Le rendu final HTML est équivalent.
 | `cli.py`                          | 1 / 3       | prose   |
 | **Total**                         | **65 / 137**| **prose** |
 
-- 100 % des docstrings existants sont en prose libre. Aucun n'utilise déjà
-  `:param:` ou `Args:` — la conversion est purement additive.
-- `servette/` ne contient que du `.pyc` (résidu du rename `WpImageDownloader
-  → Glaneur`) et sort du périmètre du sprint. À supprimer dans un lot séparé
-  ou pris en compte par le prochain nettoyage.
+- 100 % of the existing docstrings are free-form prose. None already
+  uses `:param:` or `Args:` — the conversion is purely additive.
+- `servette/` contains only `.pyc` leftovers from the
+  `WpImageDownloader → Glaneur` rename and sits outside the sprint
+  scope. To be removed in a separate lot or caught by the next cleanup.
 
-## Ordre de conversion pour US-03
+## Conversion order for US-03
 
-Le sprint propose un ordre par « visibilité et invariants ». Combiné à la
-dette mesurée ci-dessus, l'ordre reste :
+The sprint proposes an order driven by "visibility and invariants".
+Combined with the debt measured above, the order stays:
 
-1. `Glaneur/engine.py` — 17 symboles à documenter, module central.
-2. `Glaneur/sources/base.py` puis `wordpress.py`, `djangoplicity.py`,
-   `__init__.py` — contrats d'adaptateur, 8 symboles nus au total.
-3. `Glaneur/config.py` — 7 symboles nus, format persistant.
-4. `Glaneur/scheduler.py` — 6 symboles nus, frontière Qt à trancher plus tard.
-5. `Glaneur/systeme.py` — 1 seul manquant, rapide.
-6. `Glaneur/i18n.py`, `Glaneur/logsetup.py`, `Glaneur/bug_report.py` — déjà
-   couverts, une passe d'enrichissement Napoleon.
-7. `Glaneur/updater/` — 20 symboles nus répartis sur 6 fichiers,
-   traiter le sous-paquet en un seul lot.
-8. `app.py` — 11 manquants, gros fichier (54 kB), possiblement en deux
-   commits par sections d'UI.
-9. `cli.py` — 2 manquants, trivial.
+1. `Glaneur/engine.py` — 17 symbols to document, central module.
+2. `Glaneur/sources/base.py`, then `wordpress.py`, `djangoplicity.py`,
+   `__init__.py` — adapter contracts, 8 bare symbols in total.
+3. `Glaneur/config.py` — 7 bare symbols, persisted format.
+4. `Glaneur/scheduler.py` — 6 bare symbols, Qt boundary to settle
+   later.
+5. `Glaneur/systeme.py` — 1 missing, quick.
+6. `Glaneur/i18n.py`, `Glaneur/logsetup.py`, `Glaneur/bug_report.py` —
+   already covered, one Napoleon enrichment pass.
+7. `Glaneur/updater/` — 20 bare symbols across 6 files, handled as a
+   single lot.
+8. `app.py` — 11 missing, large file (54 kB), possibly split into two
+   commits by UI section.
+9. `cli.py` — 2 missing, trivial.
 
-Un commit par fichier (ou par groupe cohérent quand un fichier tient en
-moins de ~100 lignes de docstring modifiées). Après chaque commit,
-`sphinx-build -W` doit rester vert (US-02 doit être en place).
+One commit per file (or per coherent group when a file holds less than
+~100 lines of modified docstrings). After each commit,
+`sphinx-build -W` must stay green (US-02 must be in place).
