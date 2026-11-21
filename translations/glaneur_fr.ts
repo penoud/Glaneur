@@ -830,8 +830,8 @@ Quitter maintenant ?</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="92" />
-        <source>Windows installer or checksum missing from the release</source>
-        <translation>Installateur Windows ou checksum absent de la release</translation>
+        <source>Windows installer missing from the release</source>
+        <translation>Installateur Windows absent de la release</translation>
     </message>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="99" />

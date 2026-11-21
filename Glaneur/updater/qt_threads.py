@@ -84,20 +84,34 @@ class UpdateDownload(QThread):
         self.release = release
 
     def run(self) -> None:
-        """Download, verify SHA-256, emit ``completed`` or ``error``."""
+        """Download, verify SHA-256 if available, emit ``completed`` or ``error``.
+
+        When the release has no ``.sha256`` sibling (older releases published
+        before the checksum step was added to the build pipeline), the
+        installer is still downloaded and the integrity check is skipped
+        with a logged warning — otherwise users on those versions can
+        never update.
+        """
         try:
             installer = self.release.windows_installer()
-            checksum = self.release.checksum_for(installer) if installer else None
-            if installer is None or checksum is None:
+            if installer is None:
                 raise RuntimeError(QCoreApplication.translate(
-                    "Updater", "Windows installer or checksum missing from the release"))
+                    "Updater", "Windows installer missing from the release"))
+            checksum = self.release.checksum_for(installer)
             dossier = temporary_directory()
             fichier = download(installer, dossier)
-            checksum_path = download(checksum, dossier)
-            if not verify_sha256(fichier, checksum_path.read_text(encoding="utf-8")):
-                fichier.unlink(missing_ok=True)
-                raise RuntimeError(QCoreApplication.translate(
-                    "Updater", "SHA-256 verification failed"))
+            if checksum is None:
+                logger.warning(
+                    "No .sha256 asset for %s; skipping integrity check "
+                    "(release predates the checksum step)",
+                    installer.name,
+                )
+            else:
+                checksum_path = download(checksum, dossier)
+                if not verify_sha256(fichier, checksum_path.read_text(encoding="utf-8")):
+                    fichier.unlink(missing_ok=True)
+                    raise RuntimeError(QCoreApplication.translate(
+                        "Updater", "SHA-256 verification failed"))
             self.completed.emit(fichier, str(dossier))
         except Exception as error:
             logger.exception("Update download failed")
