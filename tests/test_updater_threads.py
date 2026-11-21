@@ -141,4 +141,4 @@ class TestUpdateDownload:
         with qtbot.waitSignal(thread.error, timeout=3000) as blocker:
             thread.start()
         _attendre_fin_propre(thread)
-        assert "Installateur" in blocker.args[0] or "checksum" in blocker.args[0]
+        assert "installer" in blocker.args[0].lower()

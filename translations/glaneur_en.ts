@@ -802,7 +802,7 @@ Quit now?</source>
     </message>
     <message>
         <location filename="../Glaneur/updater/qt_threads.py" line="92"/>
-        <source>Windows installer or checksum missing from the release</source>
+        <source>Windows installer missing from the release</source>
         <translation type="unfinished"></translation>
     </message>
     <message>

@@ -199,22 +199,49 @@ class TestDownloadRun:
 
         assert len(recu.args) == 1
         message = recu.args[0][0]
-        assert "Installateur" in message or "checksum" in message
+        assert "installer" in message.lower()
 
-    def test_error_when_checksum_missing(self, qapp):
-        # Installer is present, but its `.sha256` sibling is not.
+    def test_completed_when_checksum_missing(
+        self, qapp, tmp_path, monkeypatch, caplog,
+    ):
+        # Installer is present, but its `.sha256` sibling is not — the
+        # release predates the pipeline's checksum step. The installer
+        # must still be downloaded (otherwise users are stuck); the
+        # integrity check is skipped with a logged warning.
+        import logging
+
         installer = ReleaseAsset(
             "Glaneur-2.0.0-setup.exe", "https://x/i.exe", 42,
         )
         release = Release(Version.parse("2.0.0"), "v2.0.0", assets=(installer,))
+        installer_path = tmp_path / "installer.exe"
+        installer_path.write_bytes(b"contenu")
+        monkeypatch.setattr(
+            "Glaneur.updater.qt_threads.download",
+            lambda _asset, _dossier: installer_path,
+        )
+        monkeypatch.setattr(
+            "Glaneur.updater.qt_threads.temporary_directory",
+            lambda: tmp_path,
+        )
+
         thread = UpdateDownload(release)
-        recu = _Recepteur()
-        thread.error.connect(recu)
+        recu_termine, recu_err = _Recepteur(), _Recepteur()
+        thread.completed.connect(recu_termine)
+        thread.error.connect(recu_err)
 
-        thread.run()
+        with caplog.at_level(logging.WARNING, logger="Glaneur.updater.qt_threads"):
+            thread.run()
 
-        assert len(recu.args) == 1
-        assert "checksum" in recu.args[0][0].lower() or "Installateur" in recu.args[0][0]
+        assert len(recu_termine.args) == 1
+        fichier, dossier = recu_termine.args[0]
+        assert fichier == installer_path
+        assert dossier == str(tmp_path)
+        assert recu_err.args == []
+        assert any(
+            "skipping integrity check" in record.getMessage()
+            for record in caplog.records
+        )
 
     def test_error_when_download_fails(
         self, qapp, fausse_release, tmp_path, monkeypatch,
